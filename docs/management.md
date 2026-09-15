@@ -13,14 +13,16 @@ Qualifiers restrict a value to one property:
 ```text
 platform:linux kind:crash
 version:"Ladybird Nightly" architecture:arm64
-state:triage|confirmed signal:sigabrt
+state:triage state:confirmed signal:sigabrt
 ```
 
 Built-in qualifiers are `state`, `kind`, `version`, `client_version`, `build`,
 `id`, `report`, `ip`, and `source_ip`. State values are `triage`, `confirmed`,
-and `assigned`; join values with `|` to match any of them, or use `all`. The
-default is `state:triage|confirmed`. Any other qualifier is treated as a
-submitted field key. Values containing spaces can be quoted.
+and `assigned`, or `all`. Repeating a qualifier matches any of its values, so
+`state:triage state:confirmed` includes both states. Different qualifiers are
+combined, so adding `platform:linux` restricts both states to Linux reports.
+The default is `state:triage state:confirmed`. Any other qualifier is treated
+as a submitted field key. Values containing spaces can be quoted.
 
 Report metadata and single-line diagnostic fields provide filter buttons that
 construct the corresponding qualified search.

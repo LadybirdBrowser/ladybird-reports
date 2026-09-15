@@ -57,7 +57,10 @@ class ReportListController {
             event.preventDefault();
             this.updateResults();
         });
-        this.input.addEventListener("input", () => this.queueCompletions());
+        this.input.addEventListener("input", () => {
+            this.closeCompletions();
+            this.queueCompletions();
+        });
         this.form.addEventListener("focusout", () => {
             setTimeout(() => {
                 if (!this.form.contains(document.activeElement)) {
@@ -284,6 +287,10 @@ class ReportListController {
     }
 
     closeCompletions() {
+        clearTimeout(this.completionTimer);
+        this.completionRequest?.abort();
+        this.completionRequest = null;
+        this.tokenRange = null;
         this.options = [];
         this.activeOption = -1;
         if (this.completions.matches(":popover-open")) {

@@ -102,34 +102,16 @@ fn validate_qualifier(key: &str, value: &str) -> Result<()> {
         return Err(AppError::InvalidRequest("Invalid report search qualifier"));
     }
 
-    if key.eq_ignore_ascii_case("state") && !valid_state_filter(value) {
+    if key.eq_ignore_ascii_case("state")
+        && !matches!(
+            value.to_ascii_lowercase().as_str(),
+            "triage" | "confirmed" | "assigned" | "all"
+        )
+    {
         return Err(AppError::InvalidRequest("Invalid report state filter"));
     }
 
     Ok(())
-}
-
-fn valid_state_filter(value: &str) -> bool {
-    let value = value.to_ascii_lowercase();
-    if value == "all" {
-        return true;
-    }
-
-    let mut seen = 0_u8;
-    for state in value.split('|') {
-        let bit = match state {
-            "triage" => 1,
-            "confirmed" => 2,
-            "assigned" => 4,
-            _ => return false,
-        };
-        if seen & bit != 0 {
-            return false;
-        }
-        seen |= bit;
-    }
-
-    seen != 0
 }
 
 #[cfg(test)]
@@ -176,12 +158,9 @@ mod tests {
         assert!(ReportSearch::parse("state:triage").is_ok());
         assert!(ReportSearch::parse("state:confirmed").is_ok());
         assert!(ReportSearch::parse("state:assigned").is_ok());
-        assert!(ReportSearch::parse("state:triage|confirmed").is_ok());
-        assert!(ReportSearch::parse("state:confirmed|assigned").is_ok());
+        assert!(ReportSearch::parse("state:triage state:confirmed").is_ok());
         assert!(ReportSearch::parse("state:all").is_ok());
-        assert!(ReportSearch::parse("state:triage|").is_err());
-        assert!(ReportSearch::parse("state:triage|triage").is_err());
-        assert!(ReportSearch::parse("state:all|triage").is_err());
+        assert!(ReportSearch::parse("state:triage|confirmed").is_err());
         assert!(ReportSearch::parse("state:unknown").is_err());
     }
 

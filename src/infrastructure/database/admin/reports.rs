@@ -66,8 +66,20 @@ impl AdminDatabase {
             push_text_search(&mut sql, term);
         }
 
+        let mut qualifier_groups: Vec<(&str, Vec<&str>)> = Vec::new();
         for qualifier in &query.search.qualifiers {
-            push_qualified_search(&mut sql, &qualifier.key, &qualifier.value);
+            if let Some((_, values)) = qualifier_groups
+                .iter_mut()
+                .find(|(key, _)| *key == qualifier.key)
+            {
+                values.push(&qualifier.value);
+            } else {
+                qualifier_groups.push((&qualifier.key, vec![&qualifier.value]));
+            }
+        }
+
+        for (key, values) in qualifier_groups {
+            push_qualified_search(&mut sql, key, &values);
         }
 
         sql.push(" AND (")
@@ -666,56 +678,54 @@ fn push_text_search(sql: &mut QueryBuilder<'_, Postgres>, term: &str) {
         .push(") in lower(report_fields.value #>> '{}')) > 0))");
 }
 
-fn push_qualified_search(sql: &mut QueryBuilder<'_, Postgres>, key: &str, value: &str) {
+fn push_qualified_search(sql: &mut QueryBuilder<'_, Postgres>, key: &str, values: &[&str]) {
+    sql.push(" AND (");
+    for (index, value) in values.iter().enumerate() {
+        if index > 0 {
+            sql.push(" OR ");
+        }
+        push_qualified_search_predicate(sql, key, value);
+    }
+    sql.push(")");
+}
+
+fn push_qualified_search_predicate(sql: &mut QueryBuilder<'_, Postgres>, key: &str, value: &str) {
     match key {
-        "state" => match report_state_mask(value) {
-            1 => {
+        "state" => match value.to_ascii_lowercase().as_str() {
+            "triage" => {
                 sql.push(
-                    " AND reports.issue_id IS NULL
-                      AND reports.confirmed_at IS NULL",
+                    "(reports.issue_id IS NULL
+                      AND reports.confirmed_at IS NULL)",
                 );
             }
-            2 => {
+            "confirmed" => {
                 sql.push(
-                    " AND reports.issue_id IS NULL
-                      AND reports.confirmed_at IS NOT NULL",
+                    "(reports.issue_id IS NULL
+                      AND reports.confirmed_at IS NOT NULL)",
                 );
             }
-            3 => {
-                sql.push(" AND reports.issue_id IS NULL");
+            "assigned" => {
+                sql.push("reports.issue_id IS NOT NULL");
             }
-            4 => {
-                sql.push(" AND reports.issue_id IS NOT NULL");
+            "all" => {
+                sql.push("TRUE");
             }
-            5 => {
-                sql.push(
-                    " AND (
-                        reports.issue_id IS NOT NULL
-                        OR reports.confirmed_at IS NULL
-                    )",
-                );
-            }
-            6 => {
-                sql.push(
-                    " AND (
-                        reports.issue_id IS NOT NULL
-                        OR reports.confirmed_at IS NOT NULL
-                    )",
-                );
-            }
-            7 => {}
             _ => unreachable!("report state qualifiers are validated while parsing"),
         },
-        "kind" => push_report_column_filter(sql, "reports.kind", value),
+        "kind" => push_report_column_filter_predicate(sql, "reports.kind", value),
         "version" | "client_version" => {
-            push_report_column_filter(sql, "reports.client_version", value);
+            push_report_column_filter_predicate(sql, "reports.client_version", value);
         }
-        "build" => push_report_column_filter(sql, "reports.build", value),
-        "id" | "report" => push_report_column_filter(sql, "reports.id::text", value),
-        "ip" | "source_ip" => push_report_column_filter(sql, "host(reports.source_ip)", value),
+        "build" => push_report_column_filter_predicate(sql, "reports.build", value),
+        "id" | "report" => {
+            push_report_column_filter_predicate(sql, "reports.id::text", value);
+        }
+        "ip" | "source_ip" => {
+            push_report_column_filter_predicate(sql, "host(reports.source_ip)", value);
+        }
         _ => {
             sql.push(
-                " AND EXISTS (
+                "EXISTS (
                     SELECT 1 FROM report_fields
                     WHERE report_fields.report_id = reports.id
                         AND lower(report_fields.key) = lower(",
@@ -728,23 +738,12 @@ fn push_qualified_search(sql: &mut QueryBuilder<'_, Postgres>, key: &str, value:
     }
 }
 
-fn report_state_mask(value: &str) -> u8 {
-    if value.eq_ignore_ascii_case("all") {
-        return 7;
-    }
-
-    value.split('|').fold(0, |mask, state| {
-        mask | match state.to_ascii_lowercase().as_str() {
-            "triage" => 1,
-            "confirmed" => 2,
-            "assigned" => 4,
-            _ => 0,
-        }
-    })
-}
-
-fn push_report_column_filter(sql: &mut QueryBuilder<'_, Postgres>, column: &str, value: &str) {
-    sql.push(" AND lower(")
+fn push_report_column_filter_predicate(
+    sql: &mut QueryBuilder<'_, Postgres>,
+    column: &str,
+    value: &str,
+) {
+    sql.push("lower(")
         .push(column)
         .push(") = lower(")
         .push_bind(value.to_owned())

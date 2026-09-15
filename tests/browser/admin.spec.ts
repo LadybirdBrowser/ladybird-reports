@@ -233,7 +233,8 @@ test.describe("authenticated management UI", () => {
 
   test("searches reports with qualified syntax", async ({ page }) => {
     await page.goto("/");
-    await expect(page.getByLabel("Search reports")).toHaveValue("state:triage|confirmed");
+    await expect(page.getByLabel("Search reports"))
+      .toHaveValue("state:triage state:confirmed");
     await expect(page.getByRole("button", { name: "Apply filters" })).toHaveCount(0);
     await page.evaluate(() => ((window as any).reportPageStayedLoaded = true));
     const search = page.getByLabel("Search reports");
@@ -257,6 +258,14 @@ test.describe("authenticated management UI", () => {
     await expect.poll(() => new URL(page.url()).searchParams.get("q"))
       .toBe("platform:linux");
     await expect(page.locator("tbody tr")).toHaveCount(2);
+
+    await search.fill("plat");
+    await expect(page.getByRole("option", { name: /^platform:/ })).toBeVisible();
+    await search.fill("state:triage platform:macos platform:linux");
+    await search.press("Enter");
+    await expect.poll(() => new URL(page.url()).searchParams.get("q"))
+      .toBe("state:triage platform:macos platform:linux");
+    await expect(page.locator("tbody tr")).toHaveCount(4);
   });
 
   test("defaults to active reports and clearing search includes assigned", async ({ page }) => {

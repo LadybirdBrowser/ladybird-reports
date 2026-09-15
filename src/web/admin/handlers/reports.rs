@@ -318,7 +318,7 @@ pub async fn search_completions(
     let key = key.to_ascii_lowercase();
     let prefix = value_prefix.trim_matches('"').to_ascii_lowercase();
     let values = match key.as_str() {
-        "state" => vec!["triage|confirmed", "triage", "confirmed", "assigned", "all"]
+        "state" => vec!["triage", "confirmed", "assigned", "all"]
             .into_iter()
             .map(str::to_owned)
             .collect(),
@@ -754,7 +754,7 @@ fn report_state(is_assigned: bool, is_confirmed: bool) -> (&'static str, &'stati
 }
 
 fn default_report_search() -> String {
-    "state:triage|confirmed".into()
+    "state:triage state:confirmed".into()
 }
 
 fn field_string(
