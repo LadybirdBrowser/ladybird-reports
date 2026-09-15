@@ -47,8 +47,19 @@ the challenge. The application then atomically renames the staging directory to
 `reports/<report-id>` and marks the report `ready`.
 
 The public API can recover an interrupted finalization. Admin pages only expose ready
-reports. Unreferenced staging directories can be removed after their upload lease has
-expired.
+reports. Dropping an interrupted request schedules immediate staging cleanup. A
+periodic public API sweep is the durable fallback: it removes expired challenges,
+rate buckets, upload leases, and staging directories that are both old enough and
+unreferenced by a report.
+
+## Retention
+
+New reports and attachments receive an expiry derived from the database-backed runtime
+configuration. The default is ten years. The admin maintenance loop backfills that
+expiry on older records, marks expired records for deletion, removes their attachment
+directories, and then deletes the database rows. It also removes expired sessions and
+OAuth state. Sweep frequency, staging retention, and report retention are editable in
+the management settings and constrained by compiled safety ranges.
 
 ## Operations
 

@@ -2,7 +2,10 @@
 
 The anonymous API is hostile input. It must remain bounded in request size, decoded
 image size, field count, processing time, storage use, request rate, and concurrent
-uploads. Submitted content is never written to logs or interpreted as HTML.
+uploads. PNG validation applies both a pixel ceiling and a decoded-byte ceiling before
+allocating its frame buffer. A weighted semaphore caps aggregate decoder reservations
+at 128 MiB per public API process. Submitted content is never written to logs or
+interpreted as HTML.
 
 Proof of work raises the cost of bulk submissions but does not establish authenticity.
 IP rate limits and global capacity limits remain necessary.
@@ -20,8 +23,12 @@ rate limits, upload leases, idempotency checks, and report acceptance.
 Management access requires GitHub authentication and an authorized account. The
 GitHub App uses a user access token with read-only organization membership and
 read-write issue permissions; it has no source-code write permission. State-changing
-forms require a CSRF token. GitHub issue creation always presents an editable preview,
-and only the selected text is published.
+forms require a CSRF token. GitHub issue creation presents editable title and body
+fields in the report action, and only the selected text is published.
+
+Reports and attachments expire after the configured long retention period. Maintenance
+deletes expired database content and attachment files. Short-lived unauthenticated and
+authentication records are removed after their individual expiry timestamps.
 
 Secrets are supplied at runtime by Coolify. They are absent from the source tree,
 container build arguments, image environment, and logs.
