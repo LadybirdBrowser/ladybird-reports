@@ -83,6 +83,10 @@ moving `master` tags to GitHub Container Registry. The final workflow job sends
 signed deployment events to both Coolify resources. Coolify pulls the published
 image and does not build application source.
 
+The image build exports its BuildKit cache to GitHub Actions. Its `cargo-chef`
+dependency layer changes only when the Rust package manifests change, so ordinary
+source and template updates reuse compiled release dependencies across CI runs.
+
 The image build embeds a display version in the form `YYYY.MM.DD-aaaaaaaa`, using
 the UTC build date and the first eight characters of the Git commit identifier.
 

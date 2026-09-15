@@ -1,14 +1,28 @@
-FROM rust:1.88-bookworm AS builder
+FROM rust:1.88-bookworm AS chef
+
+RUN cargo install cargo-chef --locked --version 0.1.78
+
+WORKDIR /source
+
+FROM chef AS planner
+
+COPY . .
+
+RUN cargo chef prepare --recipe-path recipe.json
+
+FROM chef AS builder
+
+COPY --from=planner /source/recipe.json recipe.json
+
+RUN cargo chef cook --locked --release --recipe-path recipe.json \
+    --bin admin \
+    --bin migrate \
+    --bin public_api
+
+COPY . .
 
 ARG BUILD_VERSION=0.1.0-dev
 ENV LADYBIRD_REPORTS_VERSION=${BUILD_VERSION}
-
-WORKDIR /source
-COPY Cargo.toml Cargo.lock ./
-COPY src ./src
-COPY migrations ./migrations
-COPY templates ./templates
-COPY assets ./assets
 
 RUN cargo build --locked --release \
     --bin admin \
