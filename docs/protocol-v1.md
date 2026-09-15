@@ -31,6 +31,22 @@ The supported field value types are `text`, `multiline`, `number`, `boolean`, an
 limits and are identified as unknown in the management interface. Unknown envelope
 members are rejected; envelope changes require a new protocol version.
 
+The initial client uses these conventional diagnostic fields:
+
+| Key | Type | Meaning |
+| --- | --- | --- |
+| `stack` | `multiline` | Client-symbolicated native stack trace, one frame per line. |
+| `signal` | `text` | Terminating signal or equivalent exception name. |
+| `platform` | `text` | Operating system or platform name. |
+| `architecture` | `text` | Process architecture such as `arm64` or `x86_64`. |
+| `description` | `multiline` | User-provided problem description. |
+| `hostname` | `text` | Optional website hostname. |
+| `url` | `text` | Optional complete page URL. |
+
+The registry can grow independently of the protocol. A newer client may submit
+other valid keys, which remain visible as unknown fields until maintainers add a
+definition.
+
 All identifiers are UUIDv7. A client generates a fresh `submission_id` when it first
 creates a report and reuses that value when retrying the same submission. Each
 attachment also gets a client-generated UUIDv7, used both in its manifest entry and

@@ -13,7 +13,7 @@ use crate::{
     error::{AppError, Result},
 };
 
-use super::{PublicState, rate_limit::ClientAddressKey};
+use super::{PublicState, rate_limit::ClientAddress};
 
 const MANIFEST_PART_NAME: &str = "manifest";
 
@@ -92,7 +92,7 @@ pub async fn issue_challenge(
 
 pub async fn submit_report(
     State(state): State<PublicState>,
-    Extension(client): Extension<ClientAddressKey>,
+    Extension(client): Extension<ClientAddress>,
     headers: HeaderMap,
     mut multipart: Multipart,
 ) -> Result<Json<ReportResponse>> {
@@ -121,7 +121,7 @@ pub async fn submit_report(
     let upload_id = prepared.upload_id;
     let lease_acquired = match state
         .ingestion
-        .acquire_upload_lease(upload_id, &client.0, &configuration)
+        .acquire_upload_lease(upload_id, &client.key, &configuration)
         .await
     {
         Ok(acquired) => acquired,
@@ -141,7 +141,7 @@ pub async fn submit_report(
     let deadline = std::time::Duration::from_secs(configuration.limits.upload_timeout_seconds);
     let result = tokio::time::timeout(
         deadline,
-        receive_and_accept(&state, prepared, multipart, manifest_bytes.len(), &client.0),
+        receive_and_accept(&state, prepared, multipart, manifest_bytes.len(), &client),
     )
     .await
     .map_err(|_| AppError::DeadlineExceeded)
@@ -165,7 +165,7 @@ async fn receive_and_accept(
     prepared: crate::application::PreparedSubmission,
     mut multipart: Multipart,
     manifest_size: usize,
-    source_client_key: &str,
+    source: &ClientAddress,
 ) -> Result<crate::domain::ReportId> {
     let configuration = state.ingestion.configuration().await?;
     let attachments = prepared
@@ -226,7 +226,7 @@ async fn receive_and_accept(
 
     state
         .ingestion
-        .accept_submission(prepared, source_client_key)
+        .accept_submission(prepared, &source.key, source.ip)
         .await
 }
 

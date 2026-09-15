@@ -21,6 +21,7 @@ Run the complete local test suite with:
 
 - [Architecture](docs/architecture.md)
 - [Public API protocol](docs/protocol-v1.md)
+- [Management interface](docs/management.md)
 - [Deployment](docs/deployment.md)
 - [Development and testing](docs/development.md)
 - [Operations](docs/operations.md)

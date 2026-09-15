@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, net::IpAddr};
 
 use chrono::DateTime;
 use serde::Serialize;
@@ -40,6 +40,7 @@ pub struct AcceptReportRequest<'a> {
     pub manifest: &'a ReportManifest,
     pub upload_id: UploadId,
     pub source_client_key: &'a str,
+    pub source_ip: IpAddr,
     pub definitions: &'a HashMap<String, FieldDefinition>,
     pub retention_days: u32,
 }
@@ -240,7 +241,7 @@ impl IngestDatabase {
 
         let row = sqlx::query(
             "SELECT * FROM accept_report(
-                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12
+                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::inet, $12, $13
             )",
         )
         .bind(request.claims.id)
@@ -253,6 +254,7 @@ impl IngestDatabase {
         .bind(&request.manifest.build)
         .bind(request.upload_id)
         .bind(request.source_client_key)
+        .bind(request.source_ip.to_string())
         .bind(serde_json::to_value(fields).expect("stored fields are serializable"))
         .bind(serde_json::to_value(attachments).expect("stored attachments are serializable"))
         .fetch_one(&mut *transaction)

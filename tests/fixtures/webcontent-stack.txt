@@ -1,0 +1,9 @@
+Native stack (binary build ID, object address):
+#0 e420d91cf45b3abd8e6882b97d964c78 0x100040633 AK::Function<void ()>::CallableWrapper<WebContent::ConnectionFromClient::debug_request(AK::DistinctNumeric<unsigned long long, Web::__PageId_tag, AK::DistinctNumericFeature::Comparison, AK::DistinctNumericFeature::CastToBool>, AK::ByteString, AK::ByteString)::$_2>::call() at Build/release/bin/Ladybird.app/Contents/MacOS/WebContent
+#1 0720361fd22e36d09658b81f4ceaf8c9 0x1f3c3 Core::ThreadEventQueue::process() at Build/release/lib/liblagom-core.0.1.0.dylib
+#2 0720361fd22e36d09658b81f4ceaf8c9 0x23fa3 Core::EventLoopImplementationUnix::exec() at Build/release/lib/liblagom-core.0.1.0.dylib
+#3 e420d91cf45b3abd8e6882b97d964c78 0x10000a707 ladybird_main(Main::Arguments) at Build/release/bin/Ladybird.app/Contents/MacOS/WebContent
+#4 e420d91cf45b3abd8e6882b97d964c78 0x10010fe6b _main at Build/release/bin/Ladybird.app/Contents/MacOS/WebContent
+#5 unavailable
+
+Stacks may be partial.

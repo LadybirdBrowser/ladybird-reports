@@ -1,5 +1,8 @@
 FROM rust:1.88-bookworm AS builder
 
+ARG BUILD_VERSION=0.1.0-dev
+ENV LADYBIRD_REPORTS_VERSION=${BUILD_VERSION}
+
 WORKDIR /source
 COPY Cargo.toml Cargo.lock ./
 COPY src ./src

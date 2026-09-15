@@ -9,6 +9,7 @@ use sqlx::postgres::PgPoolOptions;
 const REPORT_ID: &str = "01a0a536-01cd-7ac7-a3cf-ae6a2d5030e5";
 const SUBMISSION_ID: &str = "01a0a536-01d0-7c59-9b22-b9b210042528";
 const STAGING_ID: &str = "01a0a536-01d2-7668-ad21-8f997d60ebb3";
+const WEB_CONTENT_STACK: &str = include_str!("../../tests/fixtures/webcontent-stack.txt");
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -76,7 +77,8 @@ async fn main() -> Result<()> {
             build,
             storage_state,
             staging_id,
-            source_client_key
+            source_client_key,
+            source_ip
          )
          VALUES (
             $1,
@@ -87,7 +89,8 @@ async fn main() -> Result<()> {
             'Debug ARM64',
             'ready',
             $3,
-            repeat('b', 64)
+            repeat('b', 64),
+            '127.0.0.1'::inet
          )
          ON CONFLICT (id) DO NOTHING",
     )
@@ -115,14 +118,35 @@ async fn main() -> Result<()> {
          )
          VALUES
             ($1, 'stack', 'multiline', $2, true),
-            ($1, 'future-field', 'text', $3, false)
+            ($1, 'platform', 'text', $3, true),
+            ($1, 'architecture', 'text', $4, true),
+            ($1, 'signal', 'text', $5, true),
+            ($1, 'future-field', 'text', $6, false)
          ON CONFLICT (report_id, key) DO NOTHING",
     )
     .bind(REPORT_ID.parse::<ReportId>().expect("valid fixture UUIDv7"))
-    .bind(serde_json::json!("ladybird!WebContentMain + 42"))
+    .bind(serde_json::json!(WEB_CONTENT_STACK.trim()))
+    .bind(serde_json::json!("macOS"))
+    .bind(serde_json::json!("arm64"))
+    .bind(serde_json::json!("SIGABRT"))
     .bind(serde_json::json!(
         "<script>window.fixtureWasExecuted = true</script>"
     ))
+    .execute(&mut *transaction)
+    .await?;
+
+    sqlx::query(
+        "INSERT INTO audit_events (actor, action)
+         VALUES (12345, 'session.signed_in')",
+    )
+    .execute(&mut *transaction)
+    .await?;
+
+    sqlx::query(
+        "INSERT INTO audit_events (action, entity_id, details)
+         VALUES ('report.submitted', $1, '{\"kind\": \"web_compat\"}'::jsonb)",
+    )
+    .bind(REPORT_ID.parse::<ReportId>().expect("valid fixture UUIDv7"))
     .execute(&mut *transaction)
     .await?;
 
@@ -144,6 +168,8 @@ async fn main() -> Result<()> {
             kind: "crash",
             client_version: "Ladybird Nightly 2026-09-15",
             build: "macOS · arm64 · Release",
+            platform: "macOS",
+            architecture: "arm64",
             hours_ago: 1,
             issue_id: None,
         },
@@ -151,6 +177,8 @@ async fn main() -> Result<()> {
             kind: "web_compat",
             client_version: "Ladybird Nightly 2026-09-15",
             build: "Linux · x86_64 · Debug",
+            platform: "Linux",
+            architecture: "x86_64",
             hours_ago: 3,
             issue_id: None,
         },
@@ -158,6 +186,8 @@ async fn main() -> Result<()> {
             kind: "crash",
             client_version: "0.7.0-alpha",
             build: "macOS · arm64 · ASan",
+            platform: "macOS",
+            architecture: "arm64",
             hours_ago: 7,
             issue_id: None,
         },
@@ -165,6 +195,8 @@ async fn main() -> Result<()> {
             kind: "web_compat",
             client_version: "Ladybird Nightly 2026-09-14",
             build: "Linux · x86_64 · Release",
+            platform: "Linux",
+            architecture: "x86_64",
             hours_ago: 18,
             issue_id: Some(existing_issue_id),
         },
@@ -184,6 +216,8 @@ struct ExampleReport<'a> {
     kind: &'a str,
     client_version: &'a str,
     build: &'a str,
+    platform: &'a str,
+    architecture: &'a str,
     hours_ago: i32,
     issue_id: Option<IssueId>,
 }
@@ -192,6 +226,9 @@ async fn insert_example_report(
     transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     report: ExampleReport<'_>,
 ) -> Result<()> {
+    let report_id = ReportId::new();
+    let submission_id = SubmissionId::new();
+
     sqlx::query(
         "INSERT INTO reports (
             id,
@@ -203,6 +240,7 @@ async fn insert_example_report(
             storage_state,
             staging_id,
             source_client_key,
+            source_ip,
             issue_id,
             assigned_at,
             created_at,
@@ -218,19 +256,55 @@ async fn insert_example_report(
             'ready',
             $6,
             repeat('d', 64),
+            '127.0.0.1'::inet,
             $7,
             CASE WHEN $7::uuid IS NULL THEN NULL ELSE now() END,
             now() - make_interval(hours => $8),
             now() - make_interval(hours => $8)
          )",
     )
-    .bind(ReportId::new())
-    .bind(SubmissionId::new())
+    .bind(report_id)
+    .bind(submission_id)
     .bind(report.kind)
     .bind(report.client_version)
     .bind(report.build)
     .bind(UploadId::new())
     .bind(report.issue_id)
+    .bind(report.hours_ago)
+    .execute(&mut **transaction)
+    .await?;
+
+    sqlx::query(
+        "INSERT INTO report_fields (
+            report_id,
+            key,
+            kind,
+            value,
+            recognized_at_submission
+         )
+         VALUES
+            ($1, 'platform', 'text', $2, true),
+            ($1, 'architecture', 'text', $3, true),
+            ($1, 'stack', 'multiline', $4, true)",
+    )
+    .bind(report_id)
+    .bind(serde_json::json!(report.platform))
+    .bind(serde_json::json!(report.architecture))
+    .bind(serde_json::json!(WEB_CONTENT_STACK.trim()))
+    .execute(&mut **transaction)
+    .await?;
+
+    sqlx::query(
+        "INSERT INTO audit_events (action, entity_id, details, created_at)
+         VALUES (
+            'report.submitted',
+            $1,
+            jsonb_build_object('kind', $2::text),
+            now() - make_interval(hours => $3)
+         )",
+    )
+    .bind(report_id)
+    .bind(report.kind)
     .bind(report.hours_ago)
     .execute(&mut **transaction)
     .await?;

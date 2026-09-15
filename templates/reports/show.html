@@ -22,25 +22,30 @@
             <section class="card" aria-labelledby="overview-title">
                 <div class="card-header">
                     <h2 id="overview-title">Overview</h2>
-                    <p>{{ report.created_at }}</p>
                 </div>
                 <dl class="definition-list">
-                    <div>
-                        <dt>Client version</dt>
-                        <dd>{{ report.client_version }}</dd>
-                    </div>
-                    <div>
-                        <dt>Build</dt>
-                        <dd>{{ report.build }}</dd>
-                    </div>
-                    <div>
-                        <dt>Submission ID</dt>
-                        <dd><code>{{ report.submission_id }}</code></dd>
-                    </div>
-                    <div>
-                        <dt>Manifest digest</dt>
-                        <dd><code>{{ report.manifest_digest }}</code></dd>
-                    </div>
+                    {% for field in report.overview %}
+                        <div>
+                            <dt>{{ field.label }}</dt>
+                            <dd class="overview-value">
+                                {% if field.monospace %}
+                                    <code>{{ field.value }}</code>
+                                {% else %}
+                                    {{ field.value }}
+                                {% endif %}
+                                {% if let Some(filter_url) = field.filter_url %}
+                                    <a
+                                        class="field-filter-button"
+                                        href="{{ filter_url }}"
+                                        aria-label="Filter reports by {{ field.label }}"
+                                        title="Find reports with this value"
+                                    >
+                                        <span aria-hidden="true"></span>
+                                    </a>
+                                {% endif %}
+                            </dd>
+                        </div>
+                    {% endfor %}
                 </dl>
             </section>
 
@@ -62,10 +67,24 @@
                 {% for field in known_fields %}
                     <article class="report-field">
                         <header class="report-field-header">
-                            <h3>{{ field.label }}</h3>
-                            <p class="quiet"><code>{{ field.key }}</code> · {{ field.kind }}</p>
+                            <div>
+                                <h3>{{ field.label }}</h3>
+                                <p class="quiet"><code>{{ field.key }}</code> · {{ field.kind }}</p>
+                            </div>
+                            <a
+                                class="field-filter-button"
+                                href="{{ field.filter_url }}"
+                                aria-label="Filter reports by {{ field.label }}"
+                                title="Find reports with this value"
+                            >
+                                <span aria-hidden="true"></span>
+                            </a>
                         </header>
-                        <pre>{{ field.value }}</pre>
+                        {% if field.is_stack %}
+                            <pre class="stack-trace"><code>{{ field.value }}</code></pre>
+                        {% else %}
+                            <pre>{{ field.value }}</pre>
+                        {% endif %}
                     </article>
                 {% endfor %}
             </section>
@@ -85,8 +104,18 @@
                     {% for field in unknown_fields %}
                         <article class="report-field">
                             <header class="report-field-header">
-                                <h3>{{ field.key }}</h3>
-                                <span class="badge badge-warning">Unknown field</span>
+                                <div>
+                                    <h3>{{ field.key }}</h3>
+                                    <span class="badge badge-warning">Unknown field</span>
+                                </div>
+                                <a
+                                    class="field-filter-button"
+                                    href="{{ field.filter_url }}"
+                                    aria-label="Filter reports by {{ field.key }}"
+                                    title="Find reports with this value"
+                                >
+                                    <span aria-hidden="true"></span>
+                                </a>
                             </header>
                             <pre>{{ field.value }}</pre>
                         </article>
@@ -161,7 +190,6 @@
         <aside class="card sticky-card action-card" aria-labelledby="actions-title">
             <div class="card-header">
                 <h2 id="actions-title">Actions</h2>
-                <span class="badge badge-neutral">Restricted</span>
             </div>
             <div class="card-body">
                 <section class="action-group">
@@ -355,8 +383,8 @@
                             </form>
                         {% else %}
                             <p>
-                                Permanently rate-limit the source of this report. The server stores
-                                a keyed identifier and never stores or reveals the raw IP address.
+                                Block this address indefinitely. Future requests are rejected before
+                                the server issues a proof-of-work challenge.
                             </p>
                             <form method="post" action="/reports/{{ report.id }}/block-ip">
                                 <input

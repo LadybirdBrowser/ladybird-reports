@@ -10,11 +10,12 @@ interpreted as HTML.
 Proof of work raises the cost of bulk submissions but does not establish authenticity.
 IP rate limits and global capacity limits remain necessary.
 
-The server HMACs normalized client addresses before storing or logging any identifier
-derived from them. Reports retain that keyed identifier so an administrator can impose an
-indefinite rate limit from the report action panel. The raw address cannot be recovered
-from the stored value. Rotating `CLIENT_ADDRESS_HMAC_KEY` intentionally breaks matching
-against earlier blocks, so the key must remain stable during normal operation.
+The server HMACs normalized client addresses for rate-limit buckets and source blocks.
+Reports retain that keyed identifier so an administrator can impose an indefinite rate
+limit from the report action panel. They also retain the source address for triage until
+the report expires. The address is visible only in the management interface and is never
+written to application logs. Rotating `CLIENT_ADDRESS_HMAC_KEY` intentionally breaks
+matching against earlier blocks, so the key must remain stable during normal operation.
 
 The ingestion database role cannot read report bodies, attachments, sessions, audit
 events, or GitHub tokens. It can execute narrowly scoped functions for challenges,

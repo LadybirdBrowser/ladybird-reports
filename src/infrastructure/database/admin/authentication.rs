@@ -70,6 +70,14 @@ impl AdminDatabase {
         .execute(&mut *transaction)
         .await?;
 
+        sqlx::query(
+            "INSERT INTO audit_events (actor, action)
+             VALUES ($1, 'session.signed_in')",
+        )
+        .bind(github_id)
+        .execute(&mut *transaction)
+        .await?;
+
         transaction.commit().await?;
         Ok(())
     }
@@ -112,11 +120,23 @@ impl AdminDatabase {
         Ok(())
     }
 
-    pub async fn delete_session(&self, token_hash: &str) -> Result<()> {
+    pub async fn delete_session(&self, token_hash: &str, github_id: i64) -> Result<()> {
+        let mut transaction = self.pool.begin().await?;
+
+        sqlx::query(
+            "INSERT INTO audit_events (actor, action)
+             VALUES ($1, 'session.signed_out')",
+        )
+        .bind(github_id)
+        .execute(&mut *transaction)
+        .await?;
+
         sqlx::query("DELETE FROM sessions WHERE token_hash = $1")
             .bind(token_hash)
-            .execute(&self.pool)
+            .execute(&mut *transaction)
             .await?;
+
+        transaction.commit().await?;
 
         Ok(())
     }

@@ -2,6 +2,11 @@ import { expect, test } from "@playwright/test";
 
 const reportId = "01a0a536-01cd-7ac7-a3cf-ae6a2d5030e5";
 
+async function chooseSelectOption(page, label: string, option: string): Promise<void> {
+  await page.getByRole("combobox", { name: label }).click();
+  await page.getByRole("option", { name: option, exact: true }).click();
+}
+
 test("unauthenticated visitors can only reach the sign-in page", async ({ page }) => {
   await page.setExtraHTTPHeaders({ "x-request-id": "caller-controlled" });
   const response = await page.goto("/");
@@ -17,10 +22,15 @@ test("unauthenticated visitors can only reach the sign-in page", async ({ page }
     "src",
     "/assets/ladybird-mark.png",
   );
+  expect(
+    await page.locator(".login-emblem img").evaluate(
+      (image: HTMLImageElement) => image.naturalWidth === image.naturalHeight,
+    ),
+  ).toBe(true);
 
   const visibleText = await page.locator("body").innerText();
   expect(visibleText).not.toMatch(/maintainer|LadybirdBrowser\/maintainers/i);
-  await expect(page.locator("footer")).toContainText("Diagnostic triage");
+  await expect(page.locator("footer")).toContainText("Ladybird Reports · 0.1.0-dev");
 });
 
 test.describe("authenticated management UI", () => {
@@ -39,8 +49,18 @@ test.describe("authenticated management UI", () => {
 
     await page.getByRole("link", { name: reportId }).click();
     await expect(page.getByRole("heading", { name: "Native stack" })).toBeVisible();
+    await expect(page.getByText("Core::ThreadEventQueue::process()")).toBeVisible();
+    await expect(page.getByText("macOS", { exact: true }).first()).toBeVisible();
+    await expect(page.getByText("arm64", { exact: true }).first()).toBeVisible();
+    await expect(page.getByText("127.0.0.1", { exact: true })).toBeVisible();
     await expect(page.getByText("Unknown field", { exact: true })).toBeVisible();
     await expect(page.locator("pre").filter({ hasText: "<script>" })).toBeVisible();
+
+    await page.getByRole("region", { name: "Overview" })
+      .getByRole("link", { name: "Filter reports by Platform" })
+      .click();
+    await expect(page).toHaveURL(/q=platform%3A%22macOS%22/);
+    await expect(page.getByRole("link", { name: reportId })).toBeVisible();
 
     expect(await page.evaluate(() => (window as any).fixtureWasExecuted)).toBeUndefined();
   });
@@ -143,15 +163,30 @@ test.describe("authenticated management UI", () => {
     await expect(page.getByLabel("GitHub body")).toBeVisible();
   });
 
-  test("enhances native select controls", async ({ page }) => {
+  test("uses a custom popover for select controls", async ({ page }) => {
     await page.goto("/");
 
-    const stateSelect = page.getByLabel("State");
-    await expect(stateSelect).toBeVisible();
-    await expect(stateSelect.locator("xpath=..")).toHaveClass("select-control");
-    expect(
-      await stateSelect.evaluate((element) => getComputedStyle(element).appearance),
-    ).toBe("none");
+    const stateSelect = page.getByRole("combobox", { name: "State" });
+    await expect(stateSelect).toHaveText("Triage");
+    await stateSelect.click();
+
+    const listbox = page.getByRole("listbox", { name: "State" });
+    await expect(listbox).toBeVisible();
+    await expect(page.getByRole("option", { name: "Assigned", exact: true })).toBeVisible();
+    await page.getByRole("option", { name: "All reports", exact: true }).click();
+    await expect(stateSelect).toHaveText("All reports");
+    await expect(page.locator('select[name="state"]')).toHaveValue("all");
+  });
+
+  test("searches reports with qualified syntax", async ({ page }) => {
+    await page.goto("/");
+    await page.getByLabel("Search reports").fill("platform:macOS kind:crash");
+    await page.getByRole("button", { name: "Apply filters" }).click();
+
+    await expect(page).toHaveURL(/q=platform%3AmacOS\+kind%3Acrash/);
+    await expect(page.locator("tbody tr")).toHaveCount(2);
+    await expect(page.locator("tbody tr").nth(0)).toContainText("macOS");
+    await expect(page.locator("tbody tr").nth(1)).toContainText("macOS");
   });
 
   test("blocks and unblocks the submission source from the report actions", async ({ page }) => {
@@ -191,9 +226,34 @@ test.describe("authenticated management UI", () => {
     await expect(orderedRows.nth(0)).toContainText("signal");
     await expect(orderedRows.nth(1)).toContainText("stack");
 
-    await page.getByRole("button", { name: "Save field order" }).click();
+    await expect(page.getByRole("button", { name: "Save field order" })).toHaveCount(0);
+    await expect(page.getByText("Native stack is now at position 2.")).toBeVisible();
+    await page.reload();
     await expect(orderedRows.nth(0)).toContainText("signal");
     await expect(orderedRows.nth(1)).toContainText("stack");
+  });
+
+  test("explains the runtime setting under the caret", async ({ page }) => {
+    await page.goto("/settings");
+
+    const editor = page.getByLabel("Configuration JSON");
+    await editor.evaluate((element: HTMLTextAreaElement) => {
+      const offset = element.value.indexOf('"staging_retention_seconds"');
+      element.focus();
+      element.setSelectionRange(offset, offset);
+      element.dispatchEvent(new Event("select", { bubbles: true }));
+    });
+
+    await expect(page.getByRole("heading", { name: "Staging retention" })).toBeVisible();
+    await expect(page.getByText("Seconds since the staging directory was last modified.")).toBeVisible();
+  });
+
+  test("opens account actions in a popover", async ({ page }) => {
+    await page.goto("/");
+
+    await page.getByRole("button", { name: "Open account menu for browser-tester" }).click();
+    await expect(page.getByText("Signed in as")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible();
   });
 
   test("creates an issue, assigns the report, and filters it from triage", async ({ page }) => {
@@ -212,7 +272,7 @@ test.describe("authenticated management UI", () => {
     await page.getByRole("link", { name: "Reports", exact: true }).click();
     await expect(page.getByRole("link", { name: reportId })).toHaveCount(0);
 
-    await page.getByLabel("State").selectOption("assigned");
+    await chooseSelectOption(page, "State", "Assigned");
     await page.getByRole("button", { name: "Apply filters" }).click();
     await expect(page.getByRole("link", { name: reportId })).toBeVisible();
   });
@@ -224,5 +284,7 @@ test.describe("authenticated management UI", () => {
     await expect(page.getByText("field_definitions.reordered", { exact: true })).toBeVisible();
     await expect(page.getByText("report.source_blocked", { exact: true })).toBeVisible();
     await expect(page.getByText("issue.created", { exact: true })).toBeVisible();
+    await expect(page.getByText("report.submitted", { exact: true }).first()).toBeVisible();
+    await expect(page.getByText("session.signed_in", { exact: true })).toBeVisible();
   });
 });

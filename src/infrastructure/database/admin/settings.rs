@@ -22,7 +22,7 @@ impl AdminDatabase {
 
     pub async fn configuration_record(&self) -> Result<ConfigurationRecord> {
         let row = sqlx::query(
-            "SELECT value, revision, updated_at
+            "SELECT value, updated_at
              FROM runtime_configuration
              WHERE singleton = true",
         )
@@ -31,7 +31,6 @@ impl AdminDatabase {
 
         Ok(ConfigurationRecord {
             value: row.get("value"),
-            revision: row.get("revision"),
             updated_at: row.get("updated_at"),
         })
     }
@@ -39,45 +38,33 @@ impl AdminDatabase {
     pub async fn update_configuration(
         &self,
         configuration: &RuntimeConfiguration,
-        expected_revision: i64,
         actor: i64,
-    ) -> Result<i64> {
+    ) -> Result<()> {
         configuration.validate()?;
 
         let value = serde_json::to_value(configuration)
             .map_err(|error| AppError::Internal(error.into()))?;
         let mut transaction = self.pool.begin().await?;
 
-        let row = sqlx::query(
+        sqlx::query(
             "UPDATE runtime_configuration
-             SET value = $1, revision = revision + 1, updated_at = now()
-             WHERE singleton = true AND revision = $2
-             RETURNING revision",
+             SET value = $1, updated_at = now()
+             WHERE singleton = true",
         )
         .bind(value)
-        .bind(expected_revision)
-        .fetch_optional(&mut *transaction)
+        .execute(&mut *transaction)
         .await?;
-
-        let Some(row) = row else {
-            return Err(AppError::Conflict(
-                "Configuration changed while it was being edited",
-            ));
-        };
-
-        let revision: i64 = row.get("revision");
 
         sqlx::query(
             "INSERT INTO audit_events (actor, action, details)
-             VALUES ($1, 'configuration.updated', $2)",
+             VALUES ($1, 'configuration.updated', '{}')",
         )
         .bind(actor)
-        .bind(serde_json::json!({ "revision": revision }))
         .execute(&mut *transaction)
         .await?;
 
         transaction.commit().await?;
-        Ok(revision)
+        Ok(())
     }
 
     pub async fn field_definitions(&self) -> Result<Vec<FieldDefinitionRecord>> {

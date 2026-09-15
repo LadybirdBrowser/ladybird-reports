@@ -12,7 +12,6 @@
                 Compiled safety ceilings still apply.
             </p>
         </div>
-        <span class="badge badge-neutral">Revision {{ revision }}</span>
     </header>
 
     <div class="settings-grid">
@@ -27,37 +26,119 @@
                     name="csrf"
                     value="{{ navigation.as_ref().unwrap().csrf_token }}"
                 >
-                <input type="hidden" name="revision" value="{{ revision }}">
                 <label>
                     Configuration JSON
                     <textarea
-                        class="code-editor"
+                        class="code-editor settings-editor"
                         name="configuration"
                         rows="34"
                         spellcheck="false"
+                        data-settings-editor
                     >{{ configuration }}</textarea>
                 </label>
                 <p class="form-note">
-                    Saving validates the complete document and rejects stale revisions.
+                    The complete document is validated before it becomes active.
                 </p>
                 <button type="submit">Validate and save</button>
             </form>
         </section>
 
-        <aside class="card sticky-card" aria-labelledby="field-definition-title">
+        <aside class="card sticky-card settings-help" aria-labelledby="setting-help-title">
             <div class="card-header">
-                <h2 id="field-definition-title">Field definition</h2>
+                <h2 id="setting-help-title">Setting details</h2>
             </div>
-            <form class="card-body" method="post" action="/settings/fields">
+            <div class="card-body" data-settings-help>
+                <div class="settings-help-empty" data-settings-help-empty>
+                    <span class="settings-help-icon" aria-hidden="true">i</span>
+                    <strong>Place the caret on a setting</strong>
+                    <p>Its purpose and expected value will appear here.</p>
+                </div>
+                {% for definition in setting_definitions %}
+                    <article
+                        class="setting-help-entry"
+                        data-setting-help-entry
+                        data-setting-key="{{ definition.key }}"
+                        hidden
+                    >
+                        <p class="eyebrow">{{ definition.path }}</p>
+                        <h3>{{ definition.title }}</h3>
+                        <p>{{ definition.description }}</p>
+                        <div class="setting-value-description">
+                            <strong>Value</strong>
+                            <span>{{ definition.value_description }}</span>
+                        </div>
+                    </article>
+                {% endfor %}
+            </div>
+        </aside>
+    </div>
+
+    <section class="card settings-table" aria-labelledby="recognized-fields-title">
+        <div class="card-header">
+            <div>
+                <h2 id="recognized-fields-title">Recognized fields</h2>
+                <p>Drag a handle to change the display order. Changes save immediately.</p>
+            </div>
+            <span class="badge badge-neutral">{{ fields.len() }}</span>
+        </div>
+
+        <div
+            data-field-order-form
+            data-order-url="/settings/fields/order"
+            data-csrf="{{ navigation.as_ref().unwrap().csrf_token }}"
+        >
+            <div class="table-scroll">
+                <table class="field-order-table">
+                    <thead>
+                        <tr>
+                            <th>Order</th>
+                            <th>Key</th>
+                            <th>Label</th>
+                            <th>Type</th>
+                        </tr>
+                    </thead>
+                    <tbody data-field-order-list>
+                        {% for field in fields %}
+                            <tr data-field-row data-field-key="{{ field.key }}">
+                                <td class="reorder-cell">
+                                    <button
+                                        type="button"
+                                        class="drag-handle"
+                                        draggable="true"
+                                        aria-label="Reorder {{ field.label }}"
+                                        title="Drag or press Alt+Arrow to reorder"
+                                    >
+                                        <span aria-hidden="true"></span>
+                                    </button>
+                                </td>
+                                <td><code>{{ field.key }}</code></td>
+                                <td>{{ field.label }}</td>
+                                <td><span class="badge badge-neutral">{{ field.kind }}</span></td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            <p class="field-order-status form-note" data-field-order-status aria-live="polite">
+                Field order is up to date.
+            </p>
+        </div>
+
+        <div class="field-definition-panel">
+            <div>
+                <p class="eyebrow">Field definition</p>
+                <h3>Recognize another field</h3>
+                <p class="form-note">
+                    Unknown fields are preserved. Add a definition to give one a stable label,
+                    type, and position at the end of this list.
+                </p>
+            </div>
+            <form method="post" action="/settings/fields">
                 <input
                     type="hidden"
                     name="csrf"
                     value="{{ navigation.as_ref().unwrap().csrf_token }}"
                 >
-                <p class="form-note">
-                    Submissions may contain unknown fields. Add a definition to give a field a
-                    stable label and type. New fields are placed at the end of the list.
-                </p>
                 <label>
                     Key
                     <input name="key" maxlength="64" required>
@@ -78,85 +159,6 @@
                 </label>
                 <button type="submit">Save field definition</button>
             </form>
-        </aside>
-    </div>
-
-    <form
-        class="card settings-table"
-        method="post"
-        action="/settings/fields/order"
-        data-field-order-form
-        aria-labelledby="recognized-fields-title"
-    >
-        <input
-            type="hidden"
-            name="csrf"
-            value="{{ navigation.as_ref().unwrap().csrf_token }}"
-        >
-        <input
-            type="hidden"
-            name="keys"
-            value="{% for field in fields %}{{ field.key }}{% if !loop.last %},{% endif %}{% endfor %}"
-            data-field-order-input
-        >
-        <div class="card-header">
-            <div>
-                <h2 id="recognized-fields-title">Recognized fields</h2>
-                <p>Drag rows into their display order.</p>
-            </div>
-            <span class="badge badge-neutral">{{ fields.len() }}</span>
         </div>
-        <div class="table-scroll">
-            <table class="field-order-table">
-                <thead>
-                    <tr>
-                        <th>Order</th>
-                        <th>Key</th>
-                        <th>Label</th>
-                        <th>Type</th>
-                    </tr>
-                </thead>
-                <tbody data-field-order-list>
-                    {% for field in fields %}
-                        <tr
-                            draggable="true"
-                            tabindex="-1"
-                            data-field-row
-                            data-field-key="{{ field.key }}"
-                        >
-                            <td class="reorder-cell">
-                                <span class="drag-handle" draggable="true" aria-hidden="true">⠿</span>
-                                <span class="visually-hidden">Drag {{ field.label }}</span>
-                                <span class="reorder-buttons">
-                                    <button
-                                        class="reorder-button"
-                                        type="button"
-                                        data-move="up"
-                                        aria-label="Move {{ field.label }} up"
-                                        {% if loop.first %}disabled{% endif %}
-                                    >↑</button>
-                                    <button
-                                        class="reorder-button"
-                                        type="button"
-                                        data-move="down"
-                                        aria-label="Move {{ field.label }} down"
-                                        {% if loop.last %}disabled{% endif %}
-                                    >↓</button>
-                                </span>
-                            </td>
-                            <td><code>{{ field.key }}</code></td>
-                            <td>{{ field.label }}</td>
-                            <td><span class="badge badge-neutral">{{ field.kind }}</span></td>
-                        </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
-        <div class="field-order-footer">
-            <p class="form-note" data-field-order-status aria-live="polite">
-                Order changes are saved when you submit this list.
-            </p>
-            <button type="submit">Save field order</button>
-        </div>
-    </form>
+    </section>
 {% endblock %}

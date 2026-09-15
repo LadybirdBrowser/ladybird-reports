@@ -8,7 +8,7 @@ use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    domain::{AttachmentId, IssueId, ReportId, SubmissionId},
+    domain::{AttachmentId, IssueId, ReportId, ReportSearch, filter_expression},
     error::{AppError, Result},
     infrastructure::database::{ReportAssignmentFilter, ReportQuery},
 };
@@ -23,11 +23,7 @@ pub struct ReportFilters {
     #[serde(default = "default_report_state")]
     state: String,
     #[serde(default)]
-    build: String,
-    #[serde(default)]
-    platform: String,
-    #[serde(default)]
-    kind: String,
+    q: String,
     issue: Option<IssueId>,
     since: Option<NaiveDate>,
     until: Option<NaiveDate>,
@@ -38,9 +34,7 @@ impl Default for ReportFilters {
     fn default() -> Self {
         Self {
             state: default_report_state(),
-            build: String::new(),
-            platform: String::new(),
-            kind: String::new(),
+            q: String::new(),
             issue: None,
             since: None,
             until: None,
@@ -54,9 +48,7 @@ impl Default for ReportFilters {
 pub struct ReportsTemplate {
     navigation: Option<Navigation>,
     state: String,
-    build: String,
-    platform: String,
-    kind: String,
+    search: String,
     reports: Vec<ReportRow>,
     next_page: Option<String>,
 }
@@ -105,14 +97,18 @@ pub struct ReportTemplate {
 
 pub struct ReportView {
     id: ReportId,
-    submission_id: SubmissionId,
-    manifest_digest: String,
     client_version: String,
-    build: String,
+    overview: Vec<OverviewField>,
     is_assigned: bool,
     has_submission_source: bool,
     submission_source_is_blocked: bool,
-    created_at: DateTime<Utc>,
+}
+
+pub struct OverviewField {
+    label: &'static str,
+    value: String,
+    filter_url: Option<String>,
+    monospace: bool,
 }
 
 pub struct IssueOption {
@@ -126,6 +122,8 @@ pub struct FieldView {
     label: String,
     kind: String,
     value: String,
+    is_stack: bool,
+    filter_url: String,
 }
 
 pub struct AttachmentView {
@@ -157,9 +155,7 @@ pub async fn index(
 
     let query = ReportQuery {
         assignment,
-        build: filters.build.clone(),
-        platform: filters.platform.clone(),
-        kind: filters.kind.clone(),
+        search: ReportSearch::parse(&filters.q)?,
         issue_id: filters.issue,
         since: filters.since,
         until: filters.until,
@@ -182,9 +178,7 @@ pub async fn index(
     Ok(TemplateResponse(ReportsTemplate {
         navigation: Some(Navigation::for_session(&state, &session)),
         state: filters.state,
-        build: filters.build,
-        platform: filters.platform,
-        kind: filters.kind,
+        search: filters.q,
         reports: report_rows,
         next_page,
     }))
@@ -254,16 +248,64 @@ pub async fn show(
         .ok_or_else(|| not_found("Report not found"))?;
     let issues = state.database.list_issues(false).await?;
 
+    let platform = field_string(&details.fields, "platform").unwrap_or_else(|| "Unknown".into());
+    let architecture =
+        field_string(&details.fields, "architecture").unwrap_or_else(|| "Unknown".into());
+
+    let source_ip = details
+        .report
+        .source_ip
+        .clone()
+        .unwrap_or_else(|| "Unavailable".into());
+    let overview = vec![
+        OverviewField::searchable(
+            "Report type",
+            report_kind_label(&details.report.kind),
+            "kind",
+            &details.report.kind,
+        ),
+        OverviewField::searchable(
+            "Browser version",
+            &details.report.client_version,
+            "version",
+            &details.report.client_version,
+        ),
+        OverviewField::searchable("Platform", &platform, "platform", &platform),
+        OverviewField::searchable("Architecture", &architecture, "architecture", &architecture),
+        OverviewField::searchable(
+            "Build",
+            &details.report.build,
+            "build",
+            &details.report.build,
+        ),
+        OverviewField {
+            label: "Submitted",
+            value: details.report.created_at.to_string(),
+            filter_url: Some(format!(
+                "/reports?since={date}&until={date}",
+                date = details.report.created_at.date_naive()
+            )),
+            monospace: false,
+        },
+        OverviewField {
+            label: "Source IP address",
+            value: source_ip.clone(),
+            filter_url: details
+                .report
+                .source_ip
+                .as_deref()
+                .map(|address| field_filter_url("ip", address)),
+            monospace: true,
+        },
+    ];
+
     let report_view = ReportView {
         id: details.report.id,
-        submission_id: details.report.submission_id,
-        manifest_digest: details.report.manifest_digest,
         client_version: details.report.client_version,
-        build: details.report.build,
+        overview,
         is_assigned: details.report.issue_id.is_some(),
         has_submission_source: details.report.has_submission_source,
         submission_source_is_blocked: details.report.submission_source_is_blocked,
-        created_at: details.report.created_at,
     };
 
     let issue_options = issues
@@ -285,13 +327,18 @@ pub async fn show(
             .map(str::to_owned)
             .unwrap_or_else(|| field.value.to_string());
         let known = field.current_label.is_some();
+        let key = field.key;
+
+        if matches!(key.as_str(), "platform" | "architecture") {
+            continue;
+        }
+
         let view = FieldView {
-            label: field
-                .current_label
-                .clone()
-                .unwrap_or_else(|| field.key.clone()),
-            key: field.key,
+            label: field.current_label.clone().unwrap_or_else(|| key.clone()),
             kind: field.kind,
+            is_stack: key == "stack",
+            filter_url: field_filter_url(&key, &value),
+            key,
             value,
         };
 
@@ -334,6 +381,17 @@ pub async fn show(
         attachments,
         events,
     }))
+}
+
+impl OverviewField {
+    fn searchable(label: &'static str, value: &str, key: &str, search_value: &str) -> Self {
+        Self {
+            label,
+            value: value.into(),
+            filter_url: Some(field_filter_url(key, search_value)),
+            monospace: false,
+        }
+    }
 }
 
 #[derive(Deserialize)]
@@ -484,9 +542,7 @@ fn next_page_url(
         let mut query = url.query_pairs_mut();
         query
             .append_pair("state", &filters.state)
-            .append_pair("build", &filters.build)
-            .append_pair("platform", &filters.platform)
-            .append_pair("kind", &filters.kind)
+            .append_pair("q", &filters.q)
             .append_pair("before", &last.created_at.to_rfc3339());
 
         if let Some(issue_id) = filters.issue {
@@ -505,4 +561,33 @@ fn next_page_url(
 
 fn default_report_state() -> String {
     "triage".into()
+}
+
+fn field_string(
+    fields: &[crate::infrastructure::database::StoredDiagnosticField],
+    key: &str,
+) -> Option<String> {
+    fields
+        .iter()
+        .find(|field| field.key == key)
+        .and_then(|field| field.value.as_str())
+        .map(str::to_owned)
+}
+
+fn field_filter_url(key: &str, value: &str) -> String {
+    let searchable_value = value
+        .lines()
+        .find(|line| !line.trim().is_empty())
+        .unwrap_or(value);
+    let searchable_value = searchable_value
+        .char_indices()
+        .nth(256)
+        .map_or(searchable_value, |(index, _)| &searchable_value[..index]);
+
+    let mut url = reqwest::Url::parse("http://localhost/").expect("static URL is valid");
+    url.query_pairs_mut()
+        .append_pair("state", "all")
+        .append_pair("q", &filter_expression(key, searchable_value));
+
+    format!("/?{}", url.query().unwrap_or_default())
 }

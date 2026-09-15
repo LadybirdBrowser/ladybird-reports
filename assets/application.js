@@ -411,16 +411,143 @@ function initializeEntitySelectors() {
     });
 }
 
-function initializeSelectControls() {
-    for (const select of document.querySelectorAll("select")) {
-        if (select.parentElement?.classList.contains("select-control")) {
-            continue;
+class CustomSelect {
+    constructor(select, index) {
+        this.select = select;
+        this.index = index;
+        this.wrapper = createElement("span", "custom-select");
+        this.trigger = createElement("button", "custom-select-trigger");
+        this.value = createElement("span", "custom-select-value");
+        this.chevron = createElement("span", "select-chevron");
+        this.popover = createElement("div", "custom-select-popover");
+        this.options = [];
+    }
+
+    connect() {
+        const identifier = `custom-select-${this.index}`;
+        const label = this.select.getAttribute("aria-label")
+            ?? this.select.closest("label")?.firstChild?.textContent?.trim()
+            ?? this.select.name;
+
+        this.select.classList.add("custom-select-native");
+        this.select.tabIndex = -1;
+        this.select.setAttribute("aria-hidden", "true");
+
+        this.trigger.type = "button";
+        this.trigger.role = "combobox";
+        this.trigger.setAttribute("aria-label", label);
+        this.trigger.setAttribute("aria-haspopup", "listbox");
+        this.trigger.setAttribute("aria-expanded", "false");
+        this.trigger.setAttribute("aria-controls", `${identifier}-options`);
+        this.trigger.setAttribute("popovertarget", `${identifier}-popover`);
+        this.chevron.setAttribute("aria-hidden", "true");
+        this.trigger.append(this.value, this.chevron);
+
+        this.popover.id = `${identifier}-popover`;
+        this.popover.popover = "auto";
+        this.popover.setAttribute("role", "listbox");
+        this.popover.setAttribute("aria-label", label);
+
+        const optionList = createElement("div", "custom-select-options");
+        optionList.id = `${identifier}-options`;
+        this.popover.append(optionList);
+
+        for (const [optionIndex, option] of Array.from(this.select.options).entries()) {
+            const button = createElement("button", "custom-select-option", option.textContent);
+            button.type = "button";
+            button.role = "option";
+            button.disabled = option.disabled;
+            button.dataset.value = option.value;
+            button.dataset.optionIndex = String(optionIndex);
+            button.addEventListener("click", () => this.choose(option.value));
+            button.addEventListener("keydown", (event) => this.handleOptionKeydown(event));
+            optionList.append(button);
+            this.options.push(button);
         }
 
-        const wrapper = document.createElement("span");
-        wrapper.className = "select-control";
-        select.before(wrapper);
-        wrapper.append(select);
+        this.select.before(this.wrapper);
+        this.wrapper.append(this.select, this.trigger, this.popover);
+        this.select.addEventListener("change", () => this.render());
+        this.trigger.addEventListener("keydown", (event) => this.handleTriggerKeydown(event));
+        this.popover.addEventListener("beforetoggle", (event) => {
+            const isOpening = event.newState === "open";
+            this.trigger.setAttribute("aria-expanded", String(isOpening));
+            this.wrapper.classList.toggle("is-open", isOpening);
+            if (isOpening) {
+                this.positionPopover();
+            }
+        });
+        this.popover.addEventListener("toggle", (event) => {
+            if (event.newState === "open") {
+                this.selectedButton()?.focus();
+            }
+        });
+
+        this.render();
+    }
+
+    choose(value) {
+        this.select.value = value;
+        this.select.dispatchEvent(new Event("change", { bubbles: true }));
+        this.popover.hidePopover();
+        this.trigger.focus();
+    }
+
+    render() {
+        const selected = this.select.selectedOptions[0];
+        this.value.textContent = selected?.textContent ?? "Select";
+
+        for (const option of this.options) {
+            const isSelected = option.dataset.value === this.select.value;
+            option.classList.toggle("is-selected", isSelected);
+            option.setAttribute("aria-selected", String(isSelected));
+        }
+    }
+
+    selectedButton() {
+        return this.options.find((option) => option.dataset.value === this.select.value)
+            ?? this.options[0];
+    }
+
+    positionPopover() {
+        const bounds = this.trigger.getBoundingClientRect();
+        const availableBelow = window.innerHeight - bounds.bottom - 12;
+        const openAbove = availableBelow < 180 && bounds.top > availableBelow;
+
+        this.popover.style.width = `${bounds.width}px`;
+        this.popover.style.left = `${Math.min(bounds.left, window.innerWidth - bounds.width - 8)}px`;
+        this.popover.style.top = openAbove ? "auto" : `${bounds.bottom + 6}px`;
+        this.popover.style.bottom = openAbove
+            ? `${window.innerHeight - bounds.top + 6}px`
+            : "auto";
+    }
+
+    handleTriggerKeydown(event) {
+        if (!["ArrowDown", "ArrowUp", "Enter", " "].includes(event.key)) {
+            return;
+        }
+
+        event.preventDefault();
+        this.popover.showPopover();
+    }
+
+    handleOptionKeydown(event) {
+        const currentIndex = Number(event.currentTarget.dataset.optionIndex);
+        if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+            event.preventDefault();
+            const direction = event.key === "ArrowDown" ? 1 : -1;
+            const nextIndex = Math.max(0, Math.min(currentIndex + direction, this.options.length - 1));
+            this.options[nextIndex].focus();
+        } else if (event.key === "Escape") {
+            this.popover.hidePopover();
+            this.trigger.focus();
+        }
+    }
+}
+
+function initializeSelectControls() {
+    for (const [index, select] of document.querySelectorAll("select").entries()) {
+        new CustomSelect(select, index).connect();
     }
 }
 
@@ -431,9 +558,9 @@ function initializeFieldOrdering() {
     }
 
     const orderList = orderForm.querySelector("[data-field-order-list]");
-    const orderInput = orderForm.querySelector("[data-field-order-input]");
     const orderStatus = orderForm.querySelector("[data-field-order-status]");
     let draggedRow = null;
+    let saveQueue = Promise.resolve();
 
     const rows = () => Array.from(orderList.querySelectorAll("[data-field-row]"));
 
@@ -448,20 +575,37 @@ function initializeFieldOrdering() {
         orderList.insertBefore(draggedRow, insertBefore ? hoveredRow : hoveredRow.nextSibling);
     };
 
-    const updateOrder = (movedRow) => {
+    const saveOrder = (movedRow) => {
         const orderedRows = rows();
-        orderInput.value = orderedRows.map((row) => row.dataset.fieldKey).join(",");
+        const keys = orderedRows.map((row) => row.dataset.fieldKey).join(",");
+        const label = movedRow.querySelector("td:nth-child(3)").textContent.trim();
+        const position = orderedRows.indexOf(movedRow) + 1;
+        const body = new URLSearchParams({ csrf: orderForm.dataset.csrf, keys });
 
-        for (const [index, row] of orderedRows.entries()) {
-            row.querySelector('[data-move="up"]').disabled = index === 0;
-            row.querySelector('[data-move="down"]').disabled = index === orderedRows.length - 1;
-        }
+        orderStatus.classList.remove("is-error");
+        orderStatus.textContent = `Saving ${label} at position ${position}…`;
+        saveQueue = saveQueue
+            .catch(() => {})
+            .then(async () => {
+                const response = await fetch(orderForm.dataset.orderUrl, {
+                    method: "POST",
+                    headers: {
+                        Accept: "application/json",
+                        "Content-Type": "application/x-www-form-urlencoded",
+                    },
+                    body,
+                });
 
-        if (movedRow) {
-            const label = movedRow.querySelector("td:nth-child(3)").textContent.trim();
-            const position = orderedRows.indexOf(movedRow) + 1;
-            orderStatus.textContent = `${label} moved to position ${position}. Save to apply.`;
-        }
+                if (!response.ok) {
+                    throw new Error(`Saving field order returned ${response.status}`);
+                }
+
+                orderStatus.textContent = `${label} is now at position ${position}.`;
+            })
+            .catch(() => {
+                orderStatus.classList.add("is-error");
+                orderStatus.textContent = "The field order could not be saved. Reload and try again.";
+            });
     };
 
     orderList.addEventListener("dragstart", (event) => {
@@ -488,33 +632,69 @@ function initializeFieldOrdering() {
     orderList.addEventListener("drop", (event) => {
         event.preventDefault();
         moveDraggedRow(event);
-        updateOrder(draggedRow);
+        saveOrder(draggedRow);
     });
 
     orderList.addEventListener("dragend", () => {
         draggedRow?.classList.remove("is-dragging");
-        updateOrder(draggedRow);
         draggedRow = null;
     });
 
-    orderList.addEventListener("click", (event) => {
-        const button = event.target.closest("[data-move]");
-        if (!button) {
+    orderList.addEventListener("keydown", (event) => {
+        const handle = event.target.closest(".drag-handle");
+        if (!handle || !event.altKey || !["ArrowUp", "ArrowDown"].includes(event.key)) {
             return;
         }
 
-        const row = button.closest("[data-field-row]");
-        if (button.dataset.move === "up" && row.previousElementSibling) {
-            orderList.insertBefore(row, row.previousElementSibling);
-        } else if (button.dataset.move === "down" && row.nextElementSibling) {
-            orderList.insertBefore(row.nextElementSibling, row);
+        const row = handle.closest("[data-field-row]");
+        const sibling = event.key === "ArrowUp"
+            ? row.previousElementSibling
+            : row.nextElementSibling;
+        if (!sibling) {
+            return;
         }
 
-        updateOrder(row);
-        row.focus();
-    });
+        event.preventDefault();
+        if (event.key === "ArrowUp") {
+            orderList.insertBefore(row, sibling);
+        } else {
+            orderList.insertBefore(sibling, row);
+        }
 
-    updateOrder();
+        saveOrder(row);
+        handle.focus();
+    });
+}
+
+function initializeSettingsHelp() {
+    const editor = document.querySelector("[data-settings-editor]");
+    const help = document.querySelector("[data-settings-help]");
+    if (!editor || !help) {
+        return;
+    }
+
+    const empty = help.querySelector("[data-settings-help-empty]");
+    const entries = Array.from(help.querySelectorAll("[data-setting-help-entry]"));
+
+    const update = () => {
+        const lineStart = editor.value.lastIndexOf("\n", editor.selectionStart - 1) + 1;
+        const lineEnd = editor.value.indexOf("\n", editor.selectionStart);
+        const line = editor.value.slice(lineStart, lineEnd < 0 ? undefined : lineEnd);
+        const currentKey = line.match(/"([A-Za-z0-9._-]+)"\s*:/)?.[1];
+
+        empty.hidden = Boolean(currentKey);
+        let matched = false;
+        for (const entry of entries) {
+            const active = entry.dataset.settingKey === currentKey;
+            entry.hidden = !active;
+            matched ||= active;
+        }
+        empty.hidden = matched;
+    };
+
+    for (const eventName of ["click", "keyup", "select", "input", "focus"]) {
+        editor.addEventListener(eventName, update);
+    }
 }
 
 function initializeGithubChoices() {
@@ -556,4 +736,5 @@ function initializeGithubChoices() {
 initializeEntitySelectors();
 initializeSelectControls();
 initializeFieldOrdering();
+initializeSettingsHelp();
 initializeGithubChoices();

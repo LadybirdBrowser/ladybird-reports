@@ -22,12 +22,14 @@ use super::{
 #[template(path = "login.html")]
 pub struct LoginTemplate {
     navigation: Option<Navigation>,
+    application_version: &'static str,
 }
 
 #[derive(Clone)]
 pub struct Navigation {
     pub login: String,
     pub csrf_token: String,
+    pub application_version: &'static str,
     pub bootstrap_reporting_database_url: Option<String>,
 }
 
@@ -36,6 +38,7 @@ impl Navigation {
         Self {
             login: session.login.clone(),
             csrf_token: session.csrf_token.clone(),
+            application_version: crate::runtime::APPLICATION_VERSION,
             bootstrap_reporting_database_url: state
                 .bootstrap_reporting_database_url
                 .as_deref()
@@ -45,7 +48,10 @@ impl Navigation {
 }
 
 pub async fn login() -> TemplateResponse<LoginTemplate> {
-    TemplateResponse(LoginTemplate { navigation: None })
+    TemplateResponse(LoginTemplate {
+        navigation: None,
+        application_version: crate::runtime::APPLICATION_VERSION,
+    })
 }
 
 pub async fn start_github_login(State(state): State<AdminState>) -> Result<Response> {
@@ -166,7 +172,10 @@ pub async fn logout(
     axum::Form(form): axum::Form<LogoutForm>,
 ) -> Result<Response> {
     session.verify_csrf(&form.csrf)?;
-    state.database.delete_session(&session.token_hash).await?;
+    state
+        .database
+        .delete_session(&session.token_hash, session.github_id)
+        .await?;
 
     let configuration = state.database.configuration().await?;
     let secure = configuration.admin_base_url.starts_with("https:");

@@ -83,6 +83,9 @@ moving `master` tags to GitHub Container Registry. The final workflow job sends
 signed deployment events to both Coolify resources. Coolify pulls the published
 image and does not build application source.
 
+The image build embeds a display version in the form `YYYY-MM-DD-aaaaaaaa`, using
+the UTC build date and the first eight characters of the Git commit identifier.
+
 ## Environment
 
 | Variable | Process | Purpose |

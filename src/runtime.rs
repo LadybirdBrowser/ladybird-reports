@@ -2,6 +2,11 @@ use std::net::SocketAddr;
 
 use crate::error::{AppError, Result};
 
+pub const APPLICATION_VERSION: &str = match option_env!("LADYBIRD_REPORTS_VERSION") {
+    Some(version) => version,
+    None => concat!(env!("CARGO_PKG_VERSION"), "-dev"),
+};
+
 pub fn initialize_tracing() {
     let filter = tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
         "ladybird_reports=info,admin=info,public_api=info,migrate=info,tower_http=info".into()

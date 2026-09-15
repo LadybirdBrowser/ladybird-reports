@@ -5,6 +5,7 @@ use axum::{
     extract::ConnectInfo,
     http::{Request, StatusCode, header::CONTENT_TYPE},
 };
+use chrono::Duration;
 use ladybird_reports::{
     application::ReportIngestionService,
     domain::{
@@ -218,13 +219,48 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
     assert_eq!(report.fields.len(), 1);
     assert!(!report.fields[0].recognized_at_submission);
     assert!(report.report.has_submission_source);
+    assert_eq!(report.report.source_ip.as_deref(), Some("127.0.0.1"));
     assert!(!report.report.submission_source_is_blocked);
     assert!(report.report.expires_at.is_some());
+    assert!(
+        report
+            .events
+            .iter()
+            .any(|event| event.action == "report.submitted")
+    );
 
     sqlx::query("INSERT INTO maintainers (github_id, login) VALUES (999, 'integration-test')")
         .execute(&admin_pool)
         .await
         .expect("create maintainer for moderation action");
+
+    let integration_session_hash = "9".repeat(64);
+    admin_database
+        .create_session(
+            999,
+            "integration-test",
+            &integration_session_hash,
+            "encrypted-token",
+            "integration-csrf",
+            Duration::minutes(5),
+        )
+        .await
+        .expect("create audited session");
+    admin_database
+        .delete_session(&integration_session_hash, 999)
+        .await
+        .expect("delete audited session");
+
+    let session_audit_count: i64 = sqlx::query_scalar(
+        "SELECT count(*)
+         FROM audit_events
+         WHERE actor = 999
+            AND action IN ('session.signed_in', 'session.signed_out')",
+    )
+    .fetch_one(&admin_pool)
+    .await
+    .expect("count session audit events");
+    assert_eq!(session_audit_count, 2);
 
     attachments
         .remove_report(report_id)

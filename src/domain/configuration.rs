@@ -66,7 +66,7 @@ pub struct MaintenanceConfiguration {
 impl Default for RuntimeConfiguration {
     fn default() -> Self {
         Self {
-            public_base_url: "http://localhost:3001".into(),
+            public_base_url: "https://reports.app.ladybird.org".into(),
             admin_base_url: "http://localhost:3000".into(),
             github_repository: "LadybirdBrowser/ladybird".into(),
             trusted_proxies: Vec::new(),
@@ -82,6 +82,251 @@ impl Default for RuntimeConfiguration {
             },
             membership_recheck_seconds: 300,
         }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct SettingDefinition {
+    pub key: &'static str,
+    pub path: &'static str,
+    pub title: &'static str,
+    pub description: &'static str,
+    pub value_description: &'static str,
+}
+
+pub const SETTING_DEFINITIONS: &[SettingDefinition] = &[
+    setting(
+        "public_base_url",
+        "public_base_url",
+        "Public base URL",
+        "The externally reachable origin used by reporting clients.",
+        "An HTTPS origin without a path, query, or fragment.",
+    ),
+    setting(
+        "admin_base_url",
+        "admin_base_url",
+        "Admin base URL",
+        "The externally reachable origin used for OAuth callbacks and secure cookies.",
+        "An HTTPS origin without a path, query, or fragment.",
+    ),
+    setting(
+        "github_repository",
+        "github_repository",
+        "GitHub repository",
+        "The repository searched and updated when an internal issue is linked to GitHub.",
+        "An owner and repository name, such as LadybirdBrowser/ladybird.",
+    ),
+    setting(
+        "trusted_proxies",
+        "trusted_proxies",
+        "Trusted proxies",
+        "Proxy networks whose forwarding headers may identify the original client address.",
+        "A JSON list of IPv4 or IPv6 CIDR ranges.",
+    ),
+    setting(
+        "public_requests_per_minute",
+        "limits.public_requests_per_minute",
+        "Public request rate",
+        "Refills the shared per-address request bucket used by every public API request.",
+        "Requests added to the bucket per minute.",
+    ),
+    setting(
+        "public_request_burst",
+        "limits.public_request_burst",
+        "Public request burst",
+        "Caps short bursts across all public API endpoints from one address.",
+        "Maximum immediately available requests.",
+    ),
+    setting(
+        "challenges_per_minute",
+        "limits.challenges_per_minute",
+        "Challenge rate",
+        "Refills the short-term proof-of-work challenge bucket for one address.",
+        "Challenges added per minute.",
+    ),
+    setting(
+        "challenge_burst",
+        "limits.challenge_burst",
+        "Challenge burst",
+        "Caps how many proof-of-work challenges one address can request immediately.",
+        "Maximum immediately available challenges.",
+    ),
+    setting(
+        "challenges_per_hour",
+        "limits.challenges_per_hour",
+        "Hourly challenge limit",
+        "Limits sustained proof-of-work challenge creation by one address.",
+        "Maximum challenges in the hourly bucket.",
+    ),
+    setting(
+        "submissions_per_minute",
+        "limits.submissions_per_minute",
+        "Submission rate",
+        "Refills the short-term completed report submission bucket for one address.",
+        "Submissions added per minute.",
+    ),
+    setting(
+        "submission_burst",
+        "limits.submission_burst",
+        "Submission burst",
+        "Caps how many reports one address can submit immediately.",
+        "Maximum immediately available submissions.",
+    ),
+    setting(
+        "submissions_per_hour",
+        "limits.submissions_per_hour",
+        "Hourly submission limit",
+        "Limits sustained report submissions by one address.",
+        "Maximum submissions in the hourly bucket.",
+    ),
+    setting(
+        "concurrent_uploads_per_ip",
+        "limits.concurrent_uploads_per_ip",
+        "Concurrent uploads per address",
+        "Limits simultaneous attachment uploads from one source address.",
+        "Number of active uploads.",
+    ),
+    setting(
+        "concurrent_uploads_global",
+        "limits.concurrent_uploads_global",
+        "Global concurrent uploads",
+        "Caps simultaneous uploads across the service to bound memory and disk pressure.",
+        "Number of active uploads across all clients.",
+    ),
+    setting(
+        "maximum_fields",
+        "limits.maximum_fields",
+        "Maximum fields",
+        "Limits the number of diagnostic fields accepted in one report manifest.",
+        "Field count per report.",
+    ),
+    setting(
+        "short_text_bytes",
+        "limits.short_text_bytes",
+        "Short text size",
+        "Caps each text field classified as short text.",
+        "Maximum UTF-8 bytes per value.",
+    ),
+    setting(
+        "multiline_text_bytes",
+        "limits.multiline_text_bytes",
+        "Multiline text size",
+        "Caps each multiline diagnostic such as a native stack trace.",
+        "Maximum UTF-8 bytes per value.",
+    ),
+    setting(
+        "metadata_bytes",
+        "limits.metadata_bytes",
+        "Manifest size",
+        "Caps the JSON manifest before attachments are read.",
+        "Maximum encoded bytes per manifest.",
+    ),
+    setting(
+        "maximum_attachments",
+        "limits.maximum_attachments",
+        "Maximum attachments",
+        "Limits the number of files accepted with one report.",
+        "Attachment count per report.",
+    ),
+    setting(
+        "attachment_bytes",
+        "limits.attachment_bytes",
+        "Attachment size",
+        "Caps the compressed bytes accepted for each attachment.",
+        "Maximum bytes per file.",
+    ),
+    setting(
+        "submission_bytes",
+        "limits.submission_bytes",
+        "Submission size",
+        "Caps the manifest and all attachment bytes in one request.",
+        "Maximum total request payload bytes.",
+    ),
+    setting(
+        "png_pixels",
+        "limits.png_pixels",
+        "PNG pixel count",
+        "Rejects images whose width multiplied by height exceeds this limit.",
+        "Maximum decoded pixel count.",
+    ),
+    setting(
+        "png_decoded_bytes",
+        "limits.png_decoded_bytes",
+        "PNG decode memory",
+        "Bounds decoded PNG frame memory and weights concurrent decoder permits.",
+        "Maximum decoded bytes per image.",
+    ),
+    setting(
+        "upload_timeout_seconds",
+        "limits.upload_timeout_seconds",
+        "Upload timeout",
+        "Stops a report upload that does not complete within the configured window.",
+        "Seconds from manifest acceptance through attachment upload.",
+    ),
+    setting(
+        "minimum_free_storage_bytes",
+        "limits.minimum_free_storage_bytes",
+        "Storage reserve",
+        "Rejects new uploads before the attachment volume consumes its reserved space.",
+        "Bytes that must remain free after a maximum-size submission.",
+    ),
+    setting(
+        "expected_work",
+        "proof_of_work.expected_work",
+        "Proof-of-work target",
+        "Controls the average number of hashes required for a valid submission proof.",
+        "Expected SHA-256 attempts; higher values require more client CPU time.",
+    ),
+    setting(
+        "challenge_lifetime_seconds",
+        "proof_of_work.challenge_lifetime_seconds",
+        "Challenge lifetime",
+        "Controls how long an issued proof-of-work challenge can be submitted.",
+        "Seconds after challenge creation.",
+    ),
+    setting(
+        "sweep_interval_seconds",
+        "maintenance.sweep_interval_seconds",
+        "Maintenance interval",
+        "Controls how often both services remove expired and abandoned data.",
+        "Seconds between maintenance sweeps.",
+    ),
+    setting(
+        "staging_retention_seconds",
+        "maintenance.staging_retention_seconds",
+        "Staging retention",
+        "Keeps interrupted upload directories long enough for active requests, then removes them.",
+        "Seconds since the staging directory was last modified.",
+    ),
+    setting(
+        "report_retention_days",
+        "maintenance.report_retention_days",
+        "Report retention",
+        "Sets the expiry date assigned to new reports and their attachments.",
+        "Days from report creation before deletion is scheduled.",
+    ),
+    setting(
+        "membership_recheck_seconds",
+        "membership_recheck_seconds",
+        "Membership recheck",
+        "Controls how often an active session revalidates GitHub team membership.",
+        "Seconds between membership checks for one session.",
+    ),
+];
+
+const fn setting(
+    key: &'static str,
+    path: &'static str,
+    title: &'static str,
+    description: &'static str,
+    value_description: &'static str,
+) -> SettingDefinition {
+    SettingDefinition {
+        key,
+        path,
+        title,
+        description,
+        value_description,
     }
 }
 
@@ -240,4 +485,48 @@ fn validate_origin(value: &str, error_message: &'static str) -> Result<()> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeSet;
+
+    use serde_json::Value;
+
+    use super::*;
+
+    #[test]
+    fn every_runtime_setting_has_contextual_help() {
+        let configuration = serde_json::to_value(RuntimeConfiguration::default())
+            .expect("serialize default runtime configuration");
+        let mut configuration_paths = BTreeSet::new();
+        collect_leaf_paths(&configuration, "", &mut configuration_paths);
+
+        let documented_paths = SETTING_DEFINITIONS
+            .iter()
+            .map(|definition| definition.path.to_owned())
+            .collect::<BTreeSet<_>>();
+
+        assert_eq!(documented_paths, configuration_paths);
+    }
+
+    fn collect_leaf_paths(value: &Value, prefix: &str, paths: &mut BTreeSet<String>) {
+        let Value::Object(object) = value else {
+            return;
+        };
+
+        for (key, value) in object {
+            let path = if prefix.is_empty() {
+                key.to_owned()
+            } else {
+                format!("{prefix}.{key}")
+            };
+
+            if value.is_object() {
+                collect_leaf_paths(value, &path, paths);
+            } else {
+                paths.insert(path);
+            }
+        }
+    }
 }

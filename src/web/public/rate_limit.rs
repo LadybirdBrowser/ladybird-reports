@@ -17,7 +17,10 @@ use crate::{
 use super::PublicState;
 
 #[derive(Clone)]
-pub struct ClientAddressKey(pub String);
+pub struct ClientAddress {
+    pub key: String,
+    pub ip: IpAddr,
+}
 
 pub async fn limit_public_request(
     State(state): State<PublicState>,
@@ -43,9 +46,10 @@ pub async fn limit_public_request(
 
     enforce_limits(&state, &configuration, &client_key, request.uri().path()).await?;
 
-    request
-        .extensions_mut()
-        .insert(ClientAddressKey(client_key));
+    request.extensions_mut().insert(ClientAddress {
+        key: client_key,
+        ip: client_address,
+    });
 
     Ok(next.run(request).await)
 }

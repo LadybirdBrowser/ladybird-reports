@@ -16,7 +16,7 @@
 
     <section class="filter-panel" aria-label="Report filters">
         <form class="filters" method="get">
-            <label>
+            <label class="state-filter">
                 State
                 <select name="state">
                     <option value="triage"{% if state == "triage" %} selected{% endif %}>Triage</option>
@@ -25,20 +25,26 @@
                 </select>
             </label>
 
-            <label>
-                Build
-                <input name="build" value="{{ build }}" placeholder="Exact build">
-            </label>
-            <label>
-                Platform
-                <input name="platform" value="{{ platform }}" placeholder="macOS, Linux…">
-            </label>
-            <label>
-                Kind
-                <input name="kind" value="{{ kind }}" placeholder="web_compat">
+            <label class="report-search-filter">
+                Search reports
+                <span class="search-input-wrap">
+                    <span class="search-glyph" aria-hidden="true"></span>
+                    <input
+                        type="search"
+                        name="q"
+                        value="{{ search }}"
+                        placeholder="platform:linux kind:crash"
+                        autocomplete="off"
+                    >
+                </span>
             </label>
             <button type="submit">Apply filters</button>
         </form>
+        <p class="filter-hint">
+            Combine plain text with qualifiers such as <code>platform:linux</code>,
+            <code>kind:crash</code>, <code>version:&quot;Ladybird Nightly&quot;</code>,
+            or any submitted field key.
+        </p>
     </section>
 
     <section class="card" aria-labelledby="report-list-title">

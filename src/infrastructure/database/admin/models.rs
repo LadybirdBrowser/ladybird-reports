@@ -1,7 +1,7 @@
 use chrono::{DateTime, NaiveDate, Utc};
 use serde_json::Value;
 
-use crate::domain::{AttachmentId, IssueId, ReportId, SubmissionId, UploadId};
+use crate::domain::{AttachmentId, IssueId, ReportId, ReportSearch, SubmissionId, UploadId};
 
 #[derive(Clone, Debug)]
 pub struct SessionRecord {
@@ -17,9 +17,7 @@ pub struct SessionRecord {
 #[derive(Clone, Debug, Default)]
 pub struct ReportQuery {
     pub assignment: ReportAssignmentFilter,
-    pub build: String,
-    pub platform: String,
-    pub kind: String,
+    pub search: ReportSearch,
     pub issue_id: Option<IssueId>,
     pub since: Option<NaiveDate>,
     pub until: Option<NaiveDate>,
@@ -72,6 +70,7 @@ pub struct ReportRecord {
     pub client_version: String,
     pub build: String,
     pub issue_id: Option<IssueId>,
+    pub source_ip: Option<String>,
     pub has_submission_source: bool,
     pub submission_source_is_blocked: bool,
     pub created_at: DateTime<Utc>,
@@ -148,7 +147,6 @@ pub struct AuditEvent {
 #[derive(Clone, Debug)]
 pub struct ConfigurationRecord {
     pub value: Value,
-    pub revision: i64,
     pub updated_at: DateTime<Utc>,
 }
 

@@ -6,10 +6,10 @@ export default function globalSetup(): void {
     "cargo",
     ["run", "--quiet", "--bin", "browser_test_fixture"],
     {
-    env: {
-      ...process.env,
-      BROWSER_TEST_FIXTURE: "enabled",
-    },
+      env: {
+        ...process.env,
+        BROWSER_TEST_FIXTURE: "enabled",
+      },
       encoding: "utf8",
       stdio: ["ignore", "pipe", "inherit"],
     },

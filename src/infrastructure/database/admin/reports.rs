@@ -1,4 +1,4 @@
-use sqlx::Row;
+use sqlx::{Postgres, QueryBuilder, Row};
 
 use crate::{
     domain::{AttachmentId, IssueId, ReportId},
@@ -46,7 +46,7 @@ impl AdminDatabase {
     }
 
     pub async fn list_reports(&self, query: &ReportQuery) -> Result<Vec<ReportSummary>> {
-        let rows = sqlx::query(
+        let mut sql = QueryBuilder::<Postgres>::new(
             "SELECT
                 reports.id,
                 reports.client_version,
@@ -56,37 +56,42 @@ impl AdminDatabase {
              FROM reports
              WHERE reports.deleted_at IS NULL
                 AND reports.storage_state = 'ready'
-                AND (
-                    $1 = 'all'
-                    OR ($1 = 'assigned' AND reports.issue_id IS NOT NULL)
-                    OR ($1 = 'triage' AND reports.issue_id IS NULL)
-                )
-                AND ($2 = '' OR reports.build = $2)
-                AND ($3 = '' OR EXISTS (
-                    SELECT 1
-                    FROM report_fields
-                    WHERE report_fields.report_id = reports.id
-                        AND report_fields.key = 'platform'
-                        AND report_fields.value = to_jsonb($3::text)
-                ))
-                AND ($4 = '' OR reports.kind = $4)
-                AND ($5::uuid IS NULL OR reports.issue_id = $5)
-                AND ($6::date IS NULL OR reports.created_at >= $6::date)
-                AND ($7::date IS NULL OR reports.created_at < $7::date + interval '1 day')
-                AND ($8::timestamptz IS NULL OR reports.created_at < $8)
-             ORDER BY reports.created_at DESC
-             LIMIT 100",
-        )
-        .bind(query.assignment.as_str())
-        .bind(&query.build)
-        .bind(&query.platform)
-        .bind(&query.kind)
-        .bind(query.issue_id)
-        .bind(query.since)
-        .bind(query.until)
-        .bind(query.before)
-        .fetch_all(&self.pool)
-        .await?;
+                AND (",
+        );
+        sql.push_bind(query.assignment.as_str())
+            .push(" = 'all' OR (")
+            .push_bind(query.assignment.as_str())
+            .push(" = 'assigned' AND reports.issue_id IS NOT NULL) OR (")
+            .push_bind(query.assignment.as_str())
+            .push(" = 'triage' AND reports.issue_id IS NULL))");
+
+        for term in &query.search.terms {
+            push_text_search(&mut sql, term);
+        }
+
+        for qualifier in &query.search.qualifiers {
+            push_qualified_search(&mut sql, &qualifier.key, &qualifier.value);
+        }
+
+        sql.push(" AND (")
+            .push_bind(query.issue_id)
+            .push("::uuid IS NULL OR reports.issue_id = ")
+            .push_bind(query.issue_id)
+            .push(") AND (")
+            .push_bind(query.since)
+            .push("::date IS NULL OR reports.created_at >= ")
+            .push_bind(query.since)
+            .push("::date) AND (")
+            .push_bind(query.until)
+            .push("::date IS NULL OR reports.created_at < ")
+            .push_bind(query.until)
+            .push("::date + interval '1 day') AND (")
+            .push_bind(query.before)
+            .push("::timestamptz IS NULL OR reports.created_at < ")
+            .push_bind(query.before)
+            .push(") ORDER BY reports.created_at DESC LIMIT 100");
+
+        let rows = sql.build().fetch_all(&self.pool).await?;
 
         Ok(rows
             .into_iter()
@@ -177,6 +182,7 @@ impl AdminDatabase {
                 client_version,
                 build,
                 issue_id,
+                host(source_ip) AS source_ip,
                 source_client_key IS NOT NULL AS has_submission_source,
                 EXISTS (
                     SELECT 1
@@ -207,6 +213,7 @@ impl AdminDatabase {
             client_version: row.get("client_version"),
             build: row.get("build"),
             issue_id: row.get("issue_id"),
+            source_ip: row.get("source_ip"),
             has_submission_source: row.get("has_submission_source"),
             submission_source_is_blocked: row.get("submission_source_is_blocked"),
             created_at: row.get("created_at"),
@@ -454,4 +461,55 @@ impl AdminDatabase {
             })
             .collect())
     }
+}
+
+fn push_text_search(sql: &mut QueryBuilder<'_, Postgres>, term: &str) {
+    sql.push(" AND (position(lower(")
+        .push_bind(term.to_owned())
+        .push(") in lower(reports.id::text)) > 0 OR position(lower(")
+        .push_bind(term.to_owned())
+        .push(") in lower(reports.kind)) > 0 OR position(lower(")
+        .push_bind(term.to_owned())
+        .push(") in lower(reports.client_version)) > 0 OR position(lower(")
+        .push_bind(term.to_owned())
+        .push(
+            ") in lower(reports.build)) > 0 OR EXISTS (
+            SELECT 1 FROM report_fields
+            WHERE report_fields.report_id = reports.id
+                AND position(lower(",
+        )
+        .push_bind(term.to_owned())
+        .push(") in lower(report_fields.value #>> '{}')) > 0))");
+}
+
+fn push_qualified_search(sql: &mut QueryBuilder<'_, Postgres>, key: &str, value: &str) {
+    match key {
+        "kind" => push_report_column_filter(sql, "reports.kind", value),
+        "version" | "client_version" => {
+            push_report_column_filter(sql, "reports.client_version", value);
+        }
+        "build" => push_report_column_filter(sql, "reports.build", value),
+        "id" | "report" => push_report_column_filter(sql, "reports.id::text", value),
+        "ip" | "source_ip" => push_report_column_filter(sql, "host(reports.source_ip)", value),
+        _ => {
+            sql.push(
+                " AND EXISTS (
+                    SELECT 1 FROM report_fields
+                    WHERE report_fields.report_id = reports.id
+                        AND lower(report_fields.key) = lower(",
+            )
+            .push_bind(key.to_owned())
+            .push(") AND position(lower(")
+            .push_bind(value.to_owned())
+            .push(") in lower(report_fields.value #>> '{}')) > 0)");
+        }
+    }
+}
+
+fn push_report_column_filter(sql: &mut QueryBuilder<'_, Postgres>, column: &str, value: &str) {
+    sql.push(" AND lower(")
+        .push(column)
+        .push(") = lower(")
+        .push_bind(value.to_owned())
+        .push(")");
 }

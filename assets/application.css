@@ -219,24 +219,87 @@ nav a:hover {
 }
 
 .account {
-    display: flex;
+    position: relative;
     margin-left: auto;
-    align-items: center;
-    gap: 0.6rem;
+}
+
+.account-trigger {
+    min-height: 2.45rem;
+    padding: 0.45rem 0.65rem;
+    border-color: rgb(255 255 255 / 0.1);
+    background: rgb(255 255 255 / 0.05);
     color: var(--header-soft);
     font-size: 0.86rem;
+    gap: 0.55rem;
+    anchor-name: --account-trigger;
 }
 
-.account-indicator {
-    width: 0.45rem;
-    height: 0.45rem;
+.account-trigger:hover,
+.account-trigger:focus-visible {
+    border-color: rgb(255 255 255 / 0.2);
+    background: rgb(255 255 255 / 0.1);
+    color: var(--header-ink);
+}
+
+.github-icon {
+    width: 1.15rem;
+    height: 1.15rem;
+    flex: 0 0 auto;
+    fill: currentColor;
+}
+
+.account-popover {
+    position: fixed;
+    top: anchor(bottom);
+    right: anchor(right);
+    bottom: auto;
+    left: auto;
+    width: min(18rem, calc(100vw - 1rem));
+    margin: 0.5rem 0 0;
+    padding: 0.5rem;
+    position-anchor: --account-trigger;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-md);
+    background: var(--surface-raised);
+    color: var(--ink);
+    box-shadow: var(--shadow-md);
+}
+
+.account-popover::backdrop {
+    background: transparent;
+}
+
+.account-profile {
+    display: flex;
+    padding: 0.65rem;
+    align-items: center;
+    border-bottom: 1px solid var(--border);
+    gap: 0.7rem;
+}
+
+.account-profile small,
+.account-profile strong {
+    display: block;
+}
+
+.account-profile small {
+    color: var(--ink-faint);
+    font-size: 0.68rem;
+}
+
+.account-avatar {
+    display: grid;
+    width: 2rem;
+    height: 2rem;
     border-radius: 50%;
-    background: #57d59b;
-    box-shadow: 0 0 0 0.22rem rgb(87 213 155 / 0.13);
+    background: var(--ink);
+    color: var(--surface);
+    place-items: center;
 }
 
-.account form {
-    margin: 0 0 0 0.3rem;
+.account-sign-out {
+    width: 100%;
+    margin-top: 0.5rem;
 }
 
 .page-shell,
@@ -324,7 +387,12 @@ nav a:hover {
 
 .stack {
     display: grid;
+    min-width: 0;
     gap: 1.25rem;
+}
+
+.stack > * {
+    min-width: 0;
 }
 
 .content-grid,
@@ -462,78 +530,123 @@ select {
     cursor: pointer;
 }
 
-.select-control {
+.custom-select {
     position: relative;
     display: block;
     margin-top: 0.38rem;
     border-radius: var(--radius-sm);
 }
 
-.select-control::before {
+.custom-select-native {
     position: absolute;
-    z-index: 1;
-    top: 50%;
-    right: 0.72rem;
-    width: 1.55rem;
-    height: 1.55rem;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    border: 0;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+}
+
+.custom-select-trigger {
+    display: flex;
+    width: 100%;
+    min-height: 2.55rem;
+    padding: 0.55rem 0.55rem 0.55rem 0.75rem;
+    justify-content: space-between;
+    border-color: var(--border-strong);
+    background: linear-gradient(180deg, var(--surface-raised), var(--surface-subtle));
+    color: var(--ink);
+    box-shadow: 0 1px 2px rgb(20 22 34 / 0.05);
+    font-size: 0.86rem;
+    font-weight: 620;
+    gap: 0.75rem;
+    text-align: left;
+}
+
+.custom-select-trigger:hover,
+.custom-select-trigger:focus-visible,
+.custom-select.is-open .custom-select-trigger {
+    border-color: var(--brand);
+    background: var(--surface-raised);
+    color: var(--ink);
+    box-shadow: 0 0 0 0.2rem color-mix(in srgb, var(--brand) 16%, transparent);
+}
+
+.select-chevron {
+    position: relative;
+    display: grid;
+    width: 1.45rem;
+    height: 1.45rem;
+    flex: 0 0 auto;
     border: 1px solid var(--border);
     border-radius: 0.38rem;
     background: var(--surface-subtle);
+    place-items: center;
+}
+
+.select-chevron::before {
+    width: 0.52rem;
+    height: 0.34rem;
+    background: currentColor;
+    clip-path: polygon(0 0, 100% 0, 50% 100%);
     content: "";
-    pointer-events: none;
-    transform: translateY(-50%);
-    transition: border 120ms ease, background 120ms ease, transform 120ms ease;
+    transform: rotate(0deg);
+    transition: transform 120ms ease;
 }
 
-.select-control::after {
-    position: absolute;
-    z-index: 2;
-    top: calc(50% - 0.12rem);
-    right: 1.22rem;
-    width: 0.38rem;
-    height: 0.38rem;
-    border-right: 2px solid var(--ink-soft);
-    border-bottom: 2px solid var(--ink-soft);
-    content: "";
-    pointer-events: none;
-    transform: translateY(-50%) rotate(45deg);
-    transition: border 120ms ease, transform 120ms ease;
+.custom-select.is-open .select-chevron::before,
+.account-trigger:has(+ .account-popover:popover-open) .select-chevron::before {
+    transform: rotate(180deg);
 }
 
-.select-control select {
-    appearance: none;
-    margin-top: 0;
-    padding-right: 2.7rem;
-    border-color: var(--border);
-    background: linear-gradient(180deg, var(--surface-raised), var(--surface-subtle));
-    box-shadow: 0 1px 2px rgb(20 22 34 / 0.05);
-    font-weight: 620;
+.custom-select-popover {
+    position: fixed;
+    right: auto;
+    bottom: auto;
+    margin: 0;
+    padding: 0.3rem;
+    overflow: hidden auto;
+    max-height: min(22rem, calc(100vh - 1rem));
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-md);
+    background: var(--surface-raised);
+    color: var(--ink);
+    box-shadow: var(--shadow-md);
 }
 
-.select-control:hover select {
-    border-color: var(--border-strong);
-    box-shadow: 0 2px 7px rgb(20 22 34 / 0.07);
+.custom-select-popover::backdrop {
+    background: transparent;
 }
 
-.select-control:hover::before,
-.select-control:focus-within::before {
-    border-color: color-mix(in srgb, var(--brand) 35%, var(--border));
+.custom-select-options {
+    display: grid;
+    gap: 0.15rem;
+}
+
+.custom-select-option {
+    width: 100%;
+    min-height: 2.35rem;
+    padding: 0.55rem 0.7rem;
+    justify-content: flex-start;
+    border: 0;
+    background: transparent;
+    color: var(--ink);
+    font-weight: 600;
+    text-align: left;
+}
+
+.custom-select-option:hover,
+.custom-select-option:focus-visible {
     background: var(--brand-soft);
+    color: var(--ink);
 }
 
-.select-control:focus-within::after {
-    border-color: var(--brand);
-    transform: translateY(-35%) rotate(225deg);
-}
-
-.select-control select:disabled {
-    cursor: not-allowed;
-    opacity: 0.58;
-}
-
-.select-control:has(select:disabled)::before,
-.select-control:has(select:disabled)::after {
-    opacity: 0.55;
+.custom-select-option.is-selected::after {
+    margin-left: auto;
+    color: var(--brand);
+    content: "✓";
 }
 
 textarea {
@@ -1082,9 +1195,32 @@ button:active,
 
 .filters {
     display: grid;
-    grid-template-columns: repeat(4, minmax(8rem, 1fr)) auto;
+    grid-template-columns: minmax(10rem, 0.28fr) minmax(20rem, 1fr) auto;
     align-items: end;
     gap: 0.75rem;
+}
+
+.search-input-wrap {
+    position: relative;
+    display: block;
+    margin-top: 0.38rem;
+}
+
+.search-input-wrap input {
+    margin: 0;
+    padding-left: 2.6rem;
+}
+
+.search-input-wrap .search-glyph {
+    left: 1rem;
+    top: 50%;
+    transform: translateY(-50%);
+}
+
+.filter-hint {
+    margin: 0.7rem 0 0;
+    color: var(--ink-faint);
+    font-size: 0.76rem;
 }
 
 .filters label {
@@ -1206,6 +1342,11 @@ tbody tr:hover {
     border-bottom: 0;
 }
 
+.definition-list div:last-child:nth-child(odd) {
+    grid-column: 1 / -1;
+    border-right: 0;
+}
+
 .definition-list dt {
     margin-bottom: 0.2rem;
     color: var(--ink-faint);
@@ -1219,6 +1360,13 @@ tbody tr:hover {
     margin: 0;
     overflow-wrap: anywhere;
     font-weight: 600;
+}
+
+.overview-value {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
 }
 
 /* Reports and issue actions */
@@ -1348,6 +1496,7 @@ details[open] summary {
 }
 
 .report-field {
+    min-width: 0;
     overflow: hidden;
     border: 1px solid var(--border);
     border-radius: var(--radius-md);
@@ -1373,6 +1522,32 @@ details[open] summary {
     margin: 0;
 }
 
+.field-filter-button {
+    position: relative;
+    display: grid;
+    width: 2rem;
+    height: 2rem;
+    flex: 0 0 auto;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--surface);
+    color: var(--ink-faint);
+    place-items: center;
+}
+
+.field-filter-button:hover {
+    border-color: var(--brand);
+    background: var(--brand-soft);
+    color: var(--brand);
+}
+
+.field-filter-button span {
+    width: 0.82rem;
+    height: 0.82rem;
+    background: currentColor;
+    clip-path: polygon(0 0, 100% 0, 62% 46%, 62% 100%, 38% 82%, 38% 46%);
+}
+
 pre {
     max-height: 38rem;
     margin: 0;
@@ -1384,6 +1559,23 @@ pre {
     line-height: 1.6;
     overflow-wrap: anywhere;
     white-space: pre-wrap;
+}
+
+.stack-trace {
+    width: 100%;
+    max-width: 100%;
+    max-height: 48rem;
+    padding: 1.15rem 1.25rem;
+    background: #151722;
+    color: #e5e7f2;
+    line-height: 1.72;
+    overflow-wrap: normal;
+    tab-size: 4;
+    white-space: pre;
+}
+
+.stack-trace code {
+    color: inherit;
 }
 
 .attachment {
@@ -1513,14 +1705,6 @@ pre {
     white-space: nowrap;
 }
 
-.field-order-table tbody tr {
-    cursor: grab;
-}
-
-.field-order-table tbody tr:active {
-    cursor: grabbing;
-}
-
 .field-order-table tbody tr.is-dragging {
     background: var(--brand-soft);
     opacity: 0.55;
@@ -1533,64 +1717,159 @@ pre {
 
 .field-order-table th:first-child,
 .field-order-table td:first-child {
-    width: 9rem;
-}
-
-.reorder-cell,
-.reorder-buttons {
-    display: flex;
-    align-items: center;
+    width: 5rem;
 }
 
 .reorder-cell {
-    gap: 0.7rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .drag-handle {
-    color: var(--ink-faint);
-    font-size: 1.25rem;
-    line-height: 1;
-}
-
-.reorder-buttons {
-    gap: 0.25rem;
-}
-
-.reorder-button {
-    width: 1.85rem;
-    min-height: 1.85rem;
+    display: grid;
+    width: 2rem;
+    height: 2rem;
+    min-height: 2rem;
     padding: 0;
-    border-color: var(--border-strong);
-    background: var(--surface);
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    background: transparent;
     color: var(--ink-soft);
-    font-size: 0.95rem;
+    cursor: grab;
+    place-items: center;
 }
 
-.reorder-button:hover {
+.drag-handle:hover,
+.drag-handle:focus-visible {
     border-color: var(--brand);
     background: var(--brand-soft);
     color: var(--brand);
 }
 
-.reorder-button:disabled {
-    border-color: var(--border);
-    background: var(--surface-subtle);
-    color: var(--ink-faint);
-    cursor: default;
-    opacity: 0.45;
+.drag-handle span,
+.drag-handle span::before,
+.drag-handle span::after {
+    width: 0.22rem;
+    height: 0.22rem;
+    border-radius: 50%;
+    background: currentColor;
+    box-shadow: 0.42rem 0 currentColor;
+    content: "";
 }
 
-.field-order-footer {
-    display: flex;
-    padding: 1rem 1.35rem;
-    align-items: center;
-    justify-content: space-between;
-    border-top: 1px solid var(--border);
-    gap: 1rem;
+.drag-handle span {
+    position: relative;
 }
 
-.field-order-footer .form-note {
+.drag-handle span::before,
+.drag-handle span::after {
+    position: absolute;
+    left: 0;
+}
+
+.drag-handle span::before {
+    top: -0.42rem;
+}
+
+.drag-handle span::after {
+    top: 0.42rem;
+}
+
+.field-order-status {
+    min-height: 2.8rem;
     margin: 0;
+    padding: 0.8rem 1.35rem;
+    border-top: 1px solid var(--border);
+}
+
+.field-order-status.is-error {
+    color: var(--danger);
+}
+
+.field-definition-panel {
+    display: grid;
+    padding: 1.35rem;
+    grid-template-columns: minmax(14rem, 0.7fr) minmax(22rem, 1.3fr);
+    align-items: start;
+    border-top: 1px solid var(--border);
+    background: var(--surface-subtle);
+    gap: 2rem;
+}
+
+.field-definition-panel h3 {
+    margin-bottom: 0.35rem;
+    font-size: 1.05rem;
+}
+
+.field-definition-panel form {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(8rem, 1fr)) auto;
+    align-items: end;
+    gap: 0.75rem;
+}
+
+.field-definition-panel label {
+    margin: 0;
+}
+
+.settings-help {
+    overflow: visible;
+}
+
+.settings-help-empty {
+    display: grid;
+    min-height: 14rem;
+    color: var(--ink-soft);
+    text-align: center;
+    place-items: center;
+    align-content: center;
+}
+
+.settings-help-empty p {
+    margin: 0;
+}
+
+.settings-help-icon {
+    display: grid;
+    width: 2rem;
+    height: 2rem;
+    margin-bottom: 0.7rem;
+    border-radius: 50%;
+    background: var(--brand-soft);
+    color: var(--brand);
+    font-family: Georgia, serif;
+    font-weight: 700;
+    place-items: center;
+}
+
+.setting-help-entry h3 {
+    margin-bottom: 0.55rem;
+    font-size: 1.15rem;
+}
+
+.setting-help-entry > p:not(.eyebrow) {
+    color: var(--ink-soft);
+}
+
+.setting-value-description {
+    padding: 0.85rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--surface-subtle);
+}
+
+.setting-value-description strong,
+.setting-value-description span {
+    display: block;
+}
+
+.setting-value-description strong {
+    margin-bottom: 0.2rem;
+    color: var(--ink-faint);
+    font-size: 0.68rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
 }
 
 /* Authentication */
@@ -1668,6 +1947,15 @@ pre {
     .filters {
         grid-template-columns: repeat(2, minmax(8rem, 1fr));
     }
+
+    .report-search-filter {
+        grid-column: span 1;
+    }
+
+    .field-definition-panel,
+    .field-definition-panel form {
+        grid-template-columns: 1fr;
+    }
 }
 
 @media (max-width: 620px) {
@@ -1678,12 +1966,9 @@ pre {
         width: min(100% - 1.5rem, 78rem);
     }
 
-    .account {
-        font-size: 0;
-    }
-
-    .account .button-quiet {
-        font-size: 0.82rem;
+    .account-trigger {
+        padding-right: 0.5rem;
+        padding-left: 0.5rem;
     }
 
     nav {
@@ -1735,11 +2020,6 @@ pre {
     th,
     td {
         padding: 0.7rem;
-    }
-
-    .field-order-footer {
-        align-items: stretch;
-        flex-direction: column;
     }
 
     .entity-selector-popover {

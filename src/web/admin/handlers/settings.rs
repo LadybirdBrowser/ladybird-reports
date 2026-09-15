@@ -1,10 +1,10 @@
 use askama::Template;
-use axum::{Extension, Form, extract::State, response::Redirect};
+use axum::{Extension, Form, extract::State, http::StatusCode, response::Redirect};
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
 
 use crate::{
-    domain::{FieldKind, RuntimeConfiguration},
+    domain::{FieldKind, RuntimeConfiguration, SETTING_DEFINITIONS},
     error::{AppError, Result},
 };
 
@@ -15,15 +15,23 @@ use super::super::{AdminState, TemplateResponse, authentication::Navigation, ses
 pub struct SettingsTemplate {
     navigation: Option<Navigation>,
     configuration: String,
-    revision: i64,
     updated_at: DateTime<Utc>,
     fields: Vec<FieldView>,
+    setting_definitions: Vec<SettingDefinitionView>,
 }
 
 pub struct FieldView {
     key: String,
     label: String,
     kind: String,
+}
+
+pub struct SettingDefinitionView {
+    key: &'static str,
+    path: &'static str,
+    title: &'static str,
+    description: &'static str,
+    value_description: &'static str,
 }
 
 #[derive(Template)]
@@ -63,16 +71,24 @@ pub async fn show(
     Ok(TemplateResponse(SettingsTemplate {
         navigation: Some(Navigation::for_session(&state, &session)),
         configuration: configuration_json,
-        revision: configuration.revision,
         updated_at: configuration.updated_at,
         fields,
+        setting_definitions: SETTING_DEFINITIONS
+            .iter()
+            .map(|definition| SettingDefinitionView {
+                key: definition.key,
+                path: definition.path,
+                title: definition.title,
+                description: definition.description,
+                value_description: definition.value_description,
+            })
+            .collect(),
     }))
 }
 
 #[derive(Deserialize)]
 pub struct ConfigurationForm {
     csrf: String,
-    revision: i64,
     configuration: String,
 }
 
@@ -86,16 +102,12 @@ pub async fn update(
     let configuration: RuntimeConfiguration = serde_json::from_str(&form.configuration)
         .map_err(|_| AppError::InvalidRequest("Invalid configuration JSON"))?;
 
-    let new_revision = state
+    state
         .database
-        .update_configuration(&configuration, form.revision, session.github_id)
+        .update_configuration(&configuration, session.github_id)
         .await?;
 
-    tracing::info!(
-        event = "configuration.updated",
-        revision = new_revision,
-        actor = session.login,
-    );
+    tracing::info!(event = "configuration.updated", actor = session.login,);
 
     Ok(Redirect::to("/settings"))
 }
@@ -141,7 +153,7 @@ pub async fn reorder_fields(
     State(state): State<AdminState>,
     Extension(session): Extension<Session>,
     Form(form): Form<FieldOrderForm>,
-) -> Result<Redirect> {
+) -> Result<StatusCode> {
     session.verify_csrf(&form.csrf)?;
 
     let keys = form
@@ -163,7 +175,7 @@ pub async fn reorder_fields(
         actor = session.login,
     );
 
-    Ok(Redirect::to("/settings"))
+    Ok(StatusCode::NO_CONTENT)
 }
 
 pub async fn operations(
