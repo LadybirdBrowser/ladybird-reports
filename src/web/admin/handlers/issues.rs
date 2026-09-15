@@ -166,22 +166,40 @@ pub async fn create_from_report(
         return Err(AppError::InvalidRequest("Invalid GitHub issue contents"));
     }
 
-    let issue_id = state
-        .database
-        .create_issue(&form.title, &form.description, report_id, session.github_id)
-        .await?;
-
     if let Some(github_issue) = existing_github_issue {
-        state
+        let assignment = state
             .database
-            .link_github_issue(
-                issue_id,
+            .assign_report_to_github_issue(
+                &form.title,
+                &form.description,
+                report_id,
                 github_issue.number,
                 &github_issue.html_url,
                 session.github_id,
             )
             .await?;
-    } else if form.github_action == "create" {
+
+        tracing::info!(
+            event = if assignment.created {
+                "issue.created"
+            } else {
+                "report.assigned_to_linked_github_issue"
+            },
+            issue_id = %assignment.issue_id,
+            %report_id,
+            github_number = github_issue.number,
+            actor = session.login,
+        );
+
+        return Ok(Redirect::to(&format!("/issues/{}", assignment.issue_id)));
+    }
+
+    let issue_id = state
+        .database
+        .create_issue(&form.title, &form.description, report_id, session.github_id)
+        .await?;
+
+    if form.github_action == "create" {
         let attempt_id = state
             .database
             .begin_github_publish(issue_id, session.github_id)

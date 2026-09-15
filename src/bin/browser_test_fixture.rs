@@ -152,11 +152,19 @@ async fn main() -> Result<()> {
 
     let existing_issue_id = IssueId::new();
     sqlx::query(
-        "INSERT INTO issues (id, title, description)
+        "INSERT INTO issues (
+            id,
+            title,
+            description,
+            github_number,
+            github_url
+         )
          VALUES (
             $1,
             'Intermittent navigation timeout',
-            'Reports collected while investigating navigation stalls.'
+            'Reports collected while investigating navigation stalls.',
+            4812,
+            'https://github.com/LadybirdBrowser/ladybird/issues/4812'
          )",
     )
     .bind(existing_issue_id)

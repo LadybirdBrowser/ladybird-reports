@@ -1,7 +1,9 @@
 use chrono::{DateTime, NaiveDate, Utc};
 use serde_json::Value;
 
-use crate::domain::{AttachmentId, IssueId, ReportId, ReportSearch, SubmissionId, UploadId};
+use crate::domain::{
+    AttachmentId, DiscordDeliveryLeaseId, IssueId, ReportId, ReportSearch, SubmissionId, UploadId,
+};
 
 #[derive(Clone, Debug)]
 pub struct SessionRecord {
@@ -26,10 +28,36 @@ pub struct ReportQuery {
 #[derive(Clone, Debug)]
 pub struct ReportSummary {
     pub id: ReportId,
+    pub kind: String,
     pub client_version: String,
     pub build: String,
     pub issue_id: Option<IssueId>,
     pub created_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug)]
+pub struct GithubIssueLink {
+    pub issue_id: IssueId,
+    pub github_number: i64,
+    pub title: String,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct GithubIssueAssignment {
+    pub issue_id: IssueId,
+    pub created: bool,
+}
+
+#[derive(Clone, Debug)]
+pub struct PendingDiscordNotification {
+    pub report_id: ReportId,
+    pub lease_id: DiscordDeliveryLeaseId,
+    pub kind: String,
+    pub client_version: String,
+    pub build: String,
+    pub fields: Value,
+    pub created_at: DateTime<Utc>,
+    pub attempt_count: u32,
 }
 
 #[derive(Clone, Debug)]

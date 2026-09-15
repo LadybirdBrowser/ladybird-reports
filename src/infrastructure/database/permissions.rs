@@ -140,7 +140,7 @@ pub async fn apply_ingest_permissions(admin_pool: &PgPool, ingest_role: &str) ->
         format!("REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM {quoted_role}"),
         format!("REVOKE ALL ON ALL FUNCTIONS IN SCHEMA public FROM {quoted_role}"),
         format!("GRANT USAGE ON SCHEMA public TO {quoted_role}"),
-        format!("GRANT SELECT ON runtime_configuration, field_definitions TO {quoted_role}"),
+        format!("GRANT SELECT ON field_definitions TO {quoted_role}"),
     ];
 
     for statement in statements {
@@ -160,6 +160,7 @@ pub async fn apply_ingest_permissions(admin_pool: &PgPool, ingest_role: &str) ->
         "staging_upload_is_referenced(uuid)",
         "configure_report_retention(uuid, integer)",
         "sweep_expired_ingestion_state()",
+        "reporting_runtime_configuration()",
     ];
 
     for function in functions {

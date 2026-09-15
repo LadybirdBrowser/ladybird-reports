@@ -6,7 +6,9 @@ use crate::{
     infrastructure::database::AdminDatabase,
 };
 
-use super::{IssueDetails, IssueRecord, IssueSummary, ReportSummary};
+use super::{
+    GithubIssueAssignment, GithubIssueLink, IssueDetails, IssueRecord, IssueSummary, ReportSummary,
+};
 
 impl AdminDatabase {
     pub async fn begin_github_publish(
@@ -193,6 +195,34 @@ impl AdminDatabase {
             .collect())
     }
 
+    pub async fn issues_linked_to_github_numbers(
+        &self,
+        github_numbers: &[i64],
+    ) -> Result<Vec<GithubIssueLink>> {
+        if github_numbers.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let rows = sqlx::query(
+            "SELECT id, github_number, title
+             FROM issues
+             WHERE github_number = ANY($1)
+                AND merged_into IS NULL",
+        )
+        .bind(github_numbers)
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows
+            .into_iter()
+            .map(|row| GithubIssueLink {
+                issue_id: row.get("id"),
+                github_number: row.get("github_number"),
+                title: row.get("title"),
+            })
+            .collect())
+    }
+
     pub async fn create_issue(
         &self,
         title: &str,
@@ -253,6 +283,100 @@ impl AdminDatabase {
         Ok(issue_id)
     }
 
+    pub async fn assign_report_to_github_issue(
+        &self,
+        title: &str,
+        description: &str,
+        report_id: ReportId,
+        github_number: i64,
+        github_url: &str,
+        actor: i64,
+    ) -> Result<GithubIssueAssignment> {
+        validate_issue_text(title, description)?;
+
+        let mut transaction = self.pool.begin().await?;
+        sqlx::query("SELECT pg_advisory_xact_lock(891125)")
+            .execute(&mut *transaction)
+            .await?;
+
+        let existing_issue_id: Option<IssueId> = sqlx::query_scalar(
+            "SELECT id
+             FROM issues
+             WHERE github_number = $1
+                AND merged_into IS NULL",
+        )
+        .bind(github_number)
+        .fetch_optional(&mut *transaction)
+        .await?;
+
+        let (issue_id, created) = if let Some(issue_id) = existing_issue_id {
+            (issue_id, false)
+        } else {
+            let issue_id = IssueId::new();
+            sqlx::query(
+                "INSERT INTO issues (
+                    id,
+                    title,
+                    description,
+                    github_number,
+                    github_url
+                 ) VALUES ($1, $2, $3, $4, $5)",
+            )
+            .bind(issue_id)
+            .bind(title.trim())
+            .bind(description)
+            .bind(github_number)
+            .bind(github_url)
+            .execute(&mut *transaction)
+            .await?;
+
+            sqlx::query(
+                "INSERT INTO audit_events (actor, action, entity_id, details)
+                 VALUES
+                    ($1, 'issue.created', $2, '{}'::jsonb),
+                    ($1, 'issue.github_linked', $2, $3)",
+            )
+            .bind(actor)
+            .bind(issue_id.0)
+            .bind(serde_json::json!({
+                "number": github_number,
+                "url": github_url,
+            }))
+            .execute(&mut *transaction)
+            .await?;
+
+            (issue_id, true)
+        };
+
+        let updated = sqlx::query(
+            "UPDATE reports
+             SET issue_id = $2, assigned_at = now(), updated_at = now()
+             WHERE id = $1 AND deleted_at IS NULL AND storage_state = 'ready'",
+        )
+        .bind(report_id)
+        .bind(issue_id)
+        .execute(&mut *transaction)
+        .await?;
+
+        if updated.rows_affected() != 1 {
+            return Err(AppError::NotFound("Report not found"));
+        }
+
+        sqlx::query(
+            "INSERT INTO audit_events (actor, action, entity_id, details)
+             VALUES ($1, 'report.assignment', $2, $3)",
+        )
+        .bind(actor)
+        .bind(report_id.0)
+        .bind(serde_json::json!({ "to": issue_id }))
+        .execute(&mut *transaction)
+        .await?;
+
+        transaction.commit().await?;
+
+        Ok(GithubIssueAssignment { issue_id, created })
+    }
+
     pub async fn issue_details(&self, issue_id: IssueId) -> Result<Option<IssueDetails>> {
         let issue = self.find_issue(issue_id).await?;
 
@@ -261,7 +385,7 @@ impl AdminDatabase {
         };
 
         let report_rows = sqlx::query(
-            "SELECT id, client_version, build, issue_id, created_at
+            "SELECT id, kind, client_version, build, issue_id, created_at
              FROM reports
              WHERE issue_id = $1
                 AND deleted_at IS NULL
@@ -276,6 +400,7 @@ impl AdminDatabase {
             .into_iter()
             .map(|row| ReportSummary {
                 id: row.get("id"),
+                kind: row.get("kind"),
                 client_version: row.get("client_version"),
                 build: row.get("build"),
                 issue_id: row.get("issue_id"),

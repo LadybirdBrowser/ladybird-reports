@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use askama::Template;
 use axum::{
     Extension, Form, Json,
@@ -29,19 +31,48 @@ pub async fn search_options(
 
     let configuration = state.database.configuration().await?;
     let token = session.github_access_token(&state)?;
-    let results = state
+    let github_issues = state
         .github
         .search_issues(&token, &configuration.github_repository, query)
+        .await?;
+    let github_numbers = github_issues
+        .iter()
+        .map(|issue| issue.number)
+        .collect::<Vec<_>>();
+    let linked_issues = state
+        .database
+        .issues_linked_to_github_numbers(&github_numbers)
         .await?
         .into_iter()
-        .map(|issue| EntitySearchOption {
-            value: issue.number.to_string(),
-            label: issue.title,
-            description: issue.html_url,
-            identifier: format!("#{}", issue.number),
-            badge: "GitHub".into(),
-            badge_tone: "neutral",
-            footnote: "Existing issue".into(),
+        .map(|link| (link.github_number, link))
+        .collect::<HashMap<_, _>>();
+
+    let results = github_issues
+        .into_iter()
+        .map(|issue| {
+            let linked_issue = linked_issues.get(&issue.number);
+            let (badge, badge_tone, footnote) = match linked_issue {
+                Some(link) => (
+                    "Linked in Reports".into(),
+                    "assigned",
+                    format!("Already tracked as {}", link.title),
+                ),
+                None => (
+                    "GitHub".into(),
+                    "neutral",
+                    "Not yet linked in Reports".into(),
+                ),
+            };
+
+            EntitySearchOption {
+                value: issue.number.to_string(),
+                label: issue.title,
+                description: issue.html_url,
+                identifier: format!("#{}", issue.number),
+                badge,
+                badge_tone,
+                footnote,
+            }
         })
         .collect();
 

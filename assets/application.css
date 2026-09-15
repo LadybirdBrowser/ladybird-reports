@@ -34,6 +34,10 @@
     --radius-lg: 1rem;
 }
 
+[hidden] {
+    display: none !important;
+}
+
 @media (prefers-color-scheme: dark) {
     :root {
         color-scheme: dark;
@@ -1188,10 +1192,7 @@ button:active,
 }
 
 .filters {
-    display: grid;
-    grid-template-columns: minmax(20rem, 1fr) auto;
-    align-items: end;
-    gap: 0.75rem;
+    display: block;
 }
 
 .search-input-wrap {
@@ -1221,8 +1222,12 @@ button:active,
     margin: 0;
 }
 
-.filters button {
-    margin-bottom: 0.02rem;
+.report-type-link {
+    font-weight: 700;
+}
+
+.report-received-at {
+    white-space: nowrap;
 }
 
 /* Data and status */
@@ -2019,14 +2024,6 @@ pre {
     .sticky-card,
     .sticky-stack {
         position: static;
-    }
-
-    .filters {
-        grid-template-columns: repeat(2, minmax(8rem, 1fr));
-    }
-
-    .report-search-filter {
-        grid-column: span 1;
     }
 
     .field-definition-panel,

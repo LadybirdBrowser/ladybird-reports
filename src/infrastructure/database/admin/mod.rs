@@ -2,6 +2,7 @@ mod authentication;
 mod issues;
 mod maintenance;
 mod models;
+mod notifications;
 mod reports;
 mod settings;
 

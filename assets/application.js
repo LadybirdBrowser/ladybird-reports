@@ -1,4 +1,5 @@
 const ENTITY_SEARCH_DELAY_MS = 180;
+const FILTER_SUBMIT_DELAY_MS = 300;
 
 class EntitySelector {
     constructor(root) {
@@ -774,8 +775,30 @@ function initializeGithubChoices() {
     }
 }
 
+function initializeAutoFilters() {
+    for (const form of document.querySelectorAll("[data-auto-filter]")) {
+        let submitTimer = null;
+
+        const submit = () => {
+            clearTimeout(submitTimer);
+            form.requestSubmit();
+        };
+
+        form.addEventListener("input", (event) => {
+            if (!(event.target instanceof HTMLInputElement)) {
+                return;
+            }
+
+            clearTimeout(submitTimer);
+            submitTimer = setTimeout(submit, FILTER_SUBMIT_DELAY_MS);
+        });
+        form.addEventListener("change", submit);
+    }
+}
+
 initializeEntitySelectors();
 initializeSelectControls();
 initializeFieldOrdering();
 initializeSettingsHelp();
 initializeGithubChoices();
+initializeAutoFilters();

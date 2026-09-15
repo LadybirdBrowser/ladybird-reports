@@ -62,6 +62,7 @@ macro_rules! uuid_identifier {
 
 uuid_identifier!(AttachmentId);
 uuid_identifier!(ChallengeId);
+uuid_identifier!(DiscordDeliveryLeaseId);
 uuid_identifier!(GithubPublishAttemptId);
 uuid_identifier!(IssueId);
 uuid_identifier!(ReportId);

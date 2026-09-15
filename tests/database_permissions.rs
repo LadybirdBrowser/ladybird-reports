@@ -46,12 +46,26 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
         .await
         .expect("connect with generated reporting role");
 
-    let configured: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM runtime_configuration WHERE singleton = true)",
-    )
-    .fetch_one(&reporting_pool)
-    .await
-    .expect("reporting role reads runtime configuration");
+    let reporting_configuration: serde_json::Value =
+        sqlx::query_scalar("SELECT reporting_runtime_configuration()")
+            .fetch_one(&reporting_pool)
+            .await
+            .expect("reporting role reads its runtime configuration projection");
+    assert!(reporting_configuration.get("limits").is_some());
+    assert!(reporting_configuration.get("discord").is_none());
+
+    assert!(
+        sqlx::query("SELECT value FROM runtime_configuration")
+            .execute(&reporting_pool)
+            .await
+            .is_err(),
+        "reporting role must not read configuration secrets directly"
+    );
+
+    let configured: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM field_definitions)")
+        .fetch_one(&reporting_pool)
+        .await
+        .expect("reporting role reads field definitions");
     assert!(configured);
 
     assert!(
@@ -440,4 +454,261 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
     .await
     .expect("check assigned report after source block");
     assert!(assigned_report_is_active);
+
+    sqlx::query(
+        "UPDATE issues
+         SET
+            github_number = 4812,
+            github_url = 'https://github.com/LadybirdBrowser/ladybird/issues/4812'
+         WHERE id = $1",
+    )
+    .bind(issue_id)
+    .execute(&admin_pool)
+    .await
+    .expect("link existing integration issue to GitHub");
+
+    let first_github_report = ReportId::new();
+    let second_github_report = ReportId::new();
+    let third_github_report = ReportId::new();
+    for github_report in [
+        first_github_report,
+        second_github_report,
+        third_github_report,
+    ] {
+        sqlx::query(
+            "INSERT INTO reports (
+                id,
+                submission_id,
+                manifest_digest,
+                kind,
+                client_version,
+                build,
+                storage_state,
+                staging_id
+             ) VALUES (
+                $1,
+                $2,
+                repeat('9', 64),
+                'crash',
+                'github-link-test',
+                '',
+                'ready',
+                $3
+             )",
+        )
+        .bind(github_report)
+        .bind(SubmissionId::new())
+        .bind(UploadId::new())
+        .execute(&admin_pool)
+        .await
+        .expect("create report for GitHub issue assignment test");
+    }
+
+    let reused_issue = admin_database
+        .assign_report_to_github_issue(
+            "Unused replacement title",
+            "Unused replacement description",
+            first_github_report,
+            4812,
+            "https://github.com/LadybirdBrowser/ladybird/issues/4812",
+            999,
+        )
+        .await
+        .expect("assign report to issue already linked to GitHub");
+    assert_eq!(reused_issue.issue_id, issue_id);
+    assert!(!reused_issue.created);
+
+    let created_issue = admin_database
+        .assign_report_to_github_issue(
+            "New linked issue",
+            "Created while assigning a report.",
+            second_github_report,
+            4813,
+            "https://github.com/LadybirdBrowser/ladybird/issues/4813",
+            999,
+        )
+        .await
+        .expect("create issue for an unlinked GitHub issue");
+    assert!(created_issue.created);
+
+    let reused_created_issue = admin_database
+        .assign_report_to_github_issue(
+            "Another unused title",
+            "Another unused description",
+            third_github_report,
+            4813,
+            "https://github.com/LadybirdBrowser/ladybird/issues/4813",
+            999,
+        )
+        .await
+        .expect("reuse issue created for the same GitHub issue");
+    assert_eq!(reused_created_issue.issue_id, created_issue.issue_id);
+    assert!(!reused_created_issue.created);
+
+    let linked_issues = admin_database
+        .issues_linked_to_github_numbers(&[4812, 4813, 9999])
+        .await
+        .expect("load internal issues for GitHub search results");
+    assert_eq!(linked_issues.len(), 2);
+    assert!(linked_issues.iter().any(|link| {
+        link.issue_id == issue_id
+            && link.github_number == 4812
+            && link.title == "Assigned integration report"
+    }));
+
+    let active_issue_count: i64 = sqlx::query_scalar(
+        "SELECT count(*)
+         FROM issues
+         WHERE github_number = 4813
+            AND merged_into IS NULL",
+    )
+    .fetch_one(&admin_pool)
+    .await
+    .expect("count active internal issues for one GitHub issue");
+    assert_eq!(active_issue_count, 1);
+
+    sqlx::query("DELETE FROM discord_report_notifications")
+        .execute(&admin_pool)
+        .await
+        .expect("clear notification queue before focused checks");
+    sqlx::query(
+        "UPDATE discord_delivery_state
+         SET
+            lease_id = NULL,
+            leased_report_id = NULL,
+            lease_expires_at = NULL,
+            paused_until = NULL,
+            consecutive_failures = 0",
+    )
+    .execute(&admin_pool)
+    .await
+    .expect("reset Discord delivery state before focused checks");
+
+    let rolled_back_report = ReportId::new();
+    let mut rolled_back_transaction = admin_pool
+        .begin()
+        .await
+        .expect("begin rolled-back report transaction");
+    sqlx::query(
+        "INSERT INTO reports (
+            id, submission_id, manifest_digest, kind, client_version,
+            build, storage_state, staging_id
+         ) VALUES ($1, $2, repeat('a', 64), 'crash', 'rolled-back', '', 'ready', $3)",
+    )
+    .bind(rolled_back_report)
+    .bind(SubmissionId::new())
+    .bind(UploadId::new())
+    .execute(&mut *rolled_back_transaction)
+    .await
+    .expect("insert report inside transaction");
+    rolled_back_transaction
+        .rollback()
+        .await
+        .expect("roll back report transaction");
+
+    let rolled_back_notification_count: i64 = sqlx::query_scalar(
+        "SELECT count(*)
+         FROM discord_report_notifications
+         WHERE report_id = $1",
+    )
+    .bind(rolled_back_report)
+    .fetch_one(&admin_pool)
+    .await
+    .expect("count notifications for rolled-back report");
+    assert_eq!(rolled_back_notification_count, 0);
+
+    let first_notification_report = ReportId::new();
+    let second_notification_report = ReportId::new();
+    for notification_report in [first_notification_report, second_notification_report] {
+        sqlx::query(
+            "INSERT INTO reports (
+                id, submission_id, manifest_digest, kind, client_version,
+                build, storage_state, staging_id
+             ) VALUES (
+                $1, $2, repeat('b', 64), 'crash',
+                'notification-test', 'macOS arm64', 'ready', $3
+             )",
+        )
+        .bind(notification_report)
+        .bind(SubmissionId::new())
+        .bind(UploadId::new())
+        .execute(&admin_pool)
+        .await
+        .expect("create report with transactional Discord notification");
+    }
+
+    let first_notification = admin_database
+        .claim_discord_notification(40)
+        .await
+        .expect("claim first Discord notification")
+        .expect("first Discord notification exists");
+    assert_eq!(first_notification.attempt_count, 0);
+    assert_eq!(first_notification.client_version, "notification-test");
+
+    assert!(
+        admin_database
+            .defer_discord_notification(
+                first_notification.report_id,
+                first_notification.lease_id,
+                30,
+                Some(503),
+                "response",
+            )
+            .await
+            .expect("defer first Discord notification")
+    );
+    assert!(
+        admin_database
+            .claim_discord_notification(40)
+            .await
+            .expect("check globally paused Discord queue")
+            .is_none()
+    );
+
+    sqlx::query("UPDATE discord_delivery_state SET paused_until = now()")
+        .execute(&admin_pool)
+        .await
+        .expect("resume Discord queue for integration test");
+    let retried_notification = admin_database
+        .claim_discord_notification(40)
+        .await
+        .expect("reclaim deferred Discord notification")
+        .expect("deferred Discord notification remains queued");
+    assert_eq!(retried_notification.report_id, first_notification.report_id);
+    assert_eq!(retried_notification.attempt_count, 1);
+    assert!(
+        admin_database
+            .finish_discord_notification(
+                retried_notification.report_id,
+                retried_notification.lease_id,
+                0,
+            )
+            .await
+            .expect("finish retried Discord notification")
+    );
+
+    let second_notification = admin_database
+        .claim_discord_notification(40)
+        .await
+        .expect("claim second Discord notification")
+        .expect("second Discord notification exists");
+    assert_ne!(second_notification.report_id, first_notification.report_id);
+    assert!(
+        admin_database
+            .finish_discord_notification(
+                second_notification.report_id,
+                second_notification.lease_id,
+                0,
+            )
+            .await
+            .expect("finish second Discord notification")
+    );
+
+    assert!(
+        admin_database
+            .claim_discord_notification(40)
+            .await
+            .expect("check drained Discord queue")
+            .is_none()
+    );
 }

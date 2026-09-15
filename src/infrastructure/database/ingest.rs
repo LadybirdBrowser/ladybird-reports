@@ -78,10 +78,9 @@ impl IngestDatabase {
     }
 
     pub async fn configuration(&self) -> Result<RuntimeConfiguration> {
-        let value: Value =
-            sqlx::query_scalar("SELECT value FROM runtime_configuration WHERE singleton = true")
-                .fetch_one(&self.pool)
-                .await?;
+        let value: Value = sqlx::query_scalar("SELECT reporting_runtime_configuration()")
+            .fetch_one(&self.pool)
+            .await?;
 
         let configuration: RuntimeConfiguration =
             serde_json::from_value(value).map_err(|error| AppError::Internal(error.into()))?;

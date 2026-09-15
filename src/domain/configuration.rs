@@ -19,6 +19,8 @@ pub struct RuntimeConfiguration {
     pub limits: IngestionLimits,
     pub proof_of_work: ProofOfWorkConfiguration,
     pub maintenance: MaintenanceConfiguration,
+    #[serde(default)]
+    pub discord: DiscordConfiguration,
     pub membership_recheck_seconds: u64,
 }
 
@@ -63,6 +65,18 @@ pub struct MaintenanceConfiguration {
     pub report_retention_days: u32,
 }
 
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct DiscordConfiguration {
+    pub webhook_url: Option<String>,
+    pub poll_interval_seconds: u64,
+    pub request_timeout_seconds: u64,
+    pub initial_retry_seconds: u64,
+    pub maximum_retry_seconds: u64,
+    pub stack_trace_lines: usize,
+    pub stack_trace_characters: usize,
+}
+
 impl Default for RuntimeConfiguration {
     fn default() -> Self {
         Self {
@@ -80,6 +94,7 @@ impl Default for RuntimeConfiguration {
                 staging_retention_seconds: 3_600,
                 report_retention_days: 3_650,
             },
+            discord: DiscordConfiguration::default(),
             membership_recheck_seconds: 300,
         }
     }
@@ -106,7 +121,7 @@ pub const SETTING_DEFINITIONS: &[SettingDefinition] = &[
         "admin_base_url",
         "admin_base_url",
         "Admin base URL",
-        "The externally reachable origin used for OAuth callbacks and secure cookies.",
+        "The externally reachable origin used for OAuth callbacks and session cookies.",
         "An HTTPS origin without a path, query, or fragment.",
     ),
     setting(
@@ -306,6 +321,55 @@ pub const SETTING_DEFINITIONS: &[SettingDefinition] = &[
         "Days from report creation before deletion is scheduled.",
     ),
     setting(
+        "webhook_url",
+        "discord.webhook_url",
+        "Discord webhook",
+        "Receives a summary when a report becomes ready for triage.",
+        "A Discord incoming-webhook HTTPS URL, or null to pause delivery.",
+    ),
+    setting(
+        "poll_interval_seconds",
+        "discord.poll_interval_seconds",
+        "Discord queue interval",
+        "Controls how quickly the dispatcher notices newly queued reports.",
+        "Seconds to wait when the delivery queue is empty or paused.",
+    ),
+    setting(
+        "request_timeout_seconds",
+        "discord.request_timeout_seconds",
+        "Discord request timeout",
+        "Limits how long one webhook request may wait for Discord.",
+        "Seconds before an incomplete request is treated as failed.",
+    ),
+    setting(
+        "initial_retry_seconds",
+        "discord.initial_retry_seconds",
+        "Discord initial retry",
+        "Sets the first circuit-breaker delay after a delivery failure.",
+        "Seconds before the dispatcher tries the oldest message again.",
+    ),
+    setting(
+        "maximum_retry_seconds",
+        "discord.maximum_retry_seconds",
+        "Discord maximum retry",
+        "Caps exponential circuit-breaker delays for repeated failures.",
+        "Maximum seconds between delivery attempts.",
+    ),
+    setting(
+        "stack_trace_lines",
+        "discord.stack_trace_lines",
+        "Discord stack lines",
+        "Limits the stack excerpt included in a report notification.",
+        "Maximum number of lines from the start of the submitted stack trace.",
+    ),
+    setting(
+        "stack_trace_characters",
+        "discord.stack_trace_characters",
+        "Discord stack length",
+        "Keeps the stack excerpt within Discord's message limits.",
+        "Maximum Unicode characters in the stack excerpt.",
+    ),
+    setting(
         "membership_recheck_seconds",
         "membership_recheck_seconds",
         "Membership recheck",
@@ -358,6 +422,20 @@ impl Default for IngestionLimits {
     }
 }
 
+impl Default for DiscordConfiguration {
+    fn default() -> Self {
+        Self {
+            webhook_url: None,
+            poll_interval_seconds: 2,
+            request_timeout_seconds: 10,
+            initial_retry_seconds: 30,
+            maximum_retry_seconds: 3_600,
+            stack_trace_lines: 20,
+            stack_trace_characters: 3_000,
+        }
+    }
+}
+
 impl RuntimeConfiguration {
     pub fn validate(&self) -> Result<()> {
         self.validate_public_url()?;
@@ -366,6 +444,7 @@ impl RuntimeConfiguration {
         self.validate_rate_limits()?;
         self.validate_payload_limits()?;
         self.validate_operational_limits()?;
+        self.validate_discord()?;
 
         Ok(())
     }
@@ -466,6 +545,49 @@ impl RuntimeConfiguration {
 
         Ok(())
     }
+
+    fn validate_discord(&self) -> Result<()> {
+        let discord = &self.discord;
+        let invalid_limits = !(1..=300).contains(&discord.poll_interval_seconds)
+            || !(1..=60).contains(&discord.request_timeout_seconds)
+            || !(5..=3_600).contains(&discord.initial_retry_seconds)
+            || discord.maximum_retry_seconds < discord.initial_retry_seconds
+            || discord.maximum_retry_seconds > 86_400
+            || !(1..=100).contains(&discord.stack_trace_lines)
+            || !(256..=3_500).contains(&discord.stack_trace_characters);
+
+        if invalid_limits {
+            return Err(AppError::InvalidRequest(
+                "Invalid Discord notification settings",
+            ));
+        }
+
+        let Some(webhook_url) = discord.webhook_url.as_deref() else {
+            return Ok(());
+        };
+        let url = reqwest::Url::parse(webhook_url)
+            .map_err(|_| AppError::InvalidRequest("Invalid Discord webhook URL"))?;
+        let valid_host = matches!(url.host_str(), Some("discord.com" | "discordapp.com"));
+        let path_segments = url.path_segments().map(Iterator::collect::<Vec<_>>);
+        let valid_path = matches!(
+            path_segments.as_deref(),
+            Some(["api", "webhooks", webhook_id, webhook_token])
+                if !webhook_id.is_empty() && !webhook_token.is_empty()
+        );
+
+        if url.scheme() != "https"
+            || !valid_host
+            || !valid_path
+            || url.query().is_some()
+            || url.fragment().is_some()
+            || !url.username().is_empty()
+            || url.password().is_some()
+        {
+            return Err(AppError::InvalidRequest("Invalid Discord webhook URL"));
+        }
+
+        Ok(())
+    }
 }
 
 fn validate_origin(value: &str, error_message: &'static str) -> Result<()> {
@@ -508,6 +630,27 @@ mod tests {
             .collect::<BTreeSet<_>>();
 
         assert_eq!(documented_paths, configuration_paths);
+    }
+
+    #[test]
+    fn discord_webhook_must_be_a_complete_discord_url() {
+        for invalid_url in [
+            "https://example.com/api/webhooks/123/token",
+            "http://discord.com/api/webhooks/123/token",
+            "https://discord.com/api/webhooks/123",
+            "https://discord.com/api/webhooks/123/token/extra",
+            "https://discord.com/api/webhooks/123/token?wait=true",
+        ] {
+            let mut configuration = RuntimeConfiguration::default();
+            configuration.discord.webhook_url = Some(invalid_url.into());
+
+            assert!(configuration.validate().is_err(), "accepted {invalid_url}");
+        }
+
+        let mut configuration = RuntimeConfiguration::default();
+        configuration.discord.webhook_url =
+            Some("https://discord.com/api/webhooks/123/token".into());
+        assert!(configuration.validate().is_ok());
     }
 
     fn collect_leaf_paths(value: &Value, prefix: &str, paths: &mut BTreeSet<String>) {

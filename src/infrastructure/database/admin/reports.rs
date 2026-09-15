@@ -49,6 +49,7 @@ impl AdminDatabase {
         let mut sql = QueryBuilder::<Postgres>::new(
             "SELECT
                 reports.id,
+                reports.kind,
                 reports.client_version,
                 reports.build,
                 reports.issue_id,
@@ -90,6 +91,7 @@ impl AdminDatabase {
             .into_iter()
             .map(|row| ReportSummary {
                 id: row.get("id"),
+                kind: row.get("kind"),
                 client_version: row.get("client_version"),
                 build: row.get("build"),
                 issue_id: row.get("issue_id"),

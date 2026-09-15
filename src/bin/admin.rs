@@ -1,11 +1,13 @@
 use std::sync::Arc;
 
 use ladybird_reports::{
+    application::DiscordNotificationService,
     error::Result,
     infrastructure::{
         SecretCipher,
         attachments::FileAttachmentStore,
         database::{AdminDatabase, initialize_database},
+        discord::DiscordClient,
         github::GithubClient,
         read_secret,
     },
@@ -50,14 +52,18 @@ async fn run() -> Result<()> {
         required_environment("GITHUB_CLIENT_ID")?,
         required_environment("GITHUB_CLIENT_SECRET")?,
     )?;
+    let database = AdminDatabase::from_pool(pool);
+    let discord_notifications =
+        DiscordNotificationService::new(database.clone(), DiscordClient::new()?);
     let state = AdminState {
-        database: AdminDatabase::from_pool(pool),
+        database,
         attachments,
         github,
         secret_cipher,
         bootstrap_reporting_database_url: bootstrap.generated_reporting_database_url.map(Arc::from),
     };
     let maintenance = tokio::spawn(run_maintenance(state.clone()));
+    let discord_notifications = tokio::spawn(discord_notifications.run());
 
     let address = listen_address("ADMIN_LISTEN_ADDRESS", "0.0.0.0:3000")?;
     let listener = tokio::net::TcpListener::bind(address).await?;
@@ -69,6 +75,8 @@ async fn run() -> Result<()> {
 
     maintenance.abort();
     let _ = maintenance.await;
+    discord_notifications.abort();
+    let _ = discord_notifications.await;
 
     tracing::info!(event = "shutdown.complete", service = "admin");
     Ok(())

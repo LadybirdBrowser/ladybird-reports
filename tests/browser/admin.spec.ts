@@ -24,7 +24,7 @@ test("unauthenticated visitors can only reach the sign-in page", async ({ page }
   ).toBe(true);
 
   const visibleText = await page.locator("body").innerText();
-  expect(visibleText).not.toMatch(/maintainer|LadybirdBrowser\/maintainers/i);
+  expect(visibleText).not.toMatch(/maintainer|LadybirdBrowser\/maintainers|secure/i);
   await expect(page.locator("footer")).toContainText("Ladybird Reports · 0.1.0-dev");
 });
 
@@ -40,9 +40,13 @@ test.describe("authenticated management UI", () => {
       /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
     );
     await expect(page.getByText("Reporting database setup is incomplete.")).toBeVisible();
-    await expect(page.getByRole("link", { name: reportId })).toBeVisible();
+    const reportLink = page.locator(`a[href="/reports/${reportId}"]`);
+    await expect(reportLink).toHaveText("Web compatibility report");
+    await expect(page.locator("tbody")).not.toContainText(reportId);
+    await expect(reportLink.locator("xpath=ancestor::tr"))
+      .toContainText(/\d{2} [A-Z][a-z]{2} \d{4}, \d{2}:\d{2} UTC/);
 
-    await page.getByRole("link", { name: reportId }).click();
+    await reportLink.click();
     await expect(page.getByRole("heading", { name: "Native stack" })).toBeVisible();
     await expect(page.getByText("Core::ThreadEventQueue::process()")).toBeVisible();
     await expect(page.getByText("macOS", { exact: true }).first()).toBeVisible();
@@ -64,7 +68,7 @@ test.describe("authenticated management UI", () => {
       .getByRole("link", { name: "Filter reports by Platform" })
       .click();
     expect(new URL(page.url()).searchParams.get("q")).toBe("state:all platform:macos");
-    await expect(page.getByRole("link", { name: reportId })).toBeVisible();
+    await expect(page.locator(`a[href="/reports/${reportId}"]`)).toBeVisible();
 
     expect(await page.evaluate(() => (window as any).fixtureWasExecuted)).toBeUndefined();
   });
@@ -124,6 +128,11 @@ test.describe("authenticated management UI", () => {
     await page.goto("/issues");
     await expect(page.getByRole("heading", { name: "Create issue" })).toHaveCount(0);
     await expect(page.getByText("Intermittent navigation timeout")).toBeVisible();
+    await expect(page.getByRole("button", { name: /Apply/ })).toHaveCount(0);
+
+    await page.getByLabel("Include resolved").check();
+    await expect.poll(() => new URL(page.url()).searchParams.get("resolved"))
+      .toBe("true");
 
     await page.route("**/api/github-issue-options**", async (route) => {
       await route.fulfill({
@@ -135,9 +144,9 @@ test.describe("authenticated management UI", () => {
               label: "Fix overlapping navigation controls",
               description: "https://github.com/LadybirdBrowser/ladybird/issues/4812",
               identifier: "#4812",
-              badge: "GitHub",
-              badge_tone: "neutral",
-              footnote: "Existing issue",
+              badge: "Linked in Reports",
+              badge_tone: "assigned",
+              footnote: "Already tracked as Intermittent navigation timeout",
             },
           ],
         }),
@@ -147,6 +156,8 @@ test.describe("authenticated management UI", () => {
     await page.goto(`/reports/${reportId}`);
     await page.getByText("Create a new issue from this report").click();
     await page.getByText("Link an existing issue").click();
+    await expect(page.getByLabel("GitHub title")).toBeHidden();
+    await expect(page.getByLabel("GitHub body")).toBeHidden();
 
     const issueSearch = page.getByRole("combobox", { name: "Search GitHub issues" });
     await issueSearch.fill("navigation");
@@ -167,6 +178,10 @@ test.describe("authenticated management UI", () => {
       name: /Fix overlapping navigation controls/,
     });
     await expect(matchingIssue).toBeVisible();
+    await expect(matchingIssue).toContainText("Linked in Reports");
+    await expect(matchingIssue).toContainText(
+      "Already tracked as Intermittent navigation timeout",
+    );
     await matchingIssue.click();
 
     await expect(page.locator(".entity-selector-chip")).toContainText(
@@ -195,10 +210,10 @@ test.describe("authenticated management UI", () => {
   test("searches reports with qualified syntax", async ({ page }) => {
     await page.goto("/");
     await expect(page.getByLabel("Search reports")).toHaveValue("state:triage");
+    await expect(page.getByRole("button", { name: "Apply filters" })).toHaveCount(0);
     await page.getByLabel("Search reports").fill("state:triage platform:macos kind:crash");
-    await page.getByRole("button", { name: "Apply filters" }).click();
 
-    expect(new URL(page.url()).searchParams.get("q"))
+    await expect.poll(() => new URL(page.url()).searchParams.get("q"))
       .toBe("state:triage platform:macos kind:crash");
     await expect(page.locator("tbody tr")).toHaveCount(2);
     await expect(page.locator("tbody tr").nth(0)).toContainText("macOS");
@@ -298,11 +313,12 @@ test.describe("authenticated management UI", () => {
     await expect(page.getByRole("link", { name: reportId })).toBeVisible();
 
     await page.getByRole("link", { name: "Reports", exact: true }).click();
-    await expect(page.getByRole("link", { name: reportId })).toHaveCount(0);
+    await expect(page.locator(`a[href="/reports/${reportId}"]`)).toHaveCount(0);
 
     await page.getByLabel("Search reports").fill("state:assigned");
-    await page.getByRole("button", { name: "Apply filters" }).click();
-    await expect(page.getByRole("link", { name: reportId })).toBeVisible();
+    await expect.poll(() => new URL(page.url()).searchParams.get("q"))
+      .toBe("state:assigned");
+    await expect(page.locator(`a[href="/reports/${reportId}"]`)).toBeVisible();
   });
 
   test("shows the audit log", async ({ page }) => {

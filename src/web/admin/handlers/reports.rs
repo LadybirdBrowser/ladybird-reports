@@ -51,10 +51,11 @@ pub struct ReportsTemplate {
 
 pub struct ReportRow {
     id: ReportId,
+    kind_label: String,
     client_version: String,
     build: String,
     is_assigned: bool,
-    created_at: DateTime<Utc>,
+    received_at: String,
 }
 
 #[derive(Deserialize)]
@@ -157,10 +158,11 @@ pub async fn index(
         .into_iter()
         .map(|report| ReportRow {
             id: report.id,
+            kind_label: report_kind_label(&report.kind).into(),
             client_version: report.client_version,
             build: report.build,
             is_assigned: report.issue_id.is_some(),
-            created_at: report.created_at,
+            received_at: report.created_at.format("%d %b %Y, %H:%M UTC").to_string(),
         })
         .collect();
 

@@ -31,6 +31,26 @@ configured authorization team.
 The web layer translates requests into application calls. Public handlers return
 JSON. Admin handlers construct typed view models rendered by Askama templates.
 
+## Discord notifications
+
+When a report becomes ready, a database trigger adds it to a transactional outbox in
+the same transaction. The admin process claims the oldest pending notification and
+sends a bounded report summary through the configured Discord webhook. The summary
+includes an excerpt of the native stack when one is available and links to the full
+report in the management interface. URLs, source addresses, and other report fields
+are not copied into the message by default.
+
+Only one delivery may be in progress across all admin replicas. An unsuccessful
+request pauses the complete queue and retries its oldest entry with exponential
+backoff. Discord rate-limit delays are honored. A notification is marked delivered
+only after Discord confirms the message; a process or database failure after that
+confirmation can therefore produce a duplicate during recovery. This at-least-once
+behavior avoids silently losing a notification.
+
+The webhook URL lives in the database-backed runtime configuration. The reporting
+database role reads a projection that excludes Discord configuration, so the public
+API process cannot retrieve the credential.
+
 ## Identifiers
 
 Every identifier in the protocol, application, and database is UUIDv7. The server
