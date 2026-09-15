@@ -7,14 +7,14 @@ use axum::{
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
 
-use crate::{domain::IssueId, error::Result};
+use crate::{
+    domain::{IssueId, ReportId},
+    error::{AppError, Result},
+};
 
-use super::{
-    super::{
-        AdminState, TemplateResponse, authentication::Navigation, session::Session,
-        templates::not_found,
-    },
-    reports::parse_report_ids,
+use super::super::{
+    AdminState, TemplateResponse, authentication::Navigation, session::Session,
+    templates::not_found,
 };
 
 #[derive(Deserialize)]
@@ -109,32 +109,127 @@ pub struct CreateIssueForm {
     title: String,
     #[serde(default)]
     description: String,
+    github_action: String,
     #[serde(default)]
-    report_ids: String,
+    github_issue_number: String,
+    #[serde(default)]
+    github_title: String,
+    #[serde(default)]
+    github_body: String,
 }
 
-pub async fn create(
+pub async fn create_from_report(
     State(state): State<AdminState>,
     Extension(session): Extension<Session>,
+    Path(report_id): Path<ReportId>,
     Form(form): Form<CreateIssueForm>,
 ) -> Result<Redirect> {
     session.verify_csrf(&form.csrf)?;
 
-    let report_ids = parse_report_ids(&form.report_ids)?;
+    let configuration = state.database.configuration().await?;
+    let access_token = match form.github_action.as_str() {
+        "link" | "create" => Some(session.github_access_token(&state)?),
+        "none" => None,
+        _ => return Err(AppError::InvalidRequest("Invalid GitHub action")),
+    };
+
+    let existing_github_issue = match form.github_action.as_str() {
+        "none" | "create" => None,
+        "link" => {
+            let number = form
+                .github_issue_number
+                .parse::<i64>()
+                .map_err(|_| AppError::InvalidRequest("Select a GitHub issue"))?;
+            if number < 1 {
+                return Err(AppError::InvalidRequest("Select a GitHub issue"));
+            }
+
+            Some(
+                state
+                    .github
+                    .issue(
+                        access_token.as_deref().expect("link action has a token"),
+                        &configuration.github_repository,
+                        number,
+                    )
+                    .await?,
+            )
+        }
+        _ => return Err(AppError::InvalidRequest("Invalid GitHub action")),
+    };
+
+    if form.github_action == "create"
+        && (form.github_title.trim().is_empty()
+            || form.github_title.len() > 256
+            || form.github_body.len() > 256 * 1024)
+    {
+        return Err(AppError::InvalidRequest("Invalid GitHub issue contents"));
+    }
+
     let issue_id = state
         .database
-        .create_issue(
-            &form.title,
-            &form.description,
-            &report_ids,
-            session.github_id,
-        )
+        .create_issue(&form.title, &form.description, report_id, session.github_id)
         .await?;
+
+    if let Some(github_issue) = existing_github_issue {
+        state
+            .database
+            .link_github_issue(
+                issue_id,
+                github_issue.number,
+                &github_issue.html_url,
+                session.github_id,
+            )
+            .await?;
+    } else if form.github_action == "create" {
+        let attempt_id = state
+            .database
+            .begin_github_publish(issue_id, session.github_id)
+            .await?;
+        let github_issue = match state
+            .github
+            .create_issue(
+                access_token.as_deref().expect("create action has a token"),
+                &configuration.github_repository,
+                form.github_title.trim(),
+                &form.github_body,
+            )
+            .await
+        {
+            Ok(issue) => issue,
+            Err(error) => {
+                if matches!(error, AppError::Internal(_) | AppError::Unavailable) {
+                    state
+                        .database
+                        .mark_github_publish_uncertain(attempt_id)
+                        .await?;
+                } else {
+                    state
+                        .database
+                        .mark_github_publish_failed(attempt_id)
+                        .await?;
+                }
+                return Err(error);
+            }
+        };
+
+        state
+            .database
+            .finish_github_publish(
+                attempt_id,
+                issue_id,
+                github_issue.number,
+                &github_issue.html_url,
+                session.github_id,
+            )
+            .await?;
+    }
 
     tracing::info!(
         event = "issue.created",
         %issue_id,
-        report_count = report_ids.len(),
+        %report_id,
+        github_action = form.github_action,
         actor = session.login,
     );
 

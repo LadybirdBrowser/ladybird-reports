@@ -72,23 +72,23 @@ pub struct ReportRow {
 #[derive(Deserialize)]
 pub struct ReportSearchQuery {
     #[serde(default)]
-    query: String,
+    pub(super) query: String,
 }
 
 #[derive(Serialize)]
 pub struct EntitySearchResponse {
-    results: Vec<EntitySearchOption>,
+    pub(super) results: Vec<EntitySearchOption>,
 }
 
 #[derive(Serialize)]
 pub struct EntitySearchOption {
-    value: String,
-    label: String,
-    description: String,
-    identifier: String,
-    badge: String,
-    badge_tone: &'static str,
-    footnote: String,
+    pub(super) value: String,
+    pub(super) label: String,
+    pub(super) description: String,
+    pub(super) identifier: String,
+    pub(super) badge: String,
+    pub(super) badge_tone: &'static str,
+    pub(super) footnote: String,
 }
 
 #[derive(Template)]

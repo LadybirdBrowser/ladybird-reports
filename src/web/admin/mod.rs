@@ -33,6 +33,10 @@ pub fn router(state: AdminState) -> Router {
             "/api/report-options",
             get(handlers::reports::search_options),
         )
+        .route(
+            "/api/github-issue-options",
+            get(handlers::github::search_options),
+        )
         .route("/reports/{id}/block-ip", post(handlers::reports::block_ip))
         .route(
             "/reports/{id}/unblock-ip",
@@ -41,7 +45,10 @@ pub fn router(state: AdminState) -> Router {
         .route("/reports/assign", post(handlers::reports::assign))
         .route("/attachments/{id}", get(handlers::reports::attachment))
         .route("/issues", get(handlers::issues::index))
-        .route("/issues", post(handlers::issues::create))
+        .route(
+            "/reports/{id}/issues",
+            post(handlers::issues::create_from_report),
+        )
         .route("/issues/{id}", get(handlers::issues::show))
         .route("/issues/{id}", post(handlers::issues::update))
         .route("/issues/{id}/merge", post(handlers::issues::merge))

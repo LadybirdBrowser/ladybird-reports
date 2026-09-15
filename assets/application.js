@@ -517,6 +517,43 @@ function initializeFieldOrdering() {
     updateOrder();
 }
 
+function initializeGithubChoices() {
+    for (const form of document.querySelectorAll("[data-create-issue-form]")) {
+        const choices = Array.from(form.querySelectorAll('input[name="github_action"]'));
+        const panels = Array.from(form.querySelectorAll("[data-github-panel]"));
+        const internalTitle = form.querySelector('input[name="title"]');
+        const internalDescription = form.querySelector('textarea[name="description"]');
+        const githubTitle = form.querySelector('input[name="github_title"]');
+        const githubBody = form.querySelector('textarea[name="github_body"]');
+
+        const update = () => {
+            const action = choices.find((choice) => choice.checked)?.value ?? "none";
+            for (const panel of panels) {
+                const active = panel.dataset.githubPanel === action;
+                panel.hidden = !active;
+                for (const input of panel.querySelectorAll("[data-github-required]")) {
+                    input.required = active;
+                }
+            }
+
+            if (action === "create") {
+                if (!githubTitle.value) {
+                    githubTitle.value = internalTitle.value;
+                }
+                if (!githubBody.value) {
+                    githubBody.value = internalDescription.value;
+                }
+            }
+        };
+
+        for (const choice of choices) {
+            choice.addEventListener("change", update);
+        }
+        update();
+    }
+}
+
 initializeEntitySelectors();
 initializeSelectControls();
 initializeFieldOrdering();
+initializeGithubChoices();

@@ -1,7 +1,7 @@
 use ladybird_reports::{
     domain::{IssueId, ReportId, SubmissionId, UploadId},
     error::Result,
-    infrastructure::hash_secret,
+    infrastructure::{hash_secret, random_token},
     runtime::required_environment,
 };
 use sqlx::postgres::PgPoolOptions;
@@ -9,7 +9,6 @@ use sqlx::postgres::PgPoolOptions;
 const REPORT_ID: &str = "01a0a536-01cd-7ac7-a3cf-ae6a2d5030e5";
 const SUBMISSION_ID: &str = "01a0a536-01d0-7c59-9b22-b9b210042528";
 const STAGING_ID: &str = "01a0a536-01d2-7668-ad21-8f997d60ebb3";
-const SESSION_TOKEN: &str = "browser-test-session";
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -21,6 +20,7 @@ async fn main() -> Result<()> {
         .max_connections(1)
         .connect(&required_environment("ADMIN_DATABASE_URL")?)
         .await?;
+    let session_token = random_token();
 
     let mut transaction = pool.begin().await?;
 
@@ -62,7 +62,7 @@ async fn main() -> Result<()> {
          VALUES ($1, 12345, 'unused-in-browser-tests', 'browser-test-csrf', now(), now() + interval '1 hour')
          ON CONFLICT (token_hash) DO NOTHING",
     )
-    .bind(hash_secret(SESSION_TOKEN))
+    .bind(hash_secret(&session_token))
     .execute(&mut *transaction)
     .await?;
 
@@ -175,6 +175,7 @@ async fn main() -> Result<()> {
     }
 
     transaction.commit().await?;
+    println!("{session_token}");
     Ok(())
 }
 

@@ -197,7 +197,7 @@ impl AdminDatabase {
         &self,
         title: &str,
         description: &str,
-        report_ids: &[ReportId],
+        report_id: ReportId,
         actor: i64,
     ) -> Result<IssueId> {
         validate_issue_text(title, description)?;
@@ -225,31 +225,29 @@ impl AdminDatabase {
         .execute(&mut *transaction)
         .await?;
 
-        for report_id in report_ids {
-            let updated = sqlx::query(
-                "UPDATE reports
-                 SET issue_id = $2, assigned_at = now(), updated_at = now()
-                 WHERE id = $1 AND deleted_at IS NULL AND storage_state = 'ready'",
-            )
-            .bind(report_id)
-            .bind(issue_id)
-            .execute(&mut *transaction)
-            .await?;
+        let updated = sqlx::query(
+            "UPDATE reports
+             SET issue_id = $2, assigned_at = now(), updated_at = now()
+             WHERE id = $1 AND deleted_at IS NULL AND storage_state = 'ready'",
+        )
+        .bind(report_id)
+        .bind(issue_id)
+        .execute(&mut *transaction)
+        .await?;
 
-            if updated.rows_affected() != 1 {
-                return Err(AppError::NotFound("Report not found"));
-            }
-
-            sqlx::query(
-                "INSERT INTO audit_events (actor, action, entity_id, details)
-                 VALUES ($1, 'report.assignment', $2, $3)",
-            )
-            .bind(actor)
-            .bind(report_id.0)
-            .bind(serde_json::json!({ "to": issue_id }))
-            .execute(&mut *transaction)
-            .await?;
+        if updated.rows_affected() != 1 {
+            return Err(AppError::NotFound("Report not found"));
         }
+
+        sqlx::query(
+            "INSERT INTO audit_events (actor, action, entity_id, details)
+             VALUES ($1, 'report.assignment', $2, $3)",
+        )
+        .bind(actor)
+        .bind(report_id.0)
+        .bind(serde_json::json!({ "to": issue_id }))
+        .execute(&mut *transaction)
+        .await?;
 
         transaction.commit().await?;
         Ok(issue_id)

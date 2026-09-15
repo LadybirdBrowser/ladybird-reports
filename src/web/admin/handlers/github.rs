@@ -1,7 +1,7 @@
 use askama::Template;
 use axum::{
-    Extension, Form,
-    extract::{Path, State},
+    Extension, Form, Json,
+    extract::{Path, Query, State},
     response::Redirect,
 };
 use serde::Deserialize;
@@ -15,6 +15,38 @@ use super::super::{
     AdminState, TemplateResponse, authentication::Navigation, session::Session,
     templates::not_found,
 };
+use super::reports::{EntitySearchOption, EntitySearchResponse, ReportSearchQuery};
+
+pub async fn search_options(
+    State(state): State<AdminState>,
+    Extension(session): Extension<Session>,
+    Query(parameters): Query<ReportSearchQuery>,
+) -> Result<Json<EntitySearchResponse>> {
+    let query = parameters.query.trim();
+    if query.len() > 128 {
+        return Err(AppError::InvalidRequest("GitHub issue search is too long"));
+    }
+
+    let configuration = state.database.configuration().await?;
+    let token = session.github_access_token(&state)?;
+    let results = state
+        .github
+        .search_issues(&token, &configuration.github_repository, query)
+        .await?
+        .into_iter()
+        .map(|issue| EntitySearchOption {
+            value: issue.number.to_string(),
+            label: issue.title,
+            description: issue.html_url,
+            identifier: format!("#{}", issue.number),
+            badge: "GitHub".into(),
+            badge_tone: "neutral",
+            footnote: "Existing issue".into(),
+        })
+        .collect();
+
+    Ok(Json(EntitySearchResponse { results }))
+}
 
 #[derive(Template)]
 #[template(path = "issues/github-preview.html")]

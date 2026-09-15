@@ -25,21 +25,7 @@ test("unauthenticated visitors can only reach the sign-in page", async ({ page }
 
 test.describe("authenticated management UI", () => {
   test.use({
-    storageState: {
-      cookies: [
-        {
-          name: "session",
-          value: "browser-test-session",
-          domain: "127.0.0.1",
-          path: "/",
-          httpOnly: true,
-          secure: false,
-          sameSite: "Lax",
-          expires: -1,
-        },
-      ],
-      origins: [],
-    },
+    storageState: "target/browser-test-storage-state.json",
   });
 
   test("shows setup credentials and escapes unknown report fields", async ({ page }) => {
@@ -110,40 +96,51 @@ test.describe("authenticated management UI", () => {
     expect(revalidatedMark.headers()["etag"]).toBe(markEtag);
   });
 
-  test("searches and selects reports when creating an issue", async ({ page }) => {
+  test("creates issues from reports and selects an existing GitHub issue", async ({ page }) => {
     await page.goto("/issues");
+    await expect(page.getByRole("heading", { name: "Create issue" })).toHaveCount(0);
+    await expect(page.getByText("Intermittent navigation timeout")).toBeVisible();
 
-    await expect(page.getByLabel("Report IDs")).toHaveCount(0);
-
-    const reportSearch = page.getByRole("combobox", { name: "Reports" });
-    await reportSearch.fill("0.1.0-browser-test");
-
-    const matchingReport = page.getByRole("option").filter({
-      hasText: "0.1.0-browser-test",
+    await page.route("**/api/github-issue-options**", async (route) => {
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          results: [
+            {
+              value: "4812",
+              label: "Fix overlapping navigation controls",
+              description: "https://github.com/LadybirdBrowser/ladybird/issues/4812",
+              identifier: "#4812",
+              badge: "GitHub",
+              badge_tone: "neutral",
+              footnote: "Existing issue",
+            },
+          ],
+        }),
+      });
     });
-    await expect(matchingReport).toBeVisible();
-    await matchingReport.click();
 
-    await expect(page.locator(".entity-selector-chip")).toContainText(reportId);
-    await expect(page.locator('input[name="report_ids"]')).toHaveValue(reportId);
+    await page.goto(`/reports/${reportId}`);
+    await page.getByText("Create a new issue from this report").click();
+    await page.getByText("Link an existing issue").click();
 
-    await page.locator(".entity-selector-chip-remove").click();
-    await expect(page.locator(".entity-selector-chip")).toHaveCount(0);
-    await expect(page.locator('input[name="report_ids"]')).toHaveValue("");
+    const issueSearch = page.getByRole("combobox", { name: "Search GitHub issues" });
+    await issueSearch.fill("navigation");
 
-    await reportSearch.fill("Nightly");
-    await expect(page.getByRole("option")).toHaveCount(3);
-    await expect(page.getByText("Needs triage", { exact: true })).toHaveCount(2);
-    await expect(page.getByText(/Assigned · Intermittent navigation timeout/)).toBeVisible();
+    const matchingIssue = page.getByRole("option", {
+      name: /Fix overlapping navigation controls/,
+    });
+    await expect(matchingIssue).toBeVisible();
+    await matchingIssue.click();
 
-    await reportSearch.press("ArrowDown");
-    await reportSearch.press("Enter");
     await expect(page.locator(".entity-selector-chip")).toContainText(
-      "Web compatibility report",
+      "Fix overlapping navigation controls",
     );
-    await expect(page.locator('input[name="report_ids"]')).toHaveValue(
-      /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
-    );
+    await expect(page.locator('input[name="github_issue_number"]')).toHaveValue("4812");
+
+    await page.getByText("Create a new GitHub issue").click();
+    await expect(page.getByLabel("GitHub title")).toBeVisible();
+    await expect(page.getByLabel("GitHub body")).toBeVisible();
   });
 
   test("enhances native select controls", async ({ page }) => {
@@ -202,8 +199,8 @@ test.describe("authenticated management UI", () => {
   test("creates an issue, assigns the report, and filters it from triage", async ({ page }) => {
     await page.goto(`/reports/${reportId}`);
     await page.getByText("Create a new issue from this report").click();
-    await page.getByLabel("Title").fill("Renderer overlap on test page");
-    await page.getByLabel("Description").fill("Created by the browser test.");
+    await page.getByLabel("Title", { exact: true }).fill("Renderer overlap on test page");
+    await page.getByLabel("Description", { exact: true }).fill("Created by the browser test.");
     await page.getByRole("button", { name: "Create and assign" }).click();
 
     await expect(page).toHaveURL(/\/issues\/[0-9a-f-]+$/);

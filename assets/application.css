@@ -1244,6 +1244,66 @@ tbody tr:hover {
     font-size: 0.82rem;
 }
 
+.github-choice {
+    display: grid;
+    margin: 1rem 0;
+    padding: 0;
+    border: 0;
+    gap: 0.55rem;
+}
+
+.github-choice legend {
+    margin-bottom: 0.55rem;
+    color: var(--ink);
+    font-size: 0.8rem;
+    font-weight: 700;
+}
+
+.choice-card {
+    display: grid;
+    padding: 0.75rem;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: start;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--surface);
+    cursor: pointer;
+    gap: 0.65rem;
+    transition: border-color 120ms ease, background 120ms ease, box-shadow 120ms ease;
+}
+
+.choice-card:has(input:checked) {
+    border-color: color-mix(in srgb, var(--brand) 55%, var(--border));
+    background: color-mix(in srgb, var(--brand) 6%, var(--surface));
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--brand) 10%, transparent);
+}
+
+.choice-card input {
+    margin-top: 0.18rem;
+    accent-color: var(--brand);
+}
+
+.choice-card span {
+    display: grid;
+    gap: 0.15rem;
+}
+
+.choice-card strong {
+    color: var(--ink);
+    font-size: 0.82rem;
+}
+
+.choice-card small {
+    color: var(--ink-soft);
+    font-size: 0.74rem;
+    font-weight: 450;
+    line-height: 1.4;
+}
+
+[data-github-panel] {
+    margin-bottom: 1rem;
+}
+
 .danger-zone {
     margin: 1.25rem -1.45rem -1.35rem;
     padding: 1.2rem 1.45rem 1.35rem;
