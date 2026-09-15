@@ -154,7 +154,7 @@ test.describe("authenticated management UI", () => {
     });
 
     await page.goto(`/reports/${reportId}`);
-    await page.getByRole("button", { name: "Add to issue" }).click();
+    await page.getByRole("button", { name: "Add report to issue" }).click();
     const issueDialog = page.getByRole("dialog", { name: "Add report to an issue" });
     await expect(issueDialog).toBeVisible();
     await expect(issueDialog).toHaveClass(/modal-overlay/);
@@ -209,7 +209,7 @@ test.describe("authenticated management UI", () => {
   test("searches existing internal issues in the issue workflow", async ({ page }) => {
     await page.goto("/?q=state%3Atriage+platform%3APaginationOS");
     await page.locator(".report-type-link").first().click();
-    await page.getByRole("button", { name: "Add to issue" }).click();
+    await page.getByRole("button", { name: "Add report to issue" }).click();
     await page.getByRole("button", { name: "Use existing" }).click();
 
     const issueSearch = page.getByRole("combobox", { name: "Search existing issues" });
@@ -233,7 +233,7 @@ test.describe("authenticated management UI", () => {
 
   test("searches reports with qualified syntax", async ({ page }) => {
     await page.goto("/");
-    await expect(page.getByLabel("Search reports")).toHaveValue("state:triage");
+    await expect(page.getByLabel("Search reports")).toHaveValue("state:triage|confirmed");
     await expect(page.getByRole("button", { name: "Apply filters" })).toHaveCount(0);
     await page.evaluate(() => ((window as any).reportPageStayedLoaded = true));
     const search = page.getByLabel("Search reports");
@@ -259,9 +259,11 @@ test.describe("authenticated management UI", () => {
     await expect(page.locator("tbody tr")).toHaveCount(2);
   });
 
-  test("shows confirmed reports when the search field is cleared", async ({ page }) => {
+  test("defaults to active reports and clearing search includes assigned", async ({ page }) => {
     await page.goto("/");
-    await expect(page.locator(".badge-confirmed")).toHaveCount(0);
+    await expect(page.locator(".badge-triage").first()).toBeVisible();
+    await expect(page.locator(".badge-confirmed")).toHaveText("Confirmed");
+    await expect(page.locator(".badge-assigned")).toHaveCount(0);
 
     const search = page.getByLabel("Search reports");
     await search.fill("");
@@ -269,18 +271,22 @@ test.describe("authenticated management UI", () => {
 
     await expect.poll(() => new URL(page.url()).searchParams.get("q")).toBe("");
     await expect(page.locator(".badge-confirmed")).toHaveText("Confirmed");
-    await expect(page.getByText("ConfirmedOS · arm64 · Release")).toBeVisible();
+    await expect(page.locator(".badge-assigned").first()).toBeVisible();
   });
 
-  test("autocompletes report search keys and low-cardinality values", async ({ page }) => {
+  test("applies an autocomplete value with Enter", async ({ page }) => {
     await page.goto("/");
     const search = page.getByLabel("Search reports");
     await search.fill("plat");
-    await page.getByRole("option", { name: /^platform:/ }).click();
+    await expect(page.getByRole("option", { name: /^platform:/ })).toBeVisible();
+    await search.press("ArrowDown");
+    await search.press("Enter");
     await expect(search).toHaveValue("platform:");
 
     await search.pressSequentially("ma");
-    await page.getByRole("option", { name: /^macOS/ }).click();
+    await expect(page.getByRole("option", { name: /^macOS/ })).toBeVisible();
+    await search.press("ArrowDown");
+    await search.press("Enter");
     await expect(search).toHaveValue("platform:macos");
     await expect.poll(() => new URL(page.url()).searchParams.get("q"))
       .toBe("platform:macos");
@@ -294,7 +300,7 @@ test.describe("authenticated management UI", () => {
     await expect(page.locator("tbody tr")).toHaveCount(50);
     const initialUrl = page.url();
     await page.getByRole("button", { name: "Show more…" }).click();
-    await expect(page.locator("tbody tr")).toHaveCount(55);
+    await expect(page.locator("tbody tr")).toHaveCount(56);
     expect(page.url()).toBe(initialUrl);
     await expect(page.getByRole("button", { name: "Show more…" })).toHaveCount(0);
   });
@@ -303,7 +309,7 @@ test.describe("authenticated management UI", () => {
     await page.goto(`/reports/${reportId}`);
 
     await expect(page.getByRole("heading", { name: "Actions" })).toBeVisible();
-    await page.getByRole("button", { name: "Block IP" }).click();
+    await page.getByRole("button", { name: "Block submission IP" }).click();
     const confirmation = page.getByRole("dialog", { name: "Block this IP?" });
     await expect(confirmation).toBeVisible();
     await expect(confirmation).toHaveClass(/modal-overlay/);
@@ -316,13 +322,13 @@ test.describe("authenticated management UI", () => {
     await confirmation.getByRole("button", { name: "Cancel" }).click();
     await expect(confirmation).toBeHidden();
 
-    await page.getByRole("button", { name: "Block IP" }).click();
+    await page.getByRole("button", { name: "Block submission IP" }).click();
     await confirmation.getByRole("checkbox").uncheck();
     await confirmation.getByRole("button", { name: "Block IP" }).click();
     await expect(page.getByText("IP is blocked indefinitely")).toBeVisible();
 
-    await page.getByRole("button", { name: "Unblock IP" }).click();
-    await expect(page.getByRole("button", { name: "Block IP" })).toBeVisible();
+    await page.getByRole("button", { name: "Unblock submission IP" }).click();
+    await expect(page.getByRole("button", { name: "Block submission IP" })).toBeVisible();
   });
 
   test("reorders recognized fields by dragging rows", async ({ page }) => {
@@ -391,10 +397,19 @@ test.describe("authenticated management UI", () => {
     expect(href).not.toBeNull();
     await reportLink.click();
 
-    await page.getByRole("button", { name: "Confirm", exact: true }).click();
+    let stateSelect = page.getByRole("combobox", { name: "Report state" });
+    await expect(stateSelect).toHaveText("Needs triage");
+    await stateSelect.click();
+    await page.getByRole("option", { name: "Confirmed" }).click();
     await expect(page.locator(".badge-confirmed")).toHaveText("Confirmed");
 
-    await page.getByRole("button", { name: "Delete", exact: true }).click();
+    stateSelect = page.getByRole("combobox", { name: "Report state" });
+    await expect(stateSelect).toHaveText("Confirmed");
+    await stateSelect.click();
+    await page.getByRole("option", { name: "Needs triage" }).click();
+    await expect(page.locator(".badge-triage")).toHaveText("Needs triage");
+
+    await page.getByRole("button", { name: "Delete report" }).click();
     const confirmation = page.getByRole("dialog", { name: "Delete this report?" });
     await expect(confirmation).toBeVisible();
     await confirmation.getByRole("button", { name: "Delete" }).click();
@@ -409,7 +424,7 @@ test.describe("authenticated management UI", () => {
 
   test("creates an issue, assigns the report, and filters it from triage", async ({ page }) => {
     await page.goto(`/reports/${reportId}`);
-    await page.getByRole("button", { name: "Add to issue" }).click();
+    await page.getByRole("button", { name: "Add report to issue" }).click();
     await page.getByLabel("Title", { exact: true }).fill("Renderer overlap on test page");
     await page.getByLabel("Description", { exact: true }).fill("Created by the browser test.");
     await page.getByRole("button", { name: "Create and add" }).click();
@@ -437,6 +452,7 @@ test.describe("authenticated management UI", () => {
     await expect(page.getByText("field_definitions.reordered", { exact: true })).toBeVisible();
     await expect(page.getByText("report.source_blocked", { exact: true })).toBeVisible();
     await expect(page.getByText("report.confirmed", { exact: true })).toBeVisible();
+    await expect(page.getByText("report.returned_to_triage", { exact: true })).toBeVisible();
     await expect(page.getByText("report.hidden", { exact: true })).toBeVisible();
     await expect(page.getByText("issue.created", { exact: true })).toBeVisible();
     await expect(page.getByText("report.submitted", { exact: true }).first()).toBeVisible();

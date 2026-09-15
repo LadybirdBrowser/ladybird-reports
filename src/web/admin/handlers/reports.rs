@@ -318,7 +318,7 @@ pub async fn search_completions(
     let key = key.to_ascii_lowercase();
     let prefix = value_prefix.trim_matches('"').to_ascii_lowercase();
     let values = match key.as_str() {
-        "state" => vec!["triage", "confirmed", "assigned", "all"]
+        "state" => vec!["triage|confirmed", "triage", "confirmed", "assigned", "all"]
             .into_iter()
             .map(str::to_owned)
             .collect(),
@@ -574,19 +574,43 @@ pub struct ReportActionForm {
     csrf: String,
 }
 
-pub async fn confirm(
+#[derive(Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ReportWorkflowState {
+    Triage,
+    Confirmed,
+}
+
+#[derive(Deserialize)]
+pub struct ReportStateForm {
+    csrf: String,
+    state: ReportWorkflowState,
+}
+
+pub async fn set_state(
     State(state): State<AdminState>,
     Extension(session): Extension<Session>,
     Path(report_id): Path<ReportId>,
-    Form(form): Form<ReportActionForm>,
+    Form(form): Form<ReportStateForm>,
 ) -> Result<Redirect> {
     session.verify_csrf(&form.csrf)?;
-    state
+    let confirmed = matches!(form.state, ReportWorkflowState::Confirmed);
+    let changed = state
         .database
-        .confirm_report(report_id, session.github_id)
+        .set_report_confirmation(report_id, confirmed, session.github_id)
         .await?;
 
-    tracing::info!(event = "report.confirmed", %report_id, actor = session.login);
+    if changed {
+        tracing::info!(
+            event = if confirmed {
+                "report.confirmed"
+            } else {
+                "report.returned_to_triage"
+            },
+            %report_id,
+            actor = session.login,
+        );
+    }
     Ok(Redirect::to(&format!("/reports/{report_id}")))
 }
 
@@ -730,7 +754,7 @@ fn report_state(is_assigned: bool, is_confirmed: bool) -> (&'static str, &'stati
 }
 
 fn default_report_search() -> String {
-    "state:triage".into()
+    "state:triage|confirmed".into()
 }
 
 fn field_string(

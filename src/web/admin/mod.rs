@@ -53,8 +53,8 @@ pub fn router(state: AdminState) -> Router {
             post(handlers::reports::assign_to_issue),
         )
         .route(
-            "/reports/{report_id}/confirm",
-            post(handlers::reports::confirm),
+            "/reports/{report_id}/state",
+            post(handlers::reports::set_state),
         )
         .route("/reports/{report_id}/hide", post(handlers::reports::hide))
         .route("/attachments/{id}", get(handlers::reports::attachment))

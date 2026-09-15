@@ -1383,6 +1383,10 @@ tbody tr:hover {
     font-size: 1rem;
 }
 
+.report-state-form .custom-select {
+    margin-top: 0;
+}
+
 .action-group + .action-group {
     margin-top: 1.3rem;
     padding-top: 1.3rem;
@@ -1419,7 +1423,7 @@ tbody tr:hover {
     border-radius: var(--radius-sm);
     background: var(--surface);
     cursor: pointer;
-    gap: 0.65rem;
+    gap: 0.9rem;
     transition: border-color 120ms ease, background 120ms ease, box-shadow 120ms ease;
 }
 

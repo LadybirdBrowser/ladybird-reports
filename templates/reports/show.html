@@ -212,34 +212,51 @@
             </div>
             <div class="card-body">
                 <section class="action-group">
-                    <h3>Issue</h3>
                     <button type="button" data-open-issue-dialog>
-                        {% if report.is_assigned %}Move to issue{% else %}Add to issue{% endif %}
+                        {% if report.is_assigned %}
+                            Move report to another issue
+                        {% else %}
+                            Add report to issue
+                        {% endif %}
                     </button>
                 </section>
 
-                {% if report.is_triage %}
+                {% if !report.is_assigned %}
                     <section class="action-group">
-                        <h3>Confirm report</h3>
-                        <form method="post" action="/reports/{{ report.id }}/confirm">
+                        <form
+                            class="report-state-form"
+                            method="post"
+                            action="/reports/{{ report.id }}/state"
+                            data-auto-filter
+                        >
                             <input
                                 type="hidden"
                                 name="csrf"
                                 value="{{ navigation.as_ref().unwrap().csrf_token }}"
                             >
-                            <button class="button-secondary" type="submit">Confirm</button>
+                            <select name="state" aria-label="Report state">
+                                <option value="triage" {% if report.is_triage %}selected{% endif %}>
+                                    Needs triage
+                                </option>
+                                <option
+                                    value="confirmed"
+                                    {% if report.is_confirmed %}selected{% endif %}
+                                >
+                                    Confirmed
+                                </option>
+                            </select>
+                            <button class="visually-hidden" type="submit">Update report state</button>
                         </form>
                     </section>
                 {% endif %}
 
                 <section class="action-group">
-                    <h3>Remove report</h3>
                     <button
                         class="button-danger hide-report-trigger"
                         type="button"
                         popovertarget="hide-report-confirmation"
                     >
-                        Delete
+                        Delete report
                     </button>
                     <div
                         class="confirmation-popover modal-overlay"
@@ -274,9 +291,7 @@
                     </div>
                 </section>
 
-                <section class="danger-zone" aria-labelledby="source-action-title">
-                    <h3 id="source-action-title">Submission source</h3>
-
+                <section class="danger-zone">
                     {% if report.has_submission_source %}
                         {% if report.submission_source_is_blocked %}
                             <div class="source-status">IP is blocked indefinitely</div>
@@ -290,7 +305,9 @@
                                     name="csrf"
                                     value="{{ navigation.as_ref().unwrap().csrf_token }}"
                                 >
-                                <button class="button-secondary" type="submit">Unblock IP</button>
+                                <button class="button-secondary" type="submit">
+                                    Unblock submission IP
+                                </button>
                             </form>
                         {% else %}
                             <button
@@ -298,7 +315,7 @@
                                 type="button"
                                 popovertarget="block-source-confirmation"
                             >
-                                Block IP
+                                Block submission IP
                             </button>
                             <div
                                 class="confirmation-popover modal-overlay"

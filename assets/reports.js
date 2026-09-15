@@ -252,7 +252,7 @@ class ReportListController {
                 Math.min(this.activeOption + direction, this.options.length - 1),
             );
             this.renderCompletions();
-        } else if (event.key === "Tab" && this.activeOption >= 0) {
+        } else if ((event.key === "Enter" || event.key === "Tab") && this.activeOption >= 0) {
             event.preventDefault();
             this.applyCompletion(this.activeOption);
         } else if (event.key === "Escape") {

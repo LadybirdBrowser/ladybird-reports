@@ -2,9 +2,10 @@
 
 ## Report search
 
-The report list updates in place after typing stops. Qualifier names and
-low-cardinality values are suggested at the caret. Fifty reports are loaded at
-a time, and **Show more…** appends the next page without navigating away.
+The report list updates in place when the search field loses focus or Enter is
+pressed. Qualifier names and low-cardinality values are suggested at the caret.
+Fifty reports are loaded at a time, and **Show more…** appends the next page
+without navigating away.
 Plain words search report identifiers,
 types, client versions, build descriptions, and all submitted field values.
 Qualifiers restrict a value to one property:
@@ -12,20 +13,21 @@ Qualifiers restrict a value to one property:
 ```text
 platform:linux kind:crash
 version:"Ladybird Nightly" architecture:arm64
-state:confirmed signal:sigabrt
+state:triage|confirmed signal:sigabrt
 ```
 
 Built-in qualifiers are `state`, `kind`, `version`, `client_version`, `build`,
-`id`, `report`, `ip`, and `source_ip`. The `state` value is `triage`,
-`confirmed`, `assigned`, or `all`. Any other qualifier is treated as a
+`id`, `report`, `ip`, and `source_ip`. State values are `triage`, `confirmed`,
+and `assigned`; join values with `|` to match any of them, or use `all`. The
+default is `state:triage|confirmed`. Any other qualifier is treated as a
 submitted field key. Values containing spaces can be quoted.
 
 Report metadata and single-line diagnostic fields provide filter buttons that
 construct the corresponding qualified search.
 
-Confirming a report moves it from triage to the confirmed state. Deleting a
-report hides it from the management interface while retention continues to
-govern when its stored data is removed.
+The state selector moves an unassigned report between triage and confirmed.
+Deleting a report hides it from the management interface while retention
+continues to govern when its stored data is removed.
 
 Blocking a submission source rejects its future public API requests. The
 confirmation also offers to hide every report from that source that is still

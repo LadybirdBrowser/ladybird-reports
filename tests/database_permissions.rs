@@ -426,7 +426,7 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
     }
 
     admin_database
-        .confirm_report(second_triage_report, 999)
+        .set_report_confirmation(second_triage_report, true, 999)
         .await
         .expect("confirm one report from the blocked source");
 

@@ -359,37 +359,60 @@ impl AdminDatabase {
         Ok(())
     }
 
-    pub async fn confirm_report(&self, report_id: ReportId, actor: i64) -> Result<()> {
+    pub async fn set_report_confirmation(
+        &self,
+        report_id: ReportId,
+        confirmed: bool,
+        actor: i64,
+    ) -> Result<bool> {
         let mut transaction = self.pool.begin().await?;
-        let result = sqlx::query(
-            "UPDATE reports
-             SET confirmed_at = COALESCE(confirmed_at, now()), updated_at = now()
+        let was_confirmed: bool = sqlx::query_scalar(
+            "SELECT confirmed_at IS NOT NULL
+             FROM reports
              WHERE id = $1
                 AND issue_id IS NULL
-                AND confirmed_at IS NULL
                 AND deleted_at IS NULL
                 AND hidden_at IS NULL
-                AND storage_state = 'ready'",
+                AND storage_state = 'ready'
+             FOR UPDATE",
         )
         .bind(report_id)
-        .execute(&mut *transaction)
-        .await?;
+        .fetch_optional(&mut *transaction)
+        .await?
+        .ok_or(AppError::NotFound("Report not found"))?;
 
-        if result.rows_affected() != 1 {
-            return Err(AppError::NotFound("Report not found"));
+        if was_confirmed == confirmed {
+            transaction.commit().await?;
+            return Ok(false);
         }
 
         sqlx::query(
+            "UPDATE reports
+             SET confirmed_at = CASE WHEN $2 THEN now() ELSE NULL END,
+                 updated_at = now()
+             WHERE id = $1",
+        )
+        .bind(report_id)
+        .bind(confirmed)
+        .execute(&mut *transaction)
+        .await?;
+
+        sqlx::query(
             "INSERT INTO audit_events (actor, action, entity_id)
-             VALUES ($1, 'report.confirmed', $2)",
+             VALUES ($1, $2, $3)",
         )
         .bind(actor)
+        .bind(if confirmed {
+            "report.confirmed"
+        } else {
+            "report.returned_to_triage"
+        })
         .bind(report_id.0)
         .execute(&mut *transaction)
         .await?;
 
         transaction.commit().await?;
-        Ok(())
+        Ok(true)
     }
 
     pub async fn hide_report(&self, report_id: ReportId, actor: i64) -> Result<()> {
@@ -645,23 +668,42 @@ fn push_text_search(sql: &mut QueryBuilder<'_, Postgres>, term: &str) {
 
 fn push_qualified_search(sql: &mut QueryBuilder<'_, Postgres>, key: &str, value: &str) {
     match key {
-        "state" => match value.to_ascii_lowercase().as_str() {
-            "triage" => {
+        "state" => match report_state_mask(value) {
+            1 => {
                 sql.push(
                     " AND reports.issue_id IS NULL
                       AND reports.confirmed_at IS NULL",
                 );
             }
-            "confirmed" => {
+            2 => {
                 sql.push(
                     " AND reports.issue_id IS NULL
                       AND reports.confirmed_at IS NOT NULL",
                 );
             }
-            "assigned" => {
+            3 => {
+                sql.push(" AND reports.issue_id IS NULL");
+            }
+            4 => {
                 sql.push(" AND reports.issue_id IS NOT NULL");
             }
-            "all" => {}
+            5 => {
+                sql.push(
+                    " AND (
+                        reports.issue_id IS NOT NULL
+                        OR reports.confirmed_at IS NULL
+                    )",
+                );
+            }
+            6 => {
+                sql.push(
+                    " AND (
+                        reports.issue_id IS NOT NULL
+                        OR reports.confirmed_at IS NOT NULL
+                    )",
+                );
+            }
+            7 => {}
             _ => unreachable!("report state qualifiers are validated while parsing"),
         },
         "kind" => push_report_column_filter(sql, "reports.kind", value),
@@ -684,6 +726,21 @@ fn push_qualified_search(sql: &mut QueryBuilder<'_, Postgres>, key: &str, value:
             .push(") in lower(report_fields.value #>> '{}')) > 0)");
         }
     }
+}
+
+fn report_state_mask(value: &str) -> u8 {
+    if value.eq_ignore_ascii_case("all") {
+        return 7;
+    }
+
+    value.split('|').fold(0, |mask, state| {
+        mask | match state.to_ascii_lowercase().as_str() {
+            "triage" => 1,
+            "confirmed" => 2,
+            "assigned" => 4,
+            _ => 0,
+        }
+    })
 }
 
 fn push_report_column_filter(sql: &mut QueryBuilder<'_, Postgres>, column: &str, value: &str) {
