@@ -34,6 +34,23 @@ pub enum AcceptReportOutcome {
     Existing(ReportReceipt),
 }
 
+pub struct AcceptReportRequest<'a> {
+    pub claims: &'a ChallengeClaims,
+    pub token_hash: &'a str,
+    pub manifest: &'a ReportManifest,
+    pub upload_id: UploadId,
+    pub source_client_key: &'a str,
+    pub definitions: &'a HashMap<String, FieldDefinition>,
+    pub retention_days: u32,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct IngestionSweepResult {
+    pub challenges_deleted: i64,
+    pub rate_buckets_deleted: i64,
+    pub upload_leases_deleted: i64,
+}
+
 #[derive(Serialize)]
 struct StoredField<'a> {
     key: &'a str,
@@ -190,27 +207,25 @@ impl IngestDatabase {
 
     pub async fn accept_report(
         &self,
-        claims: &ChallengeClaims,
-        token_hash: &str,
-        manifest: &ReportManifest,
-        upload_id: UploadId,
-        source_client_key: &str,
-        definitions: &HashMap<String, FieldDefinition>,
+        request: AcceptReportRequest<'_>,
     ) -> Result<AcceptReportOutcome> {
         let report_id = ReportId::new();
+        let mut transaction = self.pool.begin().await?;
 
-        let fields = manifest
+        let fields = request
+            .manifest
             .fields
             .iter()
             .map(|field| StoredField {
                 key: &field.key,
                 kind: field.value.kind().as_str(),
                 value: field.value.json_value(),
-                recognized: definitions.contains_key(&field.key),
+                recognized: request.definitions.contains_key(&field.key),
             })
             .collect::<Vec<_>>();
 
-        let attachments = manifest
+        let attachments = request
+            .manifest
             .attachments
             .iter()
             .map(|attachment| StoredAttachment {
@@ -228,41 +243,62 @@ impl IngestDatabase {
                 $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12
             )",
         )
-        .bind(claims.id)
-        .bind(token_hash)
-        .bind(&claims.manifest_digest)
+        .bind(request.claims.id)
+        .bind(request.token_hash)
+        .bind(&request.claims.manifest_digest)
         .bind(report_id)
-        .bind(manifest.submission_id)
-        .bind(manifest.kind.as_str())
-        .bind(&manifest.client_version)
-        .bind(&manifest.build)
-        .bind(upload_id)
-        .bind(source_client_key)
+        .bind(request.manifest.submission_id)
+        .bind(request.manifest.kind.as_str())
+        .bind(&request.manifest.client_version)
+        .bind(&request.manifest.build)
+        .bind(request.upload_id)
+        .bind(request.source_client_key)
         .bind(serde_json::to_value(fields).expect("stored fields are serializable"))
         .bind(serde_json::to_value(attachments).expect("stored attachments are serializable"))
-        .fetch_one(&self.pool)
+        .fetch_one(&mut *transaction)
         .await?;
 
         let outcome: String = row.get("outcome");
         let returned_report_id: Option<ReportId> = row.get("report_id");
 
         match outcome.as_str() {
-            "accepted" => Ok(AcceptReportOutcome::Accepted(
-                returned_report_id.expect("accepted report has an ID"),
-            )),
+            "accepted" => {
+                let report_id = returned_report_id.expect("accepted report has an ID");
+                sqlx::query("SELECT configure_report_retention($1, $2)")
+                    .bind(report_id)
+                    .bind(request.retention_days as i32)
+                    .execute(&mut *transaction)
+                    .await?;
+                transaction.commit().await?;
+
+                Ok(AcceptReportOutcome::Accepted(report_id))
+            }
             "existing" => {
+                transaction.commit().await?;
                 let receipt = self
-                    .find_receipt(manifest.submission_id, &claims.manifest_digest)
+                    .find_receipt(
+                        request.manifest.submission_id,
+                        &request.claims.manifest_digest,
+                    )
                     .await?
                     .expect("existing outcome has a receipt");
 
                 Ok(AcceptReportOutcome::Existing(receipt))
             }
-            "submission_conflict" => Err(AppError::Conflict("Submission ID already used")),
-            "challenge_rejected" => Err(AppError::Conflict(
-                "Challenge expired, invalid, or already consumed",
-            )),
-            "invalid_payload" => Err(AppError::InvalidRequest("Invalid report payload")),
+            "submission_conflict" => {
+                transaction.rollback().await?;
+                Err(AppError::Conflict("Submission ID already used"))
+            }
+            "challenge_rejected" => {
+                transaction.rollback().await?;
+                Err(AppError::Conflict(
+                    "Challenge expired, invalid, or already consumed",
+                ))
+            }
+            "invalid_payload" => {
+                transaction.rollback().await?;
+                Err(AppError::InvalidRequest("Invalid report payload"))
+            }
             _ => Err(AppError::Internal(anyhow::anyhow!(
                 "unknown accept_report outcome: {outcome}"
             ))),
@@ -301,6 +337,18 @@ impl IngestDatabase {
                 .fetch_one(&self.pool)
                 .await?,
         )
+    }
+
+    pub async fn sweep_expired_state(&self) -> Result<IngestionSweepResult> {
+        let row = sqlx::query("SELECT * FROM sweep_expired_ingestion_state()")
+            .fetch_one(&self.pool)
+            .await?;
+
+        Ok(IngestionSweepResult {
+            challenges_deleted: row.get("challenges_deleted"),
+            rate_buckets_deleted: row.get("rate_buckets_deleted"),
+            upload_leases_deleted: row.get("upload_leases_deleted"),
+        })
     }
 
     pub async fn healthcheck(&self) -> Result<()> {

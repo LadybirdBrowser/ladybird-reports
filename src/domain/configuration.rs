@@ -7,6 +7,7 @@ pub const HARD_MAX_BODY_BYTES: usize = 66 * 1024 * 1024;
 pub const HARD_MAX_FIELDS: usize = 256;
 pub const HARD_MAX_ATTACHMENTS: usize = 16;
 pub const HARD_MAX_PNG_PIXELS: u64 = 50_000_000;
+pub const HARD_MAX_PNG_DECODED_BYTES: usize = 64 * 1024 * 1024;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -17,6 +18,7 @@ pub struct RuntimeConfiguration {
     pub trusted_proxies: Vec<IpNet>,
     pub limits: IngestionLimits,
     pub proof_of_work: ProofOfWorkConfiguration,
+    pub maintenance: MaintenanceConfiguration,
     pub membership_recheck_seconds: u64,
 }
 
@@ -41,6 +43,7 @@ pub struct IngestionLimits {
     pub attachment_bytes: usize,
     pub submission_bytes: usize,
     pub png_pixels: u64,
+    pub png_decoded_bytes: usize,
     pub upload_timeout_seconds: u64,
     pub minimum_free_storage_bytes: u64,
 }
@@ -50,6 +53,14 @@ pub struct IngestionLimits {
 pub struct ProofOfWorkConfiguration {
     pub expected_work: u64,
     pub challenge_lifetime_seconds: u64,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct MaintenanceConfiguration {
+    pub sweep_interval_seconds: u64,
+    pub staging_retention_seconds: u64,
+    pub report_retention_days: u32,
 }
 
 impl Default for RuntimeConfiguration {
@@ -63,6 +74,11 @@ impl Default for RuntimeConfiguration {
             proof_of_work: ProofOfWorkConfiguration {
                 expected_work: 5_244_236,
                 challenge_lifetime_seconds: 600,
+            },
+            maintenance: MaintenanceConfiguration {
+                sweep_interval_seconds: 900,
+                staging_retention_seconds: 3_600,
+                report_retention_days: 3_650,
             },
             membership_recheck_seconds: 300,
         }
@@ -90,6 +106,7 @@ impl Default for IngestionLimits {
             attachment_bytes: 10 * 1024 * 1024,
             submission_bytes: 25 * 1024 * 1024,
             png_pixels: 25_000_000,
+            png_decoded_bytes: 32 * 1024 * 1024,
             upload_timeout_seconds: 120,
             minimum_free_storage_bytes: 5 * 1024 * 1024 * 1024,
         }
@@ -168,7 +185,9 @@ impl RuntimeConfiguration {
             || limits.attachment_bytes > limits.submission_bytes
             || limits.submission_bytes > HARD_MAX_BODY_BYTES
             || limits.png_pixels == 0
-            || limits.png_pixels > HARD_MAX_PNG_PIXELS;
+            || limits.png_pixels > HARD_MAX_PNG_PIXELS
+            || limits.png_decoded_bytes == 0
+            || limits.png_decoded_bytes > HARD_MAX_PNG_DECODED_BYTES;
 
         if invalid {
             return Err(AppError::InvalidRequest("Unsafe payload limits"));
@@ -180,6 +199,7 @@ impl RuntimeConfiguration {
     fn validate_operational_limits(&self) -> Result<()> {
         let limits = &self.limits;
         let proof = &self.proof_of_work;
+        let maintenance = &self.maintenance;
 
         let invalid = limits.concurrent_uploads_per_ip == 0
             || limits.concurrent_uploads_global < limits.concurrent_uploads_per_ip
@@ -188,6 +208,12 @@ impl RuntimeConfiguration {
             || !(1..=1_000_000_000).contains(&proof.expected_work)
             || !(30..=3600).contains(&proof.challenge_lifetime_seconds)
             || !(30..=900).contains(&self.membership_recheck_seconds);
+
+        let invalid = invalid
+            || !(60..=86_400).contains(&maintenance.sweep_interval_seconds)
+            || maintenance.staging_retention_seconds < limits.upload_timeout_seconds + 60
+            || maintenance.staging_retention_seconds > 604_800
+            || !(30..=36_500).contains(&maintenance.report_retention_days);
 
         if invalid {
             return Err(AppError::InvalidRequest("Unsafe operational limits"));

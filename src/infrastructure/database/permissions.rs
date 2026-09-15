@@ -158,6 +158,8 @@ pub async fn apply_ingest_permissions(admin_pool: &PgPool, ingest_role: &str) ->
         "mark_report_storage_ready(uuid, uuid)",
         "pending_report_storage()",
         "staging_upload_is_referenced(uuid)",
+        "configure_report_retention(uuid, integer)",
+        "sweep_expired_ingestion_state()",
     ];
 
     for function in functions {

@@ -6,6 +6,8 @@ use axum::{
 };
 use chrono::{Duration, Utc};
 use cookie::Cookie;
+use sha2::{Digest, Sha256};
+use subtle::ConstantTimeEq;
 
 use crate::{error::Result, infrastructure::hash_secret};
 
@@ -22,7 +24,10 @@ pub struct Session {
 
 impl Session {
     pub fn verify_csrf(&self, submitted: &str) -> Result<()> {
-        if submitted != self.csrf_token {
+        let submitted_digest = Sha256::digest(submitted.as_bytes());
+        let expected_digest = Sha256::digest(self.csrf_token.as_bytes());
+
+        if !bool::from(submitted_digest.ct_eq(&expected_digest)) {
             return Err(crate::error::AppError::PermissionDenied(
                 "Invalid form token",
             ));
@@ -64,7 +69,7 @@ pub async fn require_session(
 
         state
             .github
-            .verify_maintainer(&access_token, &record.login)
+            .verify_maintainer_identity(&access_token, record.github_id)
             .await?;
 
         state

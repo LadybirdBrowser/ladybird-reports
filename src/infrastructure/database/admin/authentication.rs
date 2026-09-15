@@ -1,4 +1,4 @@
-use chrono::{DateTime, Duration, Utc};
+use chrono::{Duration, Utc};
 use sqlx::Row;
 
 use crate::{error::Result, infrastructure::database::AdminDatabase};
@@ -115,20 +115,6 @@ impl AdminDatabase {
     pub async fn delete_session(&self, token_hash: &str) -> Result<()> {
         sqlx::query("DELETE FROM sessions WHERE token_hash = $1")
             .bind(token_hash)
-            .execute(&self.pool)
-            .await?;
-
-        Ok(())
-    }
-
-    pub async fn cleanup_authentication_state(&self, before: DateTime<Utc>) -> Result<()> {
-        sqlx::query("DELETE FROM oauth_states WHERE expires_at < $1")
-            .bind(before)
-            .execute(&self.pool)
-            .await?;
-
-        sqlx::query("DELETE FROM sessions WHERE expires_at < $1")
-            .bind(before)
             .execute(&self.pool)
             .await?;
 

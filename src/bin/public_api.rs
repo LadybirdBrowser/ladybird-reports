@@ -35,6 +35,7 @@ async fn run() -> Result<()> {
         database,
         client_address_key: Arc::new(read_secret("CLIENT_ADDRESS_HMAC_KEY")?),
     };
+    let maintenance = tokio::spawn(run_maintenance(state.ingestion.clone()));
     let address = listen_address("PUBLIC_LISTEN_ADDRESS", "0.0.0.0:3001")?;
     let listener = tokio::net::TcpListener::bind(address).await?;
     tracing::info!(event = "startup.ready", service = "public_api", %address);
@@ -46,6 +47,35 @@ async fn run() -> Result<()> {
     .with_graceful_shutdown(shutdown_signal())
     .await?;
 
+    maintenance.abort();
+    let _ = maintenance.await;
+
     tracing::info!(event = "shutdown.complete", service = "public_api");
     Ok(())
+}
+
+async fn run_maintenance(ingestion: ReportIngestionService) {
+    loop {
+        let interval_seconds = match ingestion.configuration().await {
+            Ok(configuration) => configuration.maintenance.sweep_interval_seconds,
+            Err(error) => {
+                tracing::warn!(
+                    event = "maintenance.configuration_failed",
+                    ?error,
+                    service = "public_api",
+                );
+                900
+            }
+        };
+
+        if let Err(error) = ingestion.sweep_ingestion_state().await {
+            tracing::warn!(
+                event = "maintenance.ingestion_sweep_failed",
+                ?error,
+                service = "public_api",
+            );
+        }
+
+        tokio::time::sleep(std::time::Duration::from_secs(interval_seconds)).await;
+    }
 }

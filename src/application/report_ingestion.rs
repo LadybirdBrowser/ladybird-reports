@@ -11,7 +11,7 @@ use crate::{
     error::{AppError, Result},
     infrastructure::{
         attachments::{FileAttachmentStore, StagingUpload},
-        database::{AcceptReportOutcome, IngestDatabase, ReportReceipt},
+        database::{AcceptReportOutcome, AcceptReportRequest, IngestDatabase, ReportReceipt},
     },
 };
 
@@ -141,7 +141,7 @@ impl ReportIngestionService {
 
     pub async fn accept_submission(
         &self,
-        prepared: PreparedSubmission,
+        mut prepared: PreparedSubmission,
         source_client_key: &str,
     ) -> Result<ReportId> {
         let configuration = self.database.configuration().await?;
@@ -153,21 +153,27 @@ impl ReportIngestionService {
 
         let outcome = self
             .database
-            .accept_report(
-                &prepared.claims,
-                &prepared.token_hash,
-                &prepared.manifest,
-                prepared.upload_id,
+            .accept_report(AcceptReportRequest {
+                claims: &prepared.claims,
+                token_hash: &prepared.token_hash,
+                manifest: &prepared.manifest,
+                upload_id: prepared.upload_id,
                 source_client_key,
-                &prepared.definitions,
-            )
+                definitions: &prepared.definitions,
+                retention_days: configuration.maintenance.report_retention_days,
+            })
             .await?;
 
         let report_id = match outcome {
-            AcceptReportOutcome::Accepted(report_id) => report_id,
+            AcceptReportOutcome::Accepted(report_id) => {
+                prepared.staging.mark_referenced();
+                report_id
+            }
             AcceptReportOutcome::Existing(receipt) => {
                 if receipt.staging_id != prepared.upload_id {
                     self.attachments.remove_staging(prepared.upload_id).await?;
+                } else {
+                    prepared.staging.mark_referenced();
                 }
 
                 self.recover_receipt(&receipt).await?;
@@ -263,6 +269,44 @@ impl ReportIngestionService {
 
     pub async fn configuration(&self) -> Result<RuntimeConfiguration> {
         self.database.configuration().await
+    }
+
+    pub async fn sweep_ingestion_state(&self) -> Result<()> {
+        let configuration = self.database.configuration().await?;
+        let expired = self.database.sweep_expired_state().await?;
+        let older_than = std::time::SystemTime::now()
+            .checked_sub(std::time::Duration::from_secs(
+                configuration.maintenance.staging_retention_seconds,
+            ))
+            .ok_or_else(|| AppError::Internal(anyhow::anyhow!("invalid staging cutoff")))?;
+
+        let mut staging_deleted = 0_u64;
+        for upload_id in self.attachments.stale_staging_uploads(older_than).await? {
+            if !self
+                .database
+                .staging_upload_is_referenced(upload_id)
+                .await?
+            {
+                self.attachments.remove_staging(upload_id).await?;
+                staging_deleted += 1;
+            }
+        }
+
+        let total_deleted = expired.challenges_deleted
+            + expired.rate_buckets_deleted
+            + expired.upload_leases_deleted
+            + staging_deleted as i64;
+        if total_deleted > 0 {
+            tracing::info!(
+                event = "maintenance.ingestion_sweep_completed",
+                challenges_deleted = expired.challenges_deleted,
+                rate_buckets_deleted = expired.rate_buckets_deleted,
+                upload_leases_deleted = expired.upload_leases_deleted,
+                staging_deleted,
+            );
+        }
+
+        Ok(())
     }
 
     pub async fn healthcheck(&self) -> Result<()> {

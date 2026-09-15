@@ -8,14 +8,51 @@ use axum::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    application::PrepareSubmissionOutcome,
-    domain::AttachmentId,
+    application::{PrepareSubmissionOutcome, ReportIngestionService},
+    domain::{AttachmentId, UploadId},
     error::{AppError, Result},
 };
 
 use super::{PublicState, rate_limit::ClientAddressKey};
 
 const MANIFEST_PART_NAME: &str = "manifest";
+
+struct UploadLeaseGuard {
+    ingestion: ReportIngestionService,
+    upload_id: UploadId,
+    release_on_drop: bool,
+}
+
+impl UploadLeaseGuard {
+    fn new(ingestion: ReportIngestionService, upload_id: UploadId) -> Self {
+        Self {
+            ingestion,
+            upload_id,
+            release_on_drop: true,
+        }
+    }
+
+    async fn release(mut self) {
+        self.ingestion.release_upload_lease(self.upload_id).await;
+        self.release_on_drop = false;
+    }
+}
+
+impl Drop for UploadLeaseGuard {
+    fn drop(&mut self) {
+        if !self.release_on_drop {
+            return;
+        }
+
+        let ingestion = self.ingestion.clone();
+        let upload_id = self.upload_id;
+        if let Ok(runtime) = tokio::runtime::Handle::try_current() {
+            runtime.spawn(async move {
+                ingestion.release_upload_lease(upload_id).await;
+            });
+        }
+    }
+}
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -99,6 +136,8 @@ pub async fn submit_report(
         return Err(AppError::RateLimited);
     }
 
+    let lease = UploadLeaseGuard::new(state.ingestion.clone(), upload_id);
+
     let deadline = std::time::Duration::from_secs(configuration.limits.upload_timeout_seconds);
     let result = tokio::time::timeout(
         deadline,
@@ -108,7 +147,7 @@ pub async fn submit_report(
     .map_err(|_| AppError::DeadlineExceeded)
     .and_then(|result| result);
 
-    state.ingestion.release_upload_lease(upload_id).await;
+    lease.release().await;
 
     if result.is_err() {
         state.ingestion.abandon_submission(upload_id).await;

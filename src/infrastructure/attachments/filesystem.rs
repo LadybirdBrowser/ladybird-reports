@@ -5,6 +5,7 @@ use std::{
 
 use sha2::{Digest, Sha256};
 use tokio::io::AsyncWriteExt;
+use tokio::sync::Semaphore;
 
 use crate::{
     domain::{
@@ -16,12 +17,21 @@ use crate::{
 #[derive(Clone)]
 pub struct FileAttachmentStore {
     root: PathBuf,
+    png_validation_memory: std::sync::Arc<Semaphore>,
 }
 
 pub struct StagingUpload {
     root: PathBuf,
     upload_id: UploadId,
+    remove_on_drop: bool,
+    png_validation_memory: std::sync::Arc<Semaphore>,
 }
+
+const PNG_VALIDATION_MEMORY_UNIT: usize = 1024 * 1024;
+// A weighted semaphore limits the aggregate output reservation across all
+// blocking PNG decoders in this process. With the 64 MiB hard per-image cap,
+// no more than two maximum-sized decodes can run at once.
+const PNG_VALIDATION_MEMORY_BUDGET: usize = 128 * 1024 * 1024;
 
 pub struct AttachmentWriter {
     file: tokio::fs::File,
@@ -38,7 +48,12 @@ impl FileAttachmentStore {
         tokio::fs::create_dir_all(root.join("staging")).await?;
         tokio::fs::create_dir_all(root.join("reports")).await?;
 
-        Ok(Self { root })
+        Ok(Self {
+            root,
+            png_validation_memory: std::sync::Arc::new(Semaphore::new(
+                PNG_VALIDATION_MEMORY_BUDGET / PNG_VALIDATION_MEMORY_UNIT,
+            )),
+        })
     }
 
     pub fn available_space(&self) -> Result<u64> {
@@ -59,6 +74,8 @@ impl FileAttachmentStore {
         Ok(StagingUpload {
             root: self.root.clone(),
             upload_id,
+            remove_on_drop: true,
+            png_validation_memory: self.png_validation_memory.clone(),
         })
     }
 
@@ -95,6 +112,45 @@ impl FileAttachmentStore {
         }
 
         Ok(())
+    }
+
+    pub async fn remove_report(&self, report_id: ReportId) -> Result<()> {
+        let path = self.report_path(report_id);
+
+        if tokio::fs::try_exists(&path).await? {
+            tokio::fs::remove_dir_all(path).await?;
+        }
+
+        Ok(())
+    }
+
+    pub async fn stale_staging_uploads(
+        &self,
+        older_than: std::time::SystemTime,
+    ) -> Result<Vec<UploadId>> {
+        let mut stale = Vec::new();
+        let mut directory = tokio::fs::read_dir(self.root.join("staging")).await?;
+
+        while let Some(entry) = directory.next_entry().await? {
+            if !entry.file_type().await?.is_dir() {
+                continue;
+            }
+
+            let Some(upload_id) = entry
+                .file_name()
+                .to_str()
+                .and_then(|name| name.parse::<UploadId>().ok())
+            else {
+                continue;
+            };
+
+            let modified = entry.metadata().await?.modified()?;
+            if modified <= older_than {
+                stale.push(upload_id);
+            }
+        }
+
+        Ok(stale)
     }
 
     pub fn root(&self) -> &Path {
@@ -165,7 +221,13 @@ impl StagingUpload {
         let mut validated_ids = HashSet::new();
 
         for attachment in attachments {
-            validate_attachment_file(&self.path(attachment.id), attachment, limits).await?;
+            validate_attachment_file(
+                &self.path(attachment.id),
+                attachment,
+                limits,
+                self.validation_memory(),
+            )
+            .await?;
             validated_ids.insert(attachment.id);
         }
 
@@ -194,6 +256,33 @@ impl StagingUpload {
 
     fn path(&self, attachment_id: AttachmentId) -> PathBuf {
         self.directory().join(attachment_id.to_string())
+    }
+
+    fn validation_memory(&self) -> std::sync::Arc<Semaphore> {
+        self.png_validation_memory.clone()
+    }
+
+    pub fn mark_referenced(&mut self) {
+        self.remove_on_drop = false;
+    }
+}
+
+impl Drop for StagingUpload {
+    fn drop(&mut self) {
+        if !self.remove_on_drop {
+            return;
+        }
+
+        let path = self.directory();
+        if let Ok(runtime) = tokio::runtime::Handle::try_current() {
+            runtime.spawn(async move {
+                if let Err(error) = tokio::fs::remove_dir_all(&path).await
+                    && error.kind() != std::io::ErrorKind::NotFound
+                {
+                    tracing::warn!(?error, ?path, "Could not remove dropped upload staging");
+                }
+            });
+        }
     }
 }
 
@@ -236,14 +325,30 @@ async fn validate_attachment_file(
     path: &Path,
     attachment: &AttachmentManifest,
     limits: &IngestionLimits,
+    validation_memory: std::sync::Arc<Semaphore>,
 ) -> Result<()> {
     let path = path.to_owned();
     let attachment = attachment.clone();
     let limits = limits.clone();
 
+    let memory_permits = limits
+        .png_decoded_bytes
+        .div_ceil(PNG_VALIDATION_MEMORY_UNIT) as u32;
+    let _memory = match attachment.media_type {
+        AttachmentMediaType::Png => Some(
+            validation_memory
+                .acquire_many_owned(memory_permits)
+                .await
+                .map_err(|_| AppError::Unavailable)?,
+        ),
+        AttachmentMediaType::PlainText => None,
+    };
+
     tokio::task::spawn_blocking(move || match attachment.media_type {
         AttachmentMediaType::PlainText => validate_utf8_text(&path, limits.attachment_bytes),
-        AttachmentMediaType::Png => validate_png(&path, limits.png_pixels),
+        AttachmentMediaType::Png => {
+            validate_png(&path, limits.png_pixels, limits.png_decoded_bytes)
+        }
     })
     .await
     .map_err(|error| AppError::Internal(error.into()))?
@@ -261,12 +366,12 @@ fn validate_utf8_text(path: &Path, maximum_bytes: usize) -> Result<()> {
     Ok(())
 }
 
-fn validate_png(path: &Path, maximum_pixels: u64) -> Result<()> {
+fn validate_png(path: &Path, maximum_pixels: u64, maximum_decoded_bytes: usize) -> Result<()> {
     let file = std::fs::File::open(path)?;
     let mut decoder = png::Decoder::new(std::io::BufReader::new(file));
 
     decoder.set_limits(png::Limits {
-        bytes: 256 * 1024 * 1024,
+        bytes: maximum_decoded_bytes,
     });
 
     let mut reader = decoder
@@ -292,7 +397,7 @@ fn validate_png(path: &Path, maximum_pixels: u64) -> Result<()> {
         .output_buffer_size()
         .ok_or(AppError::InvalidRequest("PNG output is too large"))?;
 
-    if buffer_size > 256 * 1024 * 1024 {
+    if buffer_size > maximum_decoded_bytes {
         return Err(AppError::InvalidRequest("PNG output is too large"));
     }
 
@@ -340,6 +445,48 @@ mod tests {
         let mut file = tempfile::NamedTempFile::new().expect("create temporary attachment");
         file.write_all(b"not a PNG").expect("write attachment");
 
-        assert!(validate_png(file.path(), 100).is_err());
+        assert!(validate_png(file.path(), 100, 1024).is_err());
+    }
+
+    #[test]
+    fn png_output_must_fit_the_decoded_byte_budget() {
+        let mut file = tempfile::NamedTempFile::new().expect("create temporary attachment");
+        {
+            let mut encoder = png::Encoder::new(file.as_file_mut(), 2_048, 2_048);
+            encoder.set_color(png::ColorType::Rgba);
+            encoder.set_depth(png::BitDepth::Sixteen);
+            let _writer = encoder.write_header().expect("write PNG header");
+        }
+        file.flush().expect("flush PNG header");
+
+        // The header describes a 32 MiB frame, so validation must reject it
+        // before allocating the output buffer or reading compressed pixels.
+        assert!(validate_png(file.path(), 5_000_000, 1024 * 1024).is_err());
+    }
+
+    #[tokio::test]
+    async fn dropped_staging_uploads_are_removed() {
+        let directory = tempfile::tempdir().expect("create attachment root");
+        let store = FileAttachmentStore::open(directory.path())
+            .await
+            .expect("open attachment store");
+        let upload_id = UploadId::new();
+        let staging_path = directory.path().join("staging").join(upload_id.to_string());
+
+        let staging = store
+            .begin_staging(upload_id)
+            .await
+            .expect("create staging upload");
+        assert!(tokio::fs::try_exists(&staging_path).await.unwrap());
+        drop(staging);
+
+        for _ in 0..20 {
+            if !tokio::fs::try_exists(&staging_path).await.unwrap() {
+                return;
+            }
+            tokio::task::yield_now().await;
+        }
+
+        panic!("dropped staging directory still exists");
     }
 }

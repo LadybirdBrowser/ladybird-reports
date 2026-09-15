@@ -119,7 +119,8 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
     let ingest_database = IngestDatabase::connect(&reporting_url)
         .await
         .expect("connect ingestion adapter");
-    let ingestion = ReportIngestionService::new(ingest_database.clone(), attachments, [23; 32]);
+    let ingestion =
+        ReportIngestionService::new(ingest_database.clone(), attachments.clone(), [23; 32]);
     let manifest = ReportManifest {
         protocol: 1,
         submission_id: SubmissionId::new(),
@@ -135,8 +136,8 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
     let manifest_bytes = serde_json::to_vec(&manifest).expect("serialize manifest");
     let manifest_digest = sha256_hex(&manifest_bytes);
     let application = router(PublicState {
-        ingestion,
-        database: ingest_database,
+        ingestion: ingestion.clone(),
+        database: ingest_database.clone(),
         client_address_key: Arc::new([29; 32]),
     });
     let peer = ConnectInfo("127.0.0.1:12345".parse::<SocketAddr>().unwrap());
@@ -218,12 +219,17 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
     assert!(!report.fields[0].recognized_at_submission);
     assert!(report.report.has_submission_source);
     assert!(!report.report.submission_source_is_blocked);
+    assert!(report.report.expires_at.is_some());
 
     sqlx::query("INSERT INTO maintainers (github_id, login) VALUES (999, 'integration-test')")
         .execute(&admin_pool)
         .await
         .expect("create maintainer for moderation action");
 
+    attachments
+        .remove_report(report_id)
+        .await
+        .expect("remove expired report files");
     admin_database
         .block_report_source(report_id, 999)
         .await
@@ -267,4 +273,52 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
         .await
         .expect("unblocked challenge response");
     assert_eq!(unblocked_challenge_response.status(), StatusCode::OK);
+
+    sqlx::raw_sql(
+        "UPDATE challenges SET expires_at = now() - interval '1 second';
+         UPDATE rate_buckets SET expires_at = now() - interval '1 second';
+         INSERT INTO oauth_states (state_hash, expires_at)
+         VALUES (repeat('e', 64), now() - interval '1 second');
+         INSERT INTO sessions (
+            token_hash, github_id, encrypted_access_token, csrf_token, expires_at
+         ) VALUES (
+            repeat('f', 64), 999, 'expired-token', 'expired-csrf',
+            now() - interval '1 second'
+         )",
+    )
+    .execute(&admin_pool)
+    .await
+    .expect("create expired maintenance records");
+
+    let ingestion_sweep = ingest_database
+        .sweep_expired_state()
+        .await
+        .expect("sweep expired ingestion state");
+    assert!(ingestion_sweep.challenges_deleted >= 2);
+    assert!(ingestion_sweep.rate_buckets_deleted >= 1);
+
+    sqlx::query("UPDATE reports SET expires_at = now() - interval '1 second' WHERE id = $1")
+        .bind(report_id)
+        .execute(&admin_pool)
+        .await
+        .expect("expire accepted report");
+    let admin_sweep = admin_database
+        .begin_maintenance_sweep(3_650)
+        .await
+        .expect("begin admin maintenance sweep");
+    assert_eq!(admin_sweep.sessions_deleted, 1);
+    assert_eq!(admin_sweep.oauth_states_deleted, 1);
+    assert!(admin_sweep.reports_ready_for_purge.contains(&report_id));
+
+    admin_database
+        .finish_report_purge(report_id)
+        .await
+        .expect("purge expired report");
+    assert!(
+        admin_database
+            .report_details(report_id)
+            .await
+            .expect("query purged report")
+            .is_none()
+    );
 }

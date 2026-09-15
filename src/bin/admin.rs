@@ -57,6 +57,7 @@ async fn run() -> Result<()> {
         secret_cipher,
         bootstrap_reporting_database_url: bootstrap.generated_reporting_database_url.map(Arc::from),
     };
+    let maintenance = tokio::spawn(run_maintenance(state.clone()));
 
     let address = listen_address("ADMIN_LISTEN_ADDRESS", "0.0.0.0:3000")?;
     let listener = tokio::net::TcpListener::bind(address).await?;
@@ -66,6 +67,73 @@ async fn run() -> Result<()> {
         .with_graceful_shutdown(shutdown_signal())
         .await?;
 
+    maintenance.abort();
+    let _ = maintenance.await;
+
     tracing::info!(event = "shutdown.complete", service = "admin");
     Ok(())
+}
+
+async fn run_maintenance(state: AdminState) {
+    loop {
+        let interval_seconds = match state.database.configuration().await {
+            Ok(configuration) => {
+                let result = state
+                    .database
+                    .begin_maintenance_sweep(configuration.maintenance.report_retention_days)
+                    .await;
+
+                match result {
+                    Ok(result) => {
+                        let mut reports_deleted = 0_u64;
+                        for report_id in result.reports_ready_for_purge {
+                            if let Err(error) = state.attachments.remove_report(report_id).await {
+                                tracing::warn!(
+                                    event = "maintenance.report_files_failed",
+                                    ?error,
+                                    %report_id,
+                                );
+                                continue;
+                            }
+
+                            match state.database.finish_report_purge(report_id).await {
+                                Ok(true) => reports_deleted += 1,
+                                Ok(false) => {}
+                                Err(error) => tracing::warn!(
+                                    event = "maintenance.report_purge_failed",
+                                    ?error,
+                                    %report_id,
+                                ),
+                            }
+                        }
+
+                        if result.sessions_deleted > 0
+                            || result.oauth_states_deleted > 0
+                            || reports_deleted > 0
+                        {
+                            tracing::info!(
+                                event = "maintenance.admin_sweep_completed",
+                                sessions_deleted = result.sessions_deleted,
+                                oauth_states_deleted = result.oauth_states_deleted,
+                                reports_deleted,
+                            );
+                        }
+                    }
+                    Err(error) => tracing::warn!(event = "maintenance.admin_sweep_failed", ?error,),
+                }
+
+                configuration.maintenance.sweep_interval_seconds
+            }
+            Err(error) => {
+                tracing::warn!(
+                    event = "maintenance.configuration_failed",
+                    ?error,
+                    service = "admin",
+                );
+                900
+            }
+        };
+
+        tokio::time::sleep(std::time::Duration::from_secs(interval_seconds)).await;
+    }
 }

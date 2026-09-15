@@ -1,5 +1,6 @@
 mod authentication;
 mod issues;
+mod maintenance;
 mod models;
 mod reports;
 mod settings;

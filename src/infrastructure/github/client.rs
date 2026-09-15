@@ -29,6 +29,11 @@ pub struct GithubIssue {
     pub html_url: String,
 }
 
+#[derive(Debug, Deserialize)]
+struct GithubIssueSearch {
+    items: Vec<GithubIssue>,
+}
+
 #[derive(Deserialize)]
 struct TeamMembership {
     state: String,
@@ -111,10 +116,37 @@ impl GithubClient {
         Ok(())
     }
 
+    pub async fn verify_maintainer_identity(&self, token: &str, github_id: i64) -> Result<()> {
+        let user = self.current_user(token).await?;
+        if user.id != github_id {
+            return Err(AppError::PermissionDenied("Access denied"));
+        }
+
+        self.verify_maintainer(token, &user.login).await
+    }
+
     pub async fn issue(&self, token: &str, repository: &str, number: i64) -> Result<GithubIssue> {
         let path = format!("/repos/{repository}/issues/{number}");
         self.request_json(Method::GET, &path, token, Option::<&()>::None)
             .await
+    }
+
+    pub async fn search_issues(
+        &self,
+        token: &str,
+        repository: &str,
+        query: &str,
+    ) -> Result<Vec<GithubIssue>> {
+        let mut url = reqwest::Url::parse("https://api.github.com/search/issues")
+            .expect("static GitHub URL is valid");
+        url.query_pairs_mut()
+            .append_pair("q", &format!("repo:{repository} is:issue {query}"))
+            .append_pair("per_page", "20");
+
+        let response: GithubIssueSearch = self
+            .request_json_url(Method::GET, url, token, Option::<&()>::None)
+            .await?;
+        Ok(response.items)
     }
 
     pub async fn create_issue(
@@ -140,9 +172,25 @@ impl GithubClient {
         T: DeserializeOwned,
         B: Serialize + ?Sized,
     {
+        let url = reqwest::Url::parse(&format!("https://api.github.com{path}"))
+            .expect("GitHub API path is valid");
+        self.request_json_url(method, url, token, body).await
+    }
+
+    async fn request_json_url<T, B>(
+        &self,
+        method: Method,
+        url: reqwest::Url,
+        token: &str,
+        body: Option<&B>,
+    ) -> Result<T>
+    where
+        T: DeserializeOwned,
+        B: Serialize + ?Sized,
+    {
         let mut request = self
             .http
-            .request(method, format!("https://api.github.com{path}"))
+            .request(method, url)
             .bearer_auth(token)
             .header("accept", "application/vnd.github+json")
             .header("x-github-api-version", "2022-11-28");
