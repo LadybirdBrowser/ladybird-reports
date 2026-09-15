@@ -9,16 +9,20 @@ Qualifiers restrict a value to one property:
 ```text
 platform:linux kind:crash
 version:"Ladybird Nightly" architecture:arm64
-signal:SIGABRT
+state:assigned signal:sigabrt
 ```
 
-Built-in qualifiers are `kind`, `version`, `client_version`, `build`, `id`,
-`report`, `ip`, and `source_ip`. Any other qualifier is treated as a submitted
-field key. Values containing spaces can be quoted. The state selector remains
-separate so triage, assigned, or all reports can be searched.
+Built-in qualifiers are `state`, `kind`, `version`, `client_version`, `build`,
+`id`, `report`, `ip`, and `source_ip`. The `state` value is `triage`, `assigned`,
+or `all`. Any other qualifier is treated as a submitted field key. Values
+containing spaces can be quoted.
 
-Report metadata and diagnostic fields provide filter buttons that construct the
-corresponding qualified search.
+Report metadata and single-line diagnostic fields provide filter buttons that
+construct the corresponding qualified search.
+
+Blocking a submission source rejects its future public API requests. The
+confirmation also offers to remove every report from that source that is still
+in triage; assigned reports remain available.
 
 ## Runtime settings
 

@@ -16,15 +16,6 @@
 
     <section class="filter-panel" aria-label="Report filters">
         <form class="filters" method="get">
-            <label class="state-filter">
-                State
-                <select name="state">
-                    <option value="triage"{% if state == "triage" %} selected{% endif %}>Triage</option>
-                    <option value="assigned"{% if state == "assigned" %} selected{% endif %}>Assigned</option>
-                    <option value="all"{% if state == "all" %} selected{% endif %}>All reports</option>
-                </select>
-            </label>
-
             <label class="report-search-filter">
                 Search reports
                 <span class="search-input-wrap">
@@ -41,9 +32,9 @@
             <button type="submit">Apply filters</button>
         </form>
         <p class="filter-hint">
-            Combine plain text with qualifiers such as <code>platform:linux</code>,
-            <code>kind:crash</code>, <code>version:&quot;Ladybird Nightly&quot;</code>,
-            or any submitted field key.
+            Combine plain text with qualifiers such as <code>state:triage</code>,
+            <code>platform:linux</code>, <code>kind:crash</code>, or
+            <code>version:&quot;Ladybird Nightly&quot;</code>.
         </p>
     </section>
 

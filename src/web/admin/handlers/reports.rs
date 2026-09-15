@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     domain::{AttachmentId, IssueId, ReportId, ReportSearch, filter_expression},
     error::{AppError, Result},
-    infrastructure::database::{ReportAssignmentFilter, ReportQuery},
+    infrastructure::database::ReportQuery,
 };
 
 use super::super::{
@@ -20,9 +20,7 @@ use super::super::{
 
 #[derive(Deserialize)]
 pub struct ReportFilters {
-    #[serde(default = "default_report_state")]
-    state: String,
-    #[serde(default)]
+    #[serde(default = "default_report_search")]
     q: String,
     issue: Option<IssueId>,
     since: Option<NaiveDate>,
@@ -33,8 +31,7 @@ pub struct ReportFilters {
 impl Default for ReportFilters {
     fn default() -> Self {
         Self {
-            state: default_report_state(),
-            q: String::new(),
+            q: default_report_search(),
             issue: None,
             since: None,
             until: None,
@@ -47,7 +44,6 @@ impl Default for ReportFilters {
 #[template(path = "reports/index.html")]
 pub struct ReportsTemplate {
     navigation: Option<Navigation>,
-    state: String,
     search: String,
     reports: Vec<ReportRow>,
     next_page: Option<String>,
@@ -123,7 +119,8 @@ pub struct FieldView {
     kind: String,
     value: String,
     is_stack: bool,
-    filter_url: String,
+    is_multiline: bool,
+    filter_url: Option<String>,
 }
 
 pub struct AttachmentView {
@@ -146,15 +143,7 @@ pub async fn index(
     Extension(session): Extension<Session>,
     Query(filters): Query<ReportFilters>,
 ) -> Result<TemplateResponse<ReportsTemplate>> {
-    let assignment = match filters.state.as_str() {
-        "triage" => ReportAssignmentFilter::Triage,
-        "assigned" => ReportAssignmentFilter::Assigned,
-        "all" => ReportAssignmentFilter::All,
-        _ => return Err(AppError::InvalidRequest("Invalid report state filter")),
-    };
-
     let query = ReportQuery {
-        assignment,
         search: ReportSearch::parse(&filters.q)?,
         issue_id: filters.issue,
         since: filters.since,
@@ -177,7 +166,6 @@ pub async fn index(
 
     Ok(TemplateResponse(ReportsTemplate {
         navigation: Some(Navigation::for_session(&state, &session)),
-        state: filters.state,
         search: filters.q,
         reports: report_rows,
         next_page,
@@ -281,9 +269,8 @@ pub async fn show(
         OverviewField {
             label: "Submitted",
             value: details.report.created_at.to_string(),
-            filter_url: Some(format!(
-                "/reports?since={date}&until={date}",
-                date = details.report.created_at.date_naive()
+            filter_url: Some(submitted_date_filter_url(
+                details.report.created_at.date_naive(),
             )),
             monospace: false,
         },
@@ -335,9 +322,10 @@ pub async fn show(
 
         let view = FieldView {
             label: field.current_label.clone().unwrap_or_else(|| key.clone()),
-            kind: field.kind,
             is_stack: key == "stack",
-            filter_url: field_filter_url(&key, &value),
+            is_multiline: field.kind == "multiline",
+            filter_url: (field.kind != "multiline").then(|| field_filter_url(&key, &value)),
+            kind: field.kind,
             key,
             value,
         };
@@ -438,6 +426,8 @@ pub async fn assign(
 #[derive(Deserialize)]
 pub struct SourceRateLimitForm {
     csrf: String,
+    #[serde(default)]
+    remove_triage_reports: bool,
 }
 
 pub async fn block_ip(
@@ -447,18 +437,23 @@ pub async fn block_ip(
     Form(form): Form<SourceRateLimitForm>,
 ) -> Result<Redirect> {
     session.verify_csrf(&form.csrf)?;
-    state
+    let outcome = state
         .database
-        .block_report_source(report_id, session.github_id)
+        .block_report_source(report_id, session.github_id, form.remove_triage_reports)
         .await?;
 
     tracing::warn!(
         event = "report.source_blocked",
         %report_id,
+        removed_triage_reports = outcome.removed_triage_reports,
         actor = session.login,
     );
 
-    Ok(Redirect::to(&format!("/reports/{report_id}")))
+    if outcome.current_report_removed {
+        Ok(Redirect::to("/"))
+    } else {
+        Ok(Redirect::to(&format!("/reports/{report_id}")))
+    }
 }
 
 pub async fn unblock_ip(
@@ -541,7 +536,6 @@ fn next_page_url(
     {
         let mut query = url.query_pairs_mut();
         query
-            .append_pair("state", &filters.state)
             .append_pair("q", &filters.q)
             .append_pair("before", &last.created_at.to_rfc3339());
 
@@ -559,8 +553,8 @@ fn next_page_url(
     Some(format!("/?{}", url.query().unwrap_or_default()))
 }
 
-fn default_report_state() -> String {
-    "triage".into()
+fn default_report_search() -> String {
+    "state:triage".into()
 }
 
 fn field_string(
@@ -575,19 +569,19 @@ fn field_string(
 }
 
 fn field_filter_url(key: &str, value: &str) -> String {
-    let searchable_value = value
-        .lines()
-        .find(|line| !line.trim().is_empty())
-        .unwrap_or(value);
-    let searchable_value = searchable_value
-        .char_indices()
-        .nth(256)
-        .map_or(searchable_value, |(index, _)| &searchable_value[..index]);
-
     let mut url = reqwest::Url::parse("http://localhost/").expect("static URL is valid");
     url.query_pairs_mut()
-        .append_pair("state", "all")
-        .append_pair("q", &filter_expression(key, searchable_value));
+        .append_pair("q", &format!("state:all {}", filter_expression(key, value)));
+
+    format!("/?{}", url.query().unwrap_or_default())
+}
+
+fn submitted_date_filter_url(date: NaiveDate) -> String {
+    let mut url = reqwest::Url::parse("http://localhost/").expect("static URL is valid");
+    url.query_pairs_mut()
+        .append_pair("q", "state:all")
+        .append_pair("since", &date.to_string())
+        .append_pair("until", &date.to_string());
 
     format!("/?{}", url.query().unwrap_or_default())
 }

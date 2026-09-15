@@ -9,8 +9,8 @@ use chrono::Duration;
 use ladybird_reports::{
     application::ReportIngestionService,
     domain::{
-        DiagnosticField, FieldValue, ReportKind, ReportManifest, SubmissionId, proof_is_valid,
-        sha256_hex,
+        DiagnosticField, FieldValue, IssueId, ReportId, ReportKind, ReportManifest, SubmissionId,
+        UploadId, proof_is_valid, sha256_hex,
     },
     infrastructure::{
         SecretCipher,
@@ -267,7 +267,7 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
         .await
         .expect("remove expired report files");
     admin_database
-        .block_report_source(report_id, 999)
+        .block_report_source(report_id, 999, false)
         .await
         .expect("block report source");
 
@@ -357,4 +357,87 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
             .expect("query purged report")
             .is_none()
     );
+
+    let issue_id = IssueId::new();
+    sqlx::query("INSERT INTO issues (id, title) VALUES ($1, 'Assigned integration report')")
+        .bind(issue_id)
+        .execute(&admin_pool)
+        .await
+        .expect("create issue for source block test");
+
+    let first_triage_report = ReportId::new();
+    let second_triage_report = ReportId::new();
+    let assigned_report = ReportId::new();
+    for (test_report_id, assigned_issue) in [
+        (first_triage_report, None),
+        (second_triage_report, None),
+        (assigned_report, Some(issue_id)),
+    ] {
+        sqlx::query(
+            "INSERT INTO reports (
+                id,
+                submission_id,
+                manifest_digest,
+                kind,
+                client_version,
+                build,
+                storage_state,
+                staging_id,
+                source_client_key,
+                source_ip,
+                issue_id,
+                assigned_at
+             ) VALUES (
+                $1,
+                $2,
+                repeat('7', 64),
+                'crash',
+                'source-block-test',
+                '',
+                'ready',
+                $3,
+                repeat('8', 64),
+                '203.0.113.10'::inet,
+                $4,
+                CASE WHEN $4::uuid IS NULL THEN NULL ELSE now() END
+             )",
+        )
+        .bind(test_report_id)
+        .bind(SubmissionId::new())
+        .bind(UploadId::new())
+        .bind(assigned_issue)
+        .execute(&admin_pool)
+        .await
+        .expect("create report for source block test");
+    }
+
+    let block_outcome = admin_database
+        .block_report_source(first_triage_report, 999, true)
+        .await
+        .expect("block source and remove its triage reports");
+    assert_eq!(block_outcome.removed_triage_reports, 2);
+    assert!(block_outcome.current_report_removed);
+
+    let removed_triage_reports: i64 = sqlx::query_scalar(
+        "SELECT count(*)
+         FROM reports
+         WHERE source_client_key = repeat('8', 64)
+            AND issue_id IS NULL
+            AND deleted_at IS NOT NULL",
+    )
+    .fetch_one(&admin_pool)
+    .await
+    .expect("count removed triage reports");
+    assert_eq!(removed_triage_reports, 2);
+
+    let assigned_report_is_active: bool = sqlx::query_scalar(
+        "SELECT deleted_at IS NULL
+         FROM reports
+         WHERE id = $1",
+    )
+    .bind(assigned_report)
+    .fetch_one(&admin_pool)
+    .await
+    .expect("check assigned report after source block");
+    assert!(assigned_report_is_active);
 }

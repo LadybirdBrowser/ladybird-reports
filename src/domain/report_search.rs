@@ -44,6 +44,13 @@ impl ReportSearch {
 }
 
 pub fn filter_expression(key: &str, value: &str) -> String {
+    if value
+        .bytes()
+        .all(|byte| !byte.is_ascii_whitespace() && !matches!(byte, b'"' | b'\\'))
+    {
+        return format!("{key}:{}", value.to_ascii_lowercase());
+    }
+
     let escaped = value.replace('\\', "\\\\").replace('"', "\\\"");
     format!("{key}:\"{escaped}\"")
 }
@@ -95,6 +102,15 @@ fn validate_qualifier(key: &str, value: &str) -> Result<()> {
         return Err(AppError::InvalidRequest("Invalid report search qualifier"));
     }
 
+    if key.eq_ignore_ascii_case("state")
+        && !matches!(
+            value.to_ascii_lowercase().as_str(),
+            "triage" | "assigned" | "all"
+        )
+    {
+        return Err(AppError::InvalidRequest("Invalid report state filter"));
+    }
+
     Ok(())
 }
 
@@ -130,10 +146,19 @@ mod tests {
 
     #[test]
     fn formats_values_for_search_links() {
+        assert_eq!(filter_expression("platform", "Linux"), "platform:linux");
         assert_eq!(
             filter_expression("description", "A \"quoted\" value"),
             r#"description:"A \"quoted\" value""#
         );
+    }
+
+    #[test]
+    fn validates_report_states() {
+        assert!(ReportSearch::parse("state:triage").is_ok());
+        assert!(ReportSearch::parse("state:assigned").is_ok());
+        assert!(ReportSearch::parse("state:all").is_ok());
+        assert!(ReportSearch::parse("state:unknown").is_err());
     }
 
     #[test]

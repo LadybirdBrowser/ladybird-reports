@@ -16,30 +16,11 @@ pub struct SessionRecord {
 
 #[derive(Clone, Debug, Default)]
 pub struct ReportQuery {
-    pub assignment: ReportAssignmentFilter,
     pub search: ReportSearch,
     pub issue_id: Option<IssueId>,
     pub since: Option<NaiveDate>,
     pub until: Option<NaiveDate>,
     pub before: Option<DateTime<Utc>>,
-}
-
-#[derive(Clone, Copy, Debug, Default)]
-pub enum ReportAssignmentFilter {
-    #[default]
-    Triage,
-    Assigned,
-    All,
-}
-
-impl ReportAssignmentFilter {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Triage => "triage",
-            Self::Assigned => "assigned",
-            Self::All => "all",
-        }
-    }
 }
 
 #[derive(Clone, Debug)]
@@ -103,6 +84,12 @@ pub struct ReportDetails {
     pub fields: Vec<StoredDiagnosticField>,
     pub attachments: Vec<StoredAttachment>,
     pub events: Vec<AuditEvent>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct BlockReportSourceOutcome {
+    pub removed_triage_reports: u64,
+    pub current_report_removed: bool,
 }
 
 #[derive(Clone, Debug)]

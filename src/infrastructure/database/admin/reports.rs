@@ -7,8 +7,8 @@ use crate::{
 };
 
 use super::{
-    AuditEvent, ReportDetails, ReportQuery, ReportRecord, ReportSearchResult, ReportSummary,
-    StoredAttachment, StoredDiagnosticField,
+    AuditEvent, BlockReportSourceOutcome, ReportDetails, ReportQuery, ReportRecord,
+    ReportSearchResult, ReportSummary, StoredAttachment, StoredDiagnosticField,
 };
 
 impl AdminDatabase {
@@ -55,15 +55,8 @@ impl AdminDatabase {
                 reports.created_at
              FROM reports
              WHERE reports.deleted_at IS NULL
-                AND reports.storage_state = 'ready'
-                AND (",
+                AND reports.storage_state = 'ready'",
         );
-        sql.push_bind(query.assignment.as_str())
-            .push(" = 'all' OR (")
-            .push_bind(query.assignment.as_str())
-            .push(" = 'assigned' AND reports.issue_id IS NOT NULL) OR (")
-            .push_bind(query.assignment.as_str())
-            .push(" = 'triage' AND reports.issue_id IS NULL))");
 
         for term in &query.search.terms {
             push_text_search(&mut sql, term);
@@ -351,12 +344,18 @@ impl AdminDatabase {
         Ok(())
     }
 
-    pub async fn block_report_source(&self, report_id: ReportId, actor: i64) -> Result<()> {
+    pub async fn block_report_source(
+        &self,
+        report_id: ReportId,
+        actor: i64,
+        remove_triage_reports: bool,
+    ) -> Result<BlockReportSourceOutcome> {
         let mut transaction = self.pool.begin().await?;
         let client_key: Option<String> = sqlx::query_scalar(
             "SELECT source_client_key
              FROM reports
-             WHERE id = $1 AND deleted_at IS NULL AND storage_state = 'ready'",
+             WHERE id = $1 AND deleted_at IS NULL AND storage_state = 'ready'
+             FOR UPDATE",
         )
         .bind(report_id)
         .fetch_optional(&mut *transaction)
@@ -388,17 +387,58 @@ impl AdminDatabase {
         .execute(&mut *transaction)
         .await?;
 
+        let removed_report_ids = if remove_triage_reports {
+            sqlx::query_scalar::<_, ReportId>(
+                "UPDATE reports
+                 SET deleted_at = now(), updated_at = now()
+                 WHERE source_client_key = $1
+                    AND issue_id IS NULL
+                    AND deleted_at IS NULL
+                    AND storage_state = 'ready'
+                 RETURNING id",
+            )
+            .bind(&client_key)
+            .fetch_all(&mut *transaction)
+            .await?
+        } else {
+            Vec::new()
+        };
+
+        if !removed_report_ids.is_empty() {
+            let removed_ids = removed_report_ids
+                .iter()
+                .map(|report_id| report_id.0)
+                .collect::<Vec<_>>();
+            sqlx::query(
+                "UPDATE attachments
+                 SET deleted_at = COALESCE(deleted_at, now())
+                 WHERE report_id = ANY($1)",
+            )
+            .bind(&removed_ids)
+            .execute(&mut *transaction)
+            .await?;
+        }
+
         sqlx::query(
-            "INSERT INTO audit_events (actor, action, entity_id)
-             VALUES ($1, 'report.source_blocked', $2)",
+            "INSERT INTO audit_events (actor, action, entity_id, details)
+             VALUES (
+                $1,
+                'report.source_blocked',
+                $2,
+                jsonb_build_object('triage_reports_removed', $3::bigint)
+             )",
         )
         .bind(actor)
         .bind(report_id.0)
+        .bind(removed_report_ids.len() as i64)
         .execute(&mut *transaction)
         .await?;
 
         transaction.commit().await?;
-        Ok(())
+        Ok(BlockReportSourceOutcome {
+            removed_triage_reports: removed_report_ids.len() as u64,
+            current_report_removed: removed_report_ids.contains(&report_id),
+        })
     }
 
     pub async fn unblock_report_source(&self, report_id: ReportId, actor: i64) -> Result<()> {
@@ -484,6 +524,16 @@ fn push_text_search(sql: &mut QueryBuilder<'_, Postgres>, term: &str) {
 
 fn push_qualified_search(sql: &mut QueryBuilder<'_, Postgres>, key: &str, value: &str) {
     match key {
+        "state" => match value.to_ascii_lowercase().as_str() {
+            "triage" => {
+                sql.push(" AND reports.issue_id IS NULL");
+            }
+            "assigned" => {
+                sql.push(" AND reports.issue_id IS NOT NULL");
+            }
+            "all" => {}
+            _ => unreachable!("report state qualifiers are validated while parsing"),
+        },
         "kind" => push_report_column_filter(sql, "reports.kind", value),
         "version" | "client_version" => {
             push_report_column_filter(sql, "reports.client_version", value);

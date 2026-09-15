@@ -65,25 +65,35 @@
                 {% endif %}
 
                 {% for field in known_fields %}
-                    <article class="report-field">
+                    <article
+                        class="report-field{% if !field.is_multiline %} report-field-inline{% endif %}"
+                    >
                         <header class="report-field-header">
                             <div>
                                 <h3>{{ field.label }}</h3>
                                 <p class="quiet"><code>{{ field.key }}</code> · {{ field.kind }}</p>
                             </div>
-                            <a
-                                class="field-filter-button"
-                                href="{{ field.filter_url }}"
-                                aria-label="Filter reports by {{ field.label }}"
-                                title="Find reports with this value"
-                            >
-                                <span aria-hidden="true"></span>
-                            </a>
                         </header>
-                        {% if field.is_stack %}
-                            <pre class="stack-trace"><code>{{ field.value }}</code></pre>
+                        {% if field.is_multiline %}
+                            {% if field.is_stack %}
+                                <pre class="stack-trace"><code>{{ field.value }}</code></pre>
+                            {% else %}
+                                <pre>{{ field.value }}</pre>
+                            {% endif %}
                         {% else %}
-                            <pre>{{ field.value }}</pre>
+                            <div class="report-field-value">
+                                <span>{{ field.value }}</span>
+                                {% if let Some(filter_url) = field.filter_url %}
+                                    <a
+                                        class="field-filter-button"
+                                        href="{{ filter_url }}"
+                                        aria-label="Filter reports by {{ field.label }}"
+                                        title="Find reports with this value"
+                                    >
+                                        <span aria-hidden="true"></span>
+                                    </a>
+                                {% endif %}
+                            </div>
                         {% endif %}
                     </article>
                 {% endfor %}
@@ -102,22 +112,32 @@
                     </div>
 
                     {% for field in unknown_fields %}
-                        <article class="report-field">
+                        <article
+                            class="report-field{% if !field.is_multiline %} report-field-inline{% endif %}"
+                        >
                             <header class="report-field-header">
                                 <div>
                                     <h3>{{ field.key }}</h3>
                                     <span class="badge badge-warning">Unknown field</span>
                                 </div>
-                                <a
-                                    class="field-filter-button"
-                                    href="{{ field.filter_url }}"
-                                    aria-label="Filter reports by {{ field.key }}"
-                                    title="Find reports with this value"
-                                >
-                                    <span aria-hidden="true"></span>
-                                </a>
                             </header>
-                            <pre>{{ field.value }}</pre>
+                            {% if field.is_multiline %}
+                                <pre>{{ field.value }}</pre>
+                            {% else %}
+                                <div class="report-field-value">
+                                    <span>{{ field.value }}</span>
+                                    {% if let Some(filter_url) = field.filter_url %}
+                                        <a
+                                            class="field-filter-button"
+                                            href="{{ filter_url }}"
+                                            aria-label="Filter reports by {{ field.key }}"
+                                            title="Find reports with this value"
+                                        >
+                                            <span aria-hidden="true"></span>
+                                        </a>
+                                    {% endif %}
+                                </div>
+                            {% endif %}
                         </article>
                     {% endfor %}
                 </section>
@@ -128,13 +148,8 @@
                     <h2 id="attachments-title">Attachments</h2>
                     <p>{{ attachments.len() }} files</p>
                 </div>
-                <div class="card-body stack">
-                    {% if attachments.is_empty() %}
-                        <div class="empty-state">
-                            <strong>No attachments</strong>
-                            The client submitted diagnostics only.
-                        </div>
-                    {% else %}
+                {% if !attachments.is_empty() %}
+                    <div class="card-body stack">
                         {% for attachment in attachments %}
                             <article class="attachment">
                                 <p>
@@ -157,8 +172,8 @@
                                 {% endif %}
                             </article>
                         {% endfor %}
-                    {% endif %}
-                </div>
+                    </div>
+                {% endif %}
             </section>
 
             <section class="card" aria-labelledby="history-title">
@@ -314,7 +329,7 @@
                                     <div
                                         class="entity-selector-popover"
                                         data-entity-popover
-                                        hidden
+                                        popover="auto"
                                     >
                                         <div class="entity-selector-popover-header">
                                             <span>Matching GitHub issues</span>
@@ -382,18 +397,53 @@
                                 <button class="button-secondary" type="submit">Unblock IP</button>
                             </form>
                         {% else %}
-                            <p>
-                                Block this address indefinitely. Future requests are rejected before
-                                the server issues a proof-of-work challenge.
-                            </p>
-                            <form method="post" action="/reports/{{ report.id }}/block-ip">
-                                <input
-                                    type="hidden"
-                                    name="csrf"
-                                    value="{{ navigation.as_ref().unwrap().csrf_token }}"
-                                >
-                                <button class="button-danger" type="submit">Block IP</button>
-                            </form>
+                            <button
+                                class="button-danger block-source-trigger"
+                                type="button"
+                                popovertarget="block-source-confirmation"
+                            >
+                                Block IP
+                            </button>
+                            <div
+                                class="confirmation-popover"
+                                id="block-source-confirmation"
+                                role="dialog"
+                                aria-labelledby="block-source-confirmation-title"
+                                popover
+                            >
+                                <form method="post" action="/reports/{{ report.id }}/block-ip">
+                                    <input
+                                        type="hidden"
+                                        name="csrf"
+                                        value="{{ navigation.as_ref().unwrap().csrf_token }}"
+                                    >
+                                    <h3 id="block-source-confirmation-title">Block this IP?</h3>
+                                    <p>
+                                        Future requests from this address will be rejected before
+                                        the server issues a proof-of-work challenge.
+                                    </p>
+                                    <label class="checkbox-row">
+                                        <input
+                                            type="checkbox"
+                                            name="remove_triage_reports"
+                                            value="true"
+                                            checked
+                                        >
+                                        <span>Remove all reports from this IP that are in triage</span>
+                                    </label>
+                                    <div class="popover-actions">
+                                        <button
+                                            class="button-secondary"
+                                            type="button"
+                                            popovertarget="block-source-confirmation"
+                                            popovertargetaction="hide"
+                                        >
+                                            Cancel
+                                        </button>
+                                        <button class="button-danger" type="submit">Block IP</button>
+                                    </div>
+                                </form>
+                            </div>
                         {% endif %}
                     {% else %}
                         <p>This report predates submission-source tracking and cannot be blocked.</p>

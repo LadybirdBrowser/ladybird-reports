@@ -63,6 +63,25 @@ class EntitySelector {
             }
         });
 
+        this.popover.addEventListener("beforetoggle", (event) => {
+            const isOpening = event.newState === "open";
+            this.searchInput.setAttribute("aria-expanded", String(isOpening));
+            if (isOpening) {
+                this.positionPopover();
+            } else {
+                this.searchInput.removeAttribute("aria-activedescendant");
+                this.activeIndex = -1;
+            }
+        });
+
+        const reposition = () => {
+            if (this.popover.matches(":popover-open")) {
+                this.positionPopover();
+            }
+        };
+        window.addEventListener("resize", reposition);
+        window.addEventListener("scroll", reposition, true);
+
         document.addEventListener("click", (event) => {
             if (!this.root.contains(event.target)) {
                 this.close();
@@ -77,15 +96,37 @@ class EntitySelector {
     }
 
     open() {
-        this.popover.hidden = false;
-        this.searchInput.setAttribute("aria-expanded", "true");
+        if (!this.popover.matches(":popover-open")) {
+            this.popover.showPopover();
+        }
     }
 
     close() {
-        this.popover.hidden = true;
-        this.searchInput.setAttribute("aria-expanded", "false");
+        if (this.popover.matches(":popover-open")) {
+            this.popover.hidePopover();
+        }
         this.searchInput.removeAttribute("aria-activedescendant");
         this.activeIndex = -1;
+    }
+
+    positionPopover() {
+        const bounds = this.searchInput.getBoundingClientRect();
+        const viewportMargin = 8;
+        const preferredWidth = Math.max(bounds.width, 544);
+        const width = Math.min(preferredWidth, window.innerWidth - viewportMargin * 2);
+        const left = Math.max(
+            viewportMargin,
+            Math.min(bounds.right - width, window.innerWidth - width - viewportMargin),
+        );
+        const availableBelow = window.innerHeight - bounds.bottom - viewportMargin;
+        const openAbove = availableBelow < 280 && bounds.top > availableBelow;
+
+        this.popover.style.width = `${width}px`;
+        this.popover.style.left = `${left}px`;
+        this.popover.style.top = openAbove ? "auto" : `${bounds.bottom + 6}px`;
+        this.popover.style.bottom = openAbove
+            ? `${window.innerHeight - bounds.top + 6}px`
+            : "auto";
     }
 
     queueSearch() {
@@ -248,7 +289,7 @@ class EntitySelector {
     }
 
     moveActiveOption(direction) {
-        if (this.popover.hidden) {
+        if (!this.popover.matches(":popover-open")) {
             this.open();
             return;
         }
