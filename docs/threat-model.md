@@ -31,5 +31,5 @@ Reports and attachments expire after the configured long retention period. Maint
 deletes expired database content and attachment files. Short-lived unauthenticated and
 authentication records are removed after their individual expiry timestamps.
 
-Secrets are supplied at runtime by Coolify. They are absent from the source tree,
-container build arguments, image environment, and logs.
+Secrets are supplied at runtime by the deployment platform. They are absent from
+the source tree, container build arguments, image environment, and logs.

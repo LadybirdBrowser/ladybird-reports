@@ -2,7 +2,7 @@
 
 The production image contains the admin service, public API, and migration
 utility. It contains no deployment secrets. Store PostgreSQL connection URLs,
-cryptographic keys, and GitHub credentials as Coolify secrets.
+cryptographic keys, and GitHub credentials as deployment secrets.
 
 ## GitHub App
 
@@ -47,9 +47,9 @@ Add the displayed URL as `REPORTING_DATABASE_URL` to the admin service and resta
 it manually. Startup verifies and reapplies the restricted grants, then removes the
 temporary encrypted credential.
 
-## Coolify resources
+## Service topology
 
-Use two Coolify resources with the same
+Run two services from the same
 `ghcr.io/ladybirdbrowser/ladybird-reports:master` image and a shared persistent
 attachment directory.
 
@@ -80,8 +80,8 @@ directory outside ephemeral container storage; for example:
 GitHub Actions runs formatting, Clippy, Rust tests, and browser tests before it
 builds an image. A successful push to `master` publishes immutable commit and
 moving `master` tags to GitHub Container Registry. The final workflow job sends
-signed deployment events to both Coolify resources. Coolify pulls the published
-image and does not build application source.
+signed deployment events to the configured deployment targets. The container
+platform pulls the published image and does not build application source.
 
 The image build exports its BuildKit cache to GitHub Actions. Its `cargo-chef`
 dependency layer changes only when the Rust package manifests change, so ordinary

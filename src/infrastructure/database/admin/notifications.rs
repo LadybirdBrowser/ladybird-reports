@@ -51,6 +51,7 @@ impl AdminDatabase {
              WHERE notifications.delivered_at IS NULL
                 AND reports.storage_state = 'ready'
                 AND reports.deleted_at IS NULL
+                AND reports.hidden_at IS NULL
              ORDER BY notifications.created_at, notifications.report_id
              LIMIT 1",
         )

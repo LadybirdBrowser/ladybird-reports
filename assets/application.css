@@ -29,6 +29,7 @@
     --header-soft: #a9adbf;
     --shadow-sm: 0 1px 2px rgb(25 27 39 / 0.05);
     --shadow-md: 0 12px 32px rgb(30 32 50 / 0.08);
+    --shadow-popover: 0 1.5rem 4rem rgb(20 22 34 / 0.24), 0 0.25rem 0.8rem rgb(20 22 34 / 0.12);
     --radius-sm: 0.45rem;
     --radius-md: 0.75rem;
     --radius-lg: 1rem;
@@ -67,6 +68,7 @@
         --header-soft: #a9adbf;
         --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.18);
         --shadow-md: 0 14px 38px rgb(0 0 0 / 0.24);
+        --shadow-popover: 0 1.5rem 4rem rgb(0 0 0 / 0.48), 0 0.25rem 0.8rem rgb(0 0 0 / 0.3);
     }
 }
 
@@ -266,7 +268,7 @@ nav a:hover {
     border-radius: var(--radius-md);
     background: var(--surface-raised);
     color: var(--ink);
-    box-shadow: var(--shadow-md);
+    box-shadow: var(--shadow-popover);
 }
 
 .account-popover::backdrop {
@@ -607,7 +609,7 @@ select {
     border-radius: var(--radius-md);
     background: var(--surface-raised);
     color: var(--ink);
-    box-shadow: var(--shadow-md);
+    box-shadow: var(--shadow-popover);
 }
 
 .custom-select-popover::backdrop {
@@ -752,7 +754,7 @@ textarea:focus {
     border: 1px solid var(--border-strong);
     border-radius: 0.85rem;
     background: var(--surface);
-    box-shadow: 0 1.2rem 3.5rem rgb(20 22 34 / 0.2), 0 0.2rem 0.6rem rgb(20 22 34 / 0.08);
+    box-shadow: var(--shadow-popover);
     animation: entity-selector-open 130ms ease-out;
 }
 
@@ -908,7 +910,8 @@ textarea:focus {
     color: var(--warning);
 }
 
-.entity-selector-badge.is-assigned {
+.entity-selector-badge.is-assigned,
+.entity-selector-badge.is-confirmed {
     background: var(--success-soft);
     color: var(--success);
 }
@@ -1309,7 +1312,8 @@ tbody tr:hover {
 }
 
 .badge-assigned,
-.badge-success {
+.badge-success,
+.badge-confirmed {
     border-color: color-mix(in srgb, var(--success) 22%, transparent);
     background: var(--success-soft);
     color: var(--success);
@@ -1480,25 +1484,21 @@ tbody tr:hover {
     content: "";
 }
 
-.block-source-trigger {
-    anchor-name: --block-source-trigger;
-}
-
 .confirmation-popover {
     position: fixed;
-    top: anchor(bottom);
-    right: anchor(right);
+    top: 50%;
+    right: auto;
     bottom: auto;
-    left: auto;
+    left: 50%;
     width: min(24rem, calc(100vw - 1rem));
-    margin: 0.5rem 0 0;
+    margin: 0;
     padding: 1rem;
-    position-anchor: --block-source-trigger;
     border: 1px solid var(--border-strong);
     border-radius: var(--radius-md);
     background: var(--surface-raised);
     color: var(--ink);
-    box-shadow: var(--shadow-md);
+    box-shadow: var(--shadow-popover);
+    transform: translate(-50%, -50%);
 }
 
 .confirmation-popover::backdrop {
@@ -1540,6 +1540,140 @@ tbody tr:hover {
 .popover-actions {
     display: flex;
     margin-top: 1rem;
+    justify-content: flex-end;
+    gap: 0.55rem;
+}
+
+.report-list-card[aria-busy="true"] {
+    opacity: 0.68;
+    transition: opacity 120ms ease;
+}
+
+.report-list-more {
+    display: flex;
+    padding: 1rem;
+    justify-content: center;
+    border-top: 1px solid var(--border);
+}
+
+.search-completions {
+    position: fixed;
+    right: auto;
+    bottom: auto;
+    margin: 0;
+    padding: 0.3rem;
+    overflow: auto;
+    max-height: min(22rem, calc(100vh - 1rem));
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-md);
+    background: var(--surface-raised);
+    color: var(--ink);
+    box-shadow: var(--shadow-popover);
+}
+
+.search-completion {
+    display: grid;
+    width: 100%;
+    min-height: auto;
+    padding: 0.6rem 0.7rem;
+    justify-content: start;
+    border: 0;
+    background: transparent;
+    color: var(--ink);
+    gap: 0.1rem;
+    text-align: left;
+}
+
+.search-completion:hover,
+.search-completion[aria-selected="true"] {
+    background: var(--brand-soft);
+    color: var(--ink);
+}
+
+.search-completion span {
+    color: var(--ink-soft);
+    font-size: 0.75rem;
+    font-weight: 500;
+}
+
+.issue-dialog {
+    width: min(48rem, calc(100vw - 2rem));
+    max-height: calc(100vh - 2rem);
+    padding: 1.35rem;
+    overflow: auto;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-lg);
+    background: var(--surface);
+    color: var(--ink);
+    box-shadow: var(--shadow-popover);
+}
+
+.issue-dialog::backdrop {
+    background: rgb(15 17 27 / 0.48);
+    backdrop-filter: blur(2px);
+}
+
+.issue-dialog-header {
+    display: flex;
+    margin-bottom: 1rem;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+}
+
+.issue-dialog-header h2,
+.issue-dialog-header p {
+    margin-bottom: 0;
+}
+
+.dialog-close {
+    width: 2.2rem;
+    min-height: 2.2rem;
+    padding: 0;
+    border-color: transparent;
+    background: transparent;
+    color: var(--ink-soft);
+    font-size: 1.5rem;
+    box-shadow: none;
+}
+
+.dialog-close:hover,
+.dialog-close:focus-visible {
+    border-color: var(--border);
+    background: var(--surface-subtle);
+    color: var(--ink);
+    box-shadow: none;
+    transform: none;
+}
+
+.issue-mode-switch {
+    display: grid;
+    margin-bottom: 1.2rem;
+    padding: 0.25rem;
+    grid-template-columns: 1fr 1fr;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: var(--surface-subtle);
+    gap: 0.25rem;
+}
+
+.issue-mode-switch button {
+    border-color: transparent;
+    background: transparent;
+    color: var(--ink-soft);
+    box-shadow: none;
+}
+
+.issue-mode-switch button[aria-pressed="true"] {
+    border-color: var(--border);
+    background: var(--surface);
+    color: var(--ink);
+    box-shadow: var(--shadow-sm);
+}
+
+.dialog-actions {
+    display: flex;
+    margin-top: 1.25rem;
     justify-content: flex-end;
     gap: 0.55rem;
 }

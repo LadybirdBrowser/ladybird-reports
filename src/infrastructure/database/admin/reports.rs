@@ -29,6 +29,7 @@ impl AdminDatabase {
              WHERE attachments.id = $1
                 AND attachments.deleted_at IS NULL
                 AND reports.deleted_at IS NULL
+                AND reports.hidden_at IS NULL
                 AND reports.storage_state = 'ready'",
         )
         .bind(attachment_id)
@@ -53,9 +54,11 @@ impl AdminDatabase {
                 reports.client_version,
                 reports.build,
                 reports.issue_id,
+                reports.confirmed_at,
                 reports.created_at
              FROM reports
              WHERE reports.deleted_at IS NULL
+                AND reports.hidden_at IS NULL
                 AND reports.storage_state = 'ready'",
         );
 
@@ -81,9 +84,11 @@ impl AdminDatabase {
             .push_bind(query.until)
             .push("::date + interval '1 day') AND (")
             .push_bind(query.before)
-            .push("::timestamptz IS NULL OR reports.created_at < ")
+            .push("::timestamptz IS NULL OR (reports.created_at, reports.id) < (")
             .push_bind(query.before)
-            .push(") ORDER BY reports.created_at DESC LIMIT 100");
+            .push(", ")
+            .push_bind(query.before_id)
+            .push(")) ORDER BY reports.created_at DESC, reports.id DESC LIMIT 51");
 
         let rows = sql.build().fetch_all(&self.pool).await?;
 
@@ -95,6 +100,7 @@ impl AdminDatabase {
                 client_version: row.get("client_version"),
                 build: row.get("build"),
                 issue_id: row.get("issue_id"),
+                confirmed_at: row.get("confirmed_at"),
                 created_at: row.get("created_at"),
             })
             .collect())
@@ -108,10 +114,12 @@ impl AdminDatabase {
                 reports.client_version,
                 reports.build,
                 issues.title AS issue_title,
+                reports.confirmed_at,
                 reports.created_at
              FROM reports
              LEFT JOIN issues ON issues.id = reports.issue_id
              WHERE reports.deleted_at IS NULL
+                AND reports.hidden_at IS NULL
                 AND reports.storage_state = 'ready'
                 AND (
                     $1 = ''
@@ -143,6 +151,7 @@ impl AdminDatabase {
                 client_version: row.get("client_version"),
                 build: row.get("build"),
                 issue_title: row.get("issue_title"),
+                confirmed_at: row.get("confirmed_at"),
                 created_at: row.get("created_at"),
             })
             .collect())
@@ -177,6 +186,7 @@ impl AdminDatabase {
                 client_version,
                 build,
                 issue_id,
+                confirmed_at,
                 host(source_ip) AS source_ip,
                 source_client_key IS NOT NULL AS has_submission_source,
                 EXISTS (
@@ -194,6 +204,7 @@ impl AdminDatabase {
              FROM reports
              WHERE id = $1
                 AND deleted_at IS NULL
+                AND hidden_at IS NULL
                 AND storage_state = 'ready'",
         )
         .bind(report_id)
@@ -208,6 +219,7 @@ impl AdminDatabase {
             client_version: row.get("client_version"),
             build: row.get("build"),
             issue_id: row.get("issue_id"),
+            confirmed_at: row.get("confirmed_at"),
             source_ip: row.get("source_ip"),
             has_submission_source: row.get("has_submission_source"),
             submission_source_is_blocked: row.get("submission_source_is_blocked"),
@@ -273,10 +285,10 @@ impl AdminDatabase {
             .collect())
     }
 
-    pub async fn assign_reports(
+    pub async fn assign_report_to_issue(
         &self,
-        report_ids: &[ReportId],
-        issue_id: Option<IssueId>,
+        report_id: ReportId,
+        issue_id: IssueId,
         actor: i64,
     ) -> Result<()> {
         let mut transaction = self.pool.begin().await?;
@@ -287,63 +299,180 @@ impl AdminDatabase {
             .execute(&mut *transaction)
             .await?;
 
-        if let Some(issue_id) = issue_id {
-            let assignable: bool = sqlx::query_scalar(
-                "SELECT EXISTS(
-                    SELECT 1 FROM issues WHERE id = $1 AND merged_into IS NULL
-                )",
-            )
-            .bind(issue_id)
-            .fetch_one(&mut *transaction)
-            .await?;
+        let assignable: bool = sqlx::query_scalar(
+            "SELECT EXISTS(
+                SELECT 1
+                FROM issues
+                WHERE id = $1
+                    AND merged_into IS NULL
+                    AND resolved_at IS NULL
+            )",
+        )
+        .bind(issue_id)
+        .fetch_one(&mut *transaction)
+        .await?;
 
-            if !assignable {
-                return Err(AppError::InvalidRequest(
-                    "Issue does not exist or has been merged",
-                ));
-            }
+        if !assignable {
+            return Err(AppError::InvalidRequest(
+                "Issue does not exist, is resolved, or has been merged",
+            ));
         }
 
-        for report_id in report_ids {
-            let previous_issue: Option<IssueId> = sqlx::query_scalar(
-                "SELECT issue_id
-                 FROM reports
-                 WHERE id = $1 AND deleted_at IS NULL AND storage_state = 'ready'",
-            )
-            .bind(report_id)
-            .fetch_optional(&mut *transaction)
-            .await?
-            .ok_or(AppError::NotFound("Report not found"))?;
+        let previous_issue: Option<IssueId> = sqlx::query_scalar(
+            "SELECT issue_id
+             FROM reports
+             WHERE id = $1
+                AND deleted_at IS NULL
+                AND hidden_at IS NULL
+                AND storage_state = 'ready'
+             FOR UPDATE",
+        )
+        .bind(report_id)
+        .fetch_optional(&mut *transaction)
+        .await?
+        .ok_or(AppError::NotFound("Report not found"))?;
 
-            sqlx::query(
-                "UPDATE reports
-                 SET
-                    issue_id = $2,
-                    assigned_at = CASE WHEN $2::uuid IS NULL THEN NULL ELSE now() END,
-                    updated_at = now()
-                 WHERE id = $1",
-            )
-            .bind(report_id)
-            .bind(issue_id)
-            .execute(&mut *transaction)
-            .await?;
+        sqlx::query(
+            "UPDATE reports
+             SET issue_id = $2, assigned_at = now(), updated_at = now()
+             WHERE id = $1",
+        )
+        .bind(report_id)
+        .bind(issue_id)
+        .execute(&mut *transaction)
+        .await?;
 
-            sqlx::query(
-                "INSERT INTO audit_events (actor, action, entity_id, details)
-                 VALUES ($1, 'report.assignment', $2, $3)",
-            )
-            .bind(actor)
-            .bind(report_id.0)
-            .bind(serde_json::json!({
-                "from": previous_issue,
-                "to": issue_id,
-            }))
-            .execute(&mut *transaction)
-            .await?;
-        }
+        sqlx::query(
+            "INSERT INTO audit_events (actor, action, entity_id, details)
+             VALUES ($1, 'report.assignment', $2, $3)",
+        )
+        .bind(actor)
+        .bind(report_id.0)
+        .bind(serde_json::json!({
+            "from": previous_issue,
+            "to": issue_id,
+        }))
+        .execute(&mut *transaction)
+        .await?;
 
         transaction.commit().await?;
         Ok(())
+    }
+
+    pub async fn confirm_report(&self, report_id: ReportId, actor: i64) -> Result<()> {
+        let mut transaction = self.pool.begin().await?;
+        let result = sqlx::query(
+            "UPDATE reports
+             SET confirmed_at = COALESCE(confirmed_at, now()), updated_at = now()
+             WHERE id = $1
+                AND issue_id IS NULL
+                AND confirmed_at IS NULL
+                AND deleted_at IS NULL
+                AND hidden_at IS NULL
+                AND storage_state = 'ready'",
+        )
+        .bind(report_id)
+        .execute(&mut *transaction)
+        .await?;
+
+        if result.rows_affected() != 1 {
+            return Err(AppError::NotFound("Report not found"));
+        }
+
+        sqlx::query(
+            "INSERT INTO audit_events (actor, action, entity_id)
+             VALUES ($1, 'report.confirmed', $2)",
+        )
+        .bind(actor)
+        .bind(report_id.0)
+        .execute(&mut *transaction)
+        .await?;
+
+        transaction.commit().await?;
+        Ok(())
+    }
+
+    pub async fn hide_report(&self, report_id: ReportId, actor: i64) -> Result<()> {
+        let mut transaction = self.pool.begin().await?;
+        let result = sqlx::query(
+            "UPDATE reports
+             SET hidden_at = now(), updated_at = now()
+             WHERE id = $1
+                AND deleted_at IS NULL
+                AND hidden_at IS NULL
+                AND storage_state = 'ready'",
+        )
+        .bind(report_id)
+        .execute(&mut *transaction)
+        .await?;
+
+        if result.rows_affected() != 1 {
+            return Err(AppError::NotFound("Report not found"));
+        }
+
+        sqlx::query(
+            "INSERT INTO audit_events (actor, action, entity_id)
+             VALUES ($1, 'report.hidden', $2)",
+        )
+        .bind(actor)
+        .bind(report_id.0)
+        .execute(&mut *transaction)
+        .await?;
+
+        transaction.commit().await?;
+        Ok(())
+    }
+
+    pub async fn report_search_values(&self, key: &str) -> Result<Vec<String>> {
+        let rows = match key {
+            "version" | "client_version" => {
+                sqlx::query_scalar::<_, String>(
+                    "SELECT DISTINCT client_version
+                     FROM reports
+                     WHERE deleted_at IS NULL
+                        AND hidden_at IS NULL
+                        AND storage_state = 'ready'
+                     ORDER BY client_version
+                     LIMIT 26",
+                )
+                .fetch_all(&self.pool)
+                .await?
+            }
+            "build" => {
+                sqlx::query_scalar::<_, String>(
+                    "SELECT DISTINCT build
+                     FROM reports
+                     WHERE deleted_at IS NULL
+                        AND hidden_at IS NULL
+                        AND storage_state = 'ready'
+                        AND build <> ''
+                     ORDER BY build
+                     LIMIT 26",
+                )
+                .fetch_all(&self.pool)
+                .await?
+            }
+            _ => {
+                sqlx::query_scalar::<_, String>(
+                    "SELECT DISTINCT report_fields.value #>> '{}'
+                     FROM report_fields
+                     JOIN reports ON reports.id = report_fields.report_id
+                     WHERE lower(report_fields.key) = lower($1)
+                        AND report_fields.kind IN ('text', 'number', 'boolean')
+                        AND reports.deleted_at IS NULL
+                        AND reports.hidden_at IS NULL
+                        AND reports.storage_state = 'ready'
+                        AND length(report_fields.value #>> '{}') <= 128
+                     ORDER BY report_fields.value #>> '{}'
+                     LIMIT 26",
+                )
+                .bind(key)
+                .fetch_all(&self.pool)
+                .await?
+            }
+        };
+
+        Ok(rows)
     }
 
     pub async fn block_report_source(
@@ -356,7 +485,10 @@ impl AdminDatabase {
         let client_key: Option<String> = sqlx::query_scalar(
             "SELECT source_client_key
              FROM reports
-             WHERE id = $1 AND deleted_at IS NULL AND storage_state = 'ready'
+             WHERE id = $1
+                AND deleted_at IS NULL
+                AND hidden_at IS NULL
+                AND storage_state = 'ready'
              FOR UPDATE",
         )
         .bind(report_id)
@@ -392,9 +524,11 @@ impl AdminDatabase {
         let removed_report_ids = if remove_triage_reports {
             sqlx::query_scalar::<_, ReportId>(
                 "UPDATE reports
-                 SET deleted_at = now(), updated_at = now()
+                 SET hidden_at = now(), updated_at = now()
                  WHERE source_client_key = $1
                     AND issue_id IS NULL
+                    AND confirmed_at IS NULL
+                    AND hidden_at IS NULL
                     AND deleted_at IS NULL
                     AND storage_state = 'ready'
                  RETURNING id",
@@ -405,21 +539,6 @@ impl AdminDatabase {
         } else {
             Vec::new()
         };
-
-        if !removed_report_ids.is_empty() {
-            let removed_ids = removed_report_ids
-                .iter()
-                .map(|report_id| report_id.0)
-                .collect::<Vec<_>>();
-            sqlx::query(
-                "UPDATE attachments
-                 SET deleted_at = COALESCE(deleted_at, now())
-                 WHERE report_id = ANY($1)",
-            )
-            .bind(&removed_ids)
-            .execute(&mut *transaction)
-            .await?;
-        }
 
         sqlx::query(
             "INSERT INTO audit_events (actor, action, entity_id, details)
@@ -528,7 +647,16 @@ fn push_qualified_search(sql: &mut QueryBuilder<'_, Postgres>, key: &str, value:
     match key {
         "state" => match value.to_ascii_lowercase().as_str() {
             "triage" => {
-                sql.push(" AND reports.issue_id IS NULL");
+                sql.push(
+                    " AND reports.issue_id IS NULL
+                      AND reports.confirmed_at IS NULL",
+                );
+            }
+            "confirmed" => {
+                sql.push(
+                    " AND reports.issue_id IS NULL
+                      AND reports.confirmed_at IS NOT NULL",
+                );
             }
             "assigned" => {
                 sql.push(" AND reports.issue_id IS NOT NULL");

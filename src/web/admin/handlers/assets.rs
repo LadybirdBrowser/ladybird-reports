@@ -13,10 +13,13 @@ use super::super::AdminState;
 
 const STYLESHEET: &str = include_str!("../../../../assets/application.css");
 const JAVASCRIPT: &str = include_str!("../../../../assets/application.js");
+const REPORTS_JAVASCRIPT: &str = include_str!("../../../../assets/reports.js");
 const LADYBIRD_MARK: &[u8] = include_bytes!("../../../../assets/ladybird-mark.png");
 
 static STYLESHEET_ETAG: LazyLock<HeaderValue> = LazyLock::new(|| asset_etag(STYLESHEET));
 static JAVASCRIPT_ETAG: LazyLock<HeaderValue> = LazyLock::new(|| asset_etag(JAVASCRIPT));
+static REPORTS_JAVASCRIPT_ETAG: LazyLock<HeaderValue> =
+    LazyLock::new(|| asset_etag(REPORTS_JAVASCRIPT));
 static LADYBIRD_MARK_ETAG: LazyLock<HeaderValue> = LazyLock::new(|| asset_etag(LADYBIRD_MARK));
 
 pub async fn stylesheet(headers: HeaderMap) -> Response {
@@ -34,6 +37,15 @@ pub async fn javascript(headers: HeaderMap) -> Response {
         JAVASCRIPT,
         "text/javascript; charset=utf-8",
         &JAVASCRIPT_ETAG,
+    )
+}
+
+pub async fn reports_javascript(headers: HeaderMap) -> Response {
+    static_asset(
+        &headers,
+        REPORTS_JAVASCRIPT,
+        "text/javascript; charset=utf-8",
+        &REPORTS_JAVASCRIPT_ETAG,
     )
 }
 

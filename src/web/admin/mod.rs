@@ -33,6 +33,12 @@ pub fn router(state: AdminState) -> Router {
             "/api/report-options",
             get(handlers::reports::search_options),
         )
+        .route("/api/report-list", get(handlers::reports::list))
+        .route(
+            "/api/report-search-completions",
+            get(handlers::reports::search_completions),
+        )
+        .route("/api/issue-options", get(handlers::reports::issue_options))
         .route(
             "/api/github-issue-options",
             get(handlers::github::search_options),
@@ -42,7 +48,15 @@ pub fn router(state: AdminState) -> Router {
             "/reports/{id}/unblock-ip",
             post(handlers::reports::unblock_ip),
         )
-        .route("/reports/assign", post(handlers::reports::assign))
+        .route(
+            "/reports/{report_id}/issue",
+            post(handlers::reports::assign_to_issue),
+        )
+        .route(
+            "/reports/{report_id}/confirm",
+            post(handlers::reports::confirm),
+        )
+        .route("/reports/{report_id}/hide", post(handlers::reports::hide))
         .route("/attachments/{id}", get(handlers::reports::attachment))
         .route("/issues", get(handlers::issues::index))
         .route(
@@ -86,6 +100,10 @@ pub fn router(state: AdminState) -> Router {
         .route("/auth/callback", get(authentication::github_callback))
         .route("/assets/application.css", get(handlers::assets::stylesheet))
         .route("/assets/application.js", get(handlers::assets::javascript))
+        .route(
+            "/assets/reports.js",
+            get(handlers::assets::reports_javascript),
+        )
         .route(
             "/assets/ladybird-mark.png",
             get(handlers::assets::ladybird_mark),

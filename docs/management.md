@@ -2,7 +2,9 @@
 
 ## Report search
 
-The report list has one search field that applies automatically as you type.
+The report list updates in place after typing stops. Qualifier names and
+low-cardinality values are suggested at the caret. Fifty reports are loaded at
+a time, and **Show more…** appends the next page without navigating away.
 Plain words search report identifiers,
 types, client versions, build descriptions, and all submitted field values.
 Qualifiers restrict a value to one property:
@@ -10,26 +12,31 @@ Qualifiers restrict a value to one property:
 ```text
 platform:linux kind:crash
 version:"Ladybird Nightly" architecture:arm64
-state:assigned signal:sigabrt
+state:confirmed signal:sigabrt
 ```
 
 Built-in qualifiers are `state`, `kind`, `version`, `client_version`, `build`,
-`id`, `report`, `ip`, and `source_ip`. The `state` value is `triage`, `assigned`,
-or `all`. Any other qualifier is treated as a submitted field key. Values
-containing spaces can be quoted.
+`id`, `report`, `ip`, and `source_ip`. The `state` value is `triage`,
+`confirmed`, `assigned`, or `all`. Any other qualifier is treated as a
+submitted field key. Values containing spaces can be quoted.
 
 Report metadata and single-line diagnostic fields provide filter buttons that
 construct the corresponding qualified search.
 
-Blocking a submission source rejects its future public API requests. The
-confirmation also offers to remove every report from that source that is still
-in triage; assigned reports remain available.
+Confirming a report moves it from triage to the confirmed state. Deleting a
+report hides it from the management interface while retention continues to
+govern when its stored data is removed.
 
-Issues can be linked to an existing GitHub issue while they are created from a
-report. Search results identify GitHub issues already tracked in Reports.
-Selecting one of those results assigns the report to the existing internal
-issue instead of creating a duplicate. The resolved-issue filter also applies
-as soon as it changes.
+Blocking a submission source rejects its future public API requests. The
+confirmation also offers to hide every report from that source that is still
+in triage; confirmed and assigned reports remain available.
+
+The issue workflow opens from a report. It can search active internal issues and
+add the report to one, or create an internal issue for the report. A new internal
+issue may remain local, link to an existing GitHub issue, or create a GitHub
+issue. GitHub search results identify issues already tracked internally so the
+existing internal issue is reused. The resolved-issue filter applies as soon as
+it changes.
 
 ## Runtime settings
 

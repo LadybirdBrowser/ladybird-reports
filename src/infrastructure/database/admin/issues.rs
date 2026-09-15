@@ -171,6 +171,7 @@ impl AdminDatabase {
              LEFT JOIN reports
                 ON reports.issue_id = issues.id
                 AND reports.deleted_at IS NULL
+                AND reports.hidden_at IS NULL
                 AND reports.storage_state = 'ready'
              WHERE issues.merged_into IS NULL
                 AND ($1 OR issues.resolved_at IS NULL)
@@ -179,6 +180,55 @@ impl AdminDatabase {
              LIMIT 200",
         )
         .bind(include_resolved)
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows
+            .into_iter()
+            .map(|row| IssueSummary {
+                id: row.get("id"),
+                title: row.get("title"),
+                resolved_at: row.get("resolved_at"),
+                github_number: row.get("github_number"),
+                report_count: row.get("report_count"),
+                created_at: row.get("created_at"),
+            })
+            .collect())
+    }
+
+    pub async fn search_issues(&self, search: &str) -> Result<Vec<IssueSummary>> {
+        let rows = sqlx::query(
+            "SELECT
+                issues.id,
+                issues.title,
+                issues.resolved_at,
+                issues.github_number,
+                issues.created_at,
+                count(reports.id) AS report_count
+             FROM issues
+             LEFT JOIN reports
+                ON reports.issue_id = issues.id
+                AND reports.deleted_at IS NULL
+                AND reports.hidden_at IS NULL
+                AND reports.storage_state = 'ready'
+             WHERE issues.merged_into IS NULL
+                AND issues.resolved_at IS NULL
+                AND (
+                    $1 = ''
+                    OR position(lower($1) in lower(issues.title)) > 0
+                    OR position(lower($1) in issues.id::text) > 0
+                    OR issues.github_number::text = trim(leading '#' from $1)
+                )
+             GROUP BY issues.id
+             ORDER BY
+                CASE
+                    WHEN $1 <> '' AND lower(issues.title) LIKE lower($1) || '%' THEN 0
+                    ELSE 1
+                END,
+                issues.updated_at DESC
+             LIMIT 20",
+        )
+        .bind(search)
         .fetch_all(&self.pool)
         .await?;
 
@@ -258,7 +308,10 @@ impl AdminDatabase {
         let updated = sqlx::query(
             "UPDATE reports
              SET issue_id = $2, assigned_at = now(), updated_at = now()
-             WHERE id = $1 AND deleted_at IS NULL AND storage_state = 'ready'",
+             WHERE id = $1
+                AND deleted_at IS NULL
+                AND hidden_at IS NULL
+                AND storage_state = 'ready'",
         )
         .bind(report_id)
         .bind(issue_id)
@@ -351,7 +404,10 @@ impl AdminDatabase {
         let updated = sqlx::query(
             "UPDATE reports
              SET issue_id = $2, assigned_at = now(), updated_at = now()
-             WHERE id = $1 AND deleted_at IS NULL AND storage_state = 'ready'",
+             WHERE id = $1
+                AND deleted_at IS NULL
+                AND hidden_at IS NULL
+                AND storage_state = 'ready'",
         )
         .bind(report_id)
         .bind(issue_id)
@@ -385,10 +441,11 @@ impl AdminDatabase {
         };
 
         let report_rows = sqlx::query(
-            "SELECT id, kind, client_version, build, issue_id, created_at
+            "SELECT id, kind, client_version, build, issue_id, confirmed_at, created_at
              FROM reports
              WHERE issue_id = $1
                 AND deleted_at IS NULL
+                AND hidden_at IS NULL
                 AND storage_state = 'ready'
              ORDER BY created_at DESC",
         )
@@ -404,6 +461,7 @@ impl AdminDatabase {
                 client_version: row.get("client_version"),
                 build: row.get("build"),
                 issue_id: row.get("issue_id"),
+                confirmed_at: row.get("confirmed_at"),
                 created_at: row.get("created_at"),
             })
             .collect();

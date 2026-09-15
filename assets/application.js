@@ -1,5 +1,5 @@
 const ENTITY_SEARCH_DELAY_MS = 180;
-const FILTER_SUBMIT_DELAY_MS = 300;
+const FILTER_SUBMIT_DELAY_MS = 650;
 
 class EntitySelector {
     constructor(root) {

@@ -214,6 +214,26 @@ async fn main() -> Result<()> {
         insert_example_report(&mut transaction, report).await?;
     }
 
+    for index in 0..52 {
+        insert_example_report(
+            &mut transaction,
+            ExampleReport {
+                kind: if index % 2 == 0 {
+                    "crash"
+                } else {
+                    "web_compat"
+                },
+                client_version: "Pagination fixture",
+                build: "PaginationOS · x86_64 · Release",
+                platform: "PaginationOS",
+                architecture: "x86_64",
+                hours_ago: 24 + index,
+                issue_id: None,
+            },
+        )
+        .await?;
+    }
+
     transaction.commit().await?;
     println!("{session_token}");
     Ok(())

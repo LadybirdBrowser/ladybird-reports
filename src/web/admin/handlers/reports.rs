@@ -26,6 +26,7 @@ pub struct ReportFilters {
     since: Option<NaiveDate>,
     until: Option<NaiveDate>,
     before: Option<DateTime<Utc>>,
+    before_id: Option<ReportId>,
 }
 
 impl Default for ReportFilters {
@@ -36,6 +37,7 @@ impl Default for ReportFilters {
             since: None,
             until: None,
             before: None,
+            before_id: None,
         }
     }
 }
@@ -49,12 +51,20 @@ pub struct ReportsTemplate {
     next_page: Option<String>,
 }
 
+#[derive(Template)]
+#[template(path = "reports/_list.html")]
+pub struct ReportListTemplate {
+    reports: Vec<ReportRow>,
+    next_page: Option<String>,
+}
+
 pub struct ReportRow {
     id: ReportId,
     kind_label: String,
     client_version: String,
     build: String,
-    is_assigned: bool,
+    state_label: &'static str,
+    state_tone: &'static str,
     received_at: String,
 }
 
@@ -62,6 +72,24 @@ pub struct ReportRow {
 pub struct ReportSearchQuery {
     #[serde(default)]
     pub(super) query: String,
+}
+
+#[derive(Deserialize)]
+pub struct ReportCompletionQuery {
+    #[serde(default)]
+    token: String,
+}
+
+#[derive(Serialize)]
+pub struct ReportCompletionResponse {
+    results: Vec<ReportCompletion>,
+}
+
+#[derive(Serialize)]
+pub struct ReportCompletion {
+    replacement: String,
+    label: String,
+    description: String,
 }
 
 #[derive(Serialize)]
@@ -85,7 +113,6 @@ pub struct EntitySearchOption {
 pub struct ReportTemplate {
     navigation: Option<Navigation>,
     report: ReportView,
-    issues: Vec<IssueOption>,
     known_fields: Vec<FieldView>,
     unknown_fields: Vec<FieldView>,
     attachments: Vec<AttachmentView>,
@@ -97,6 +124,8 @@ pub struct ReportView {
     client_version: String,
     overview: Vec<OverviewField>,
     is_assigned: bool,
+    is_confirmed: bool,
+    is_triage: bool,
     has_submission_source: bool,
     submission_source_is_blocked: bool,
 }
@@ -106,12 +135,6 @@ pub struct OverviewField {
     value: String,
     filter_url: Option<String>,
     monospace: bool,
-}
-
-pub struct IssueOption {
-    id: IssueId,
-    title: String,
-    is_selected: bool,
 }
 
 pub struct FieldView {
@@ -144,34 +167,65 @@ pub async fn index(
     Extension(session): Extension<Session>,
     Query(filters): Query<ReportFilters>,
 ) -> Result<TemplateResponse<ReportsTemplate>> {
+    let list = load_report_list(&state, &filters).await?;
+
+    Ok(TemplateResponse(ReportsTemplate {
+        navigation: Some(Navigation::for_session(&state, &session)),
+        search: filters.q,
+        reports: list.reports,
+        next_page: list.next_page,
+    }))
+}
+
+pub async fn list(
+    State(state): State<AdminState>,
+    Query(filters): Query<ReportFilters>,
+) -> Result<TemplateResponse<ReportListTemplate>> {
+    Ok(TemplateResponse(load_report_list(&state, &filters).await?))
+}
+
+async fn load_report_list(
+    state: &AdminState,
+    filters: &ReportFilters,
+) -> Result<ReportListTemplate> {
+    if filters.before.is_some() != filters.before_id.is_some() {
+        return Err(AppError::InvalidRequest("Incomplete report cursor"));
+    }
+
     let query = ReportQuery {
         search: ReportSearch::parse(&filters.q)?,
         issue_id: filters.issue,
         since: filters.since,
         until: filters.until,
         before: filters.before,
+        before_id: filters.before_id,
     };
 
-    let reports = state.database.list_reports(&query).await?;
-    let next_page = next_page_url(&filters, reports.last(), reports.len());
-    let report_rows = reports
+    let mut reports = state.database.list_reports(&query).await?;
+    let has_more = reports.len() > 50;
+    reports.truncate(50);
+    let next_page = has_more
+        .then(|| next_page_url(filters, reports.last()))
+        .flatten();
+    let reports = reports
         .into_iter()
-        .map(|report| ReportRow {
-            id: report.id,
-            kind_label: report_kind_label(&report.kind).into(),
-            client_version: report.client_version,
-            build: report.build,
-            is_assigned: report.issue_id.is_some(),
-            received_at: report.created_at.format("%d %b %Y, %H:%M UTC").to_string(),
+        .map(|report| {
+            let (state_label, state_tone) =
+                report_state(report.issue_id.is_some(), report.confirmed_at.is_some());
+
+            ReportRow {
+                id: report.id,
+                kind_label: report_kind_label(&report.kind).into(),
+                client_version: report.client_version,
+                build: report.build,
+                state_label,
+                state_tone,
+                received_at: report.created_at.format("%d %b %Y, %H:%M UTC").to_string(),
+            }
         })
         .collect();
 
-    Ok(TemplateResponse(ReportsTemplate {
-        navigation: Some(Navigation::for_session(&state, &session)),
-        search: filters.q,
-        reports: report_rows,
-        next_page,
-    }))
+    Ok(ReportListTemplate { reports, next_page })
 }
 
 pub async fn search_options(
@@ -190,9 +244,10 @@ pub async fn search_options(
         .await?
         .into_iter()
         .map(|report| {
-            let (badge, badge_tone) = match report.issue_title {
-                Some(issue_title) => (format!("Assigned · {issue_title}"), "assigned"),
-                None => ("Needs triage".into(), "triage"),
+            let (badge, badge_tone) = match (report.issue_title, report.confirmed_at) {
+                (Some(issue_title), _) => (format!("Assigned · {issue_title}"), "assigned"),
+                (None, Some(_)) => ("Confirmed".into(), "confirmed"),
+                (None, None) => ("Needs triage".into(), "triage"),
             };
             let description = if report.build.trim().is_empty() {
                 report.client_version
@@ -218,6 +273,114 @@ pub async fn search_options(
     Ok(Json(EntitySearchResponse { results }))
 }
 
+pub async fn search_completions(
+    State(state): State<AdminState>,
+    Query(parameters): Query<ReportCompletionQuery>,
+) -> Result<Json<ReportCompletionResponse>> {
+    let token = parameters.token.trim();
+    if token.len() > 128 {
+        return Err(AppError::InvalidRequest("Search token is too long"));
+    }
+
+    let Some((key, value_prefix)) = token.split_once(':') else {
+        let prefix = token.to_ascii_lowercase();
+        let mut keys = vec![
+            ("state", "Workflow state"),
+            ("kind", "Report type"),
+            ("version", "Browser version"),
+            ("build", "Build description"),
+            ("id", "Report ID"),
+            ("ip", "Source IP address"),
+        ];
+        let definitions = state.database.field_definitions().await?;
+        for definition in &definitions {
+            if !matches!(definition.kind.as_str(), "multiline" | "attachment") {
+                keys.push((&definition.key, &definition.label));
+            }
+        }
+        keys.sort_unstable_by(|left, right| left.0.cmp(right.0));
+        keys.dedup_by(|left, right| left.0 == right.0);
+
+        let results = keys
+            .into_iter()
+            .filter(|(key, _)| key.to_ascii_lowercase().starts_with(&prefix))
+            .take(12)
+            .map(|(key, description)| ReportCompletion {
+                replacement: format!("{key}:"),
+                label: format!("{key}:"),
+                description: description.to_owned(),
+            })
+            .collect();
+
+        return Ok(Json(ReportCompletionResponse { results }));
+    };
+
+    let key = key.to_ascii_lowercase();
+    let prefix = value_prefix.trim_matches('"').to_ascii_lowercase();
+    let values = match key.as_str() {
+        "state" => vec!["triage", "confirmed", "assigned", "all"]
+            .into_iter()
+            .map(str::to_owned)
+            .collect(),
+        "kind" => vec!["crash", "web_compat"]
+            .into_iter()
+            .map(str::to_owned)
+            .collect(),
+        "id" | "report" | "ip" | "source_ip" => Vec::new(),
+        _ => {
+            let values = state.database.report_search_values(&key).await?;
+            if values.len() > 25 {
+                Vec::new()
+            } else {
+                values
+            }
+        }
+    };
+    let results = values
+        .into_iter()
+        .filter(|value| value.to_ascii_lowercase().starts_with(&prefix))
+        .take(12)
+        .map(|value| ReportCompletion {
+            replacement: filter_expression(&key, &value),
+            label: value,
+            description: format!("Value for {key}"),
+        })
+        .collect();
+
+    Ok(Json(ReportCompletionResponse { results }))
+}
+
+pub async fn issue_options(
+    State(state): State<AdminState>,
+    Query(parameters): Query<ReportSearchQuery>,
+) -> Result<Json<EntitySearchResponse>> {
+    let search = parameters.query.trim();
+    if search.len() > 128 {
+        return Err(AppError::InvalidRequest("Issue search is too long"));
+    }
+
+    let results = state
+        .database
+        .search_issues(search)
+        .await?
+        .into_iter()
+        .map(|issue| EntitySearchOption {
+            value: issue.id.to_string(),
+            label: issue.title,
+            description: match issue.github_number {
+                Some(number) => format!("Linked to GitHub issue #{number}"),
+                None => "Internal issue".into(),
+            },
+            identifier: issue.id.to_string(),
+            badge: format!("{} reports", issue.report_count),
+            badge_tone: "neutral",
+            footnote: format!("Created {}", issue.created_at.format("%d %b %Y")),
+        })
+        .collect();
+
+    Ok(Json(EntitySearchResponse { results }))
+}
+
 fn report_kind_label(kind: &str) -> &str {
     match kind {
         "crash" => "Crash report",
@@ -236,8 +399,6 @@ pub async fn show(
         .report_details(report_id)
         .await?
         .ok_or_else(|| not_found("Report not found"))?;
-    let issues = state.database.list_issues(false).await?;
-
     let platform = field_string(&details.fields, "platform").unwrap_or_else(|| "Unknown".into());
     let architecture =
         field_string(&details.fields, "architecture").unwrap_or_else(|| "Unknown".into());
@@ -270,7 +431,11 @@ pub async fn show(
         ),
         OverviewField {
             label: "Submitted",
-            value: details.report.created_at.to_string(),
+            value: details
+                .report
+                .created_at
+                .format("%d %b %Y, %H:%M UTC")
+                .to_string(),
             filter_url: Some(submitted_date_filter_url(
                 details.report.created_at.date_naive(),
             )),
@@ -293,18 +458,11 @@ pub async fn show(
         client_version: details.report.client_version,
         overview,
         is_assigned: details.report.issue_id.is_some(),
+        is_confirmed: details.report.confirmed_at.is_some(),
+        is_triage: details.report.issue_id.is_none() && details.report.confirmed_at.is_none(),
         has_submission_source: details.report.has_submission_source,
         submission_source_is_blocked: details.report.submission_source_is_blocked,
     };
-
-    let issue_options = issues
-        .into_iter()
-        .map(|issue| IssueOption {
-            id: issue.id,
-            title: issue.title,
-            is_selected: details.report.issue_id == Some(issue.id),
-        })
-        .collect();
 
     let mut known_fields = Vec::new();
     let mut unknown_fields = Vec::new();
@@ -365,7 +523,6 @@ pub async fn show(
     Ok(TemplateResponse(ReportTemplate {
         navigation: Some(Navigation::for_session(&state, &session)),
         report: report_view,
-        issues: issue_options,
         known_fields,
         unknown_fields,
         attachments,
@@ -385,43 +542,67 @@ impl OverviewField {
 }
 
 #[derive(Deserialize)]
-pub struct AssignmentForm {
+pub struct IssueAssignmentForm {
     csrf: String,
-    report_ids: String,
-    issue_id: String,
+    issue_id: IssueId,
 }
 
-pub async fn assign(
+pub async fn assign_to_issue(
     State(state): State<AdminState>,
     Extension(session): Extension<Session>,
-    Form(form): Form<AssignmentForm>,
+    Path(report_id): Path<ReportId>,
+    Form(form): Form<IssueAssignmentForm>,
 ) -> Result<Redirect> {
     session.verify_csrf(&form.csrf)?;
-
-    let report_ids = parse_report_ids(&form.report_ids)?;
-    let issue_id = if form.issue_id.trim().is_empty() {
-        None
-    } else {
-        Some(
-            form.issue_id
-                .trim()
-                .parse::<IssueId>()
-                .map_err(|_| AppError::InvalidRequest("Invalid issue ID"))?,
-        )
-    };
-
     state
         .database
-        .assign_reports(&report_ids, issue_id, session.github_id)
+        .assign_report_to_issue(report_id, form.issue_id, session.github_id)
         .await?;
 
     tracing::info!(
-        event = "reports.assignment_updated",
-        report_count = report_ids.len(),
-        issue_id = issue_id.map(|id| id.to_string()),
+        event = "report.assigned",
+        %report_id,
+        issue_id = %form.issue_id,
         actor = session.login,
     );
 
+    Ok(Redirect::to(&format!("/issues/{}", form.issue_id)))
+}
+
+#[derive(Deserialize)]
+pub struct ReportActionForm {
+    csrf: String,
+}
+
+pub async fn confirm(
+    State(state): State<AdminState>,
+    Extension(session): Extension<Session>,
+    Path(report_id): Path<ReportId>,
+    Form(form): Form<ReportActionForm>,
+) -> Result<Redirect> {
+    session.verify_csrf(&form.csrf)?;
+    state
+        .database
+        .confirm_report(report_id, session.github_id)
+        .await?;
+
+    tracing::info!(event = "report.confirmed", %report_id, actor = session.login);
+    Ok(Redirect::to(&format!("/reports/{report_id}")))
+}
+
+pub async fn hide(
+    State(state): State<AdminState>,
+    Extension(session): Extension<Session>,
+    Path(report_id): Path<ReportId>,
+    Form(form): Form<ReportActionForm>,
+) -> Result<Redirect> {
+    session.verify_csrf(&form.csrf)?;
+    state
+        .database
+        .hide_report(report_id, session.github_id)
+        .await?;
+
+    tracing::warn!(event = "report.hidden", %report_id, actor = session.login);
     Ok(Redirect::to("/"))
 }
 
@@ -506,40 +687,20 @@ pub async fn attachment(
         .into_response())
 }
 
-pub fn parse_report_ids(value: &str) -> Result<Vec<ReportId>> {
-    let report_ids = value
-        .split(|character: char| character == ',' || character.is_whitespace())
-        .filter(|part| !part.is_empty())
-        .map(|part| {
-            part.parse::<ReportId>()
-                .map_err(|_| AppError::InvalidRequest("Invalid report ID"))
-        })
-        .collect::<Result<Vec<_>>>()?;
-
-    if report_ids.len() > 100 {
-        return Err(AppError::InvalidRequest("Select at most 100 reports"));
-    }
-
-    Ok(report_ids)
-}
-
 fn next_page_url(
     filters: &ReportFilters,
     last: Option<&crate::infrastructure::database::ReportSummary>,
-    result_count: usize,
 ) -> Option<String> {
-    if result_count != 100 {
-        return None;
-    }
-
     let last = last?;
-    let mut url = reqwest::Url::parse("http://localhost/").expect("static URL is valid");
+    let mut url =
+        reqwest::Url::parse("http://localhost/api/report-list").expect("static URL is valid");
 
     {
         let mut query = url.query_pairs_mut();
         query
             .append_pair("q", &filters.q)
-            .append_pair("before", &last.created_at.to_rfc3339());
+            .append_pair("before", &last.created_at.to_rfc3339())
+            .append_pair("before_id", &last.id.to_string());
 
         if let Some(issue_id) = filters.issue {
             query.append_pair("issue", &issue_id.to_string());
@@ -552,7 +713,20 @@ fn next_page_url(
         }
     }
 
-    Some(format!("/?{}", url.query().unwrap_or_default()))
+    Some(format!(
+        "/api/report-list?{}",
+        url.query().unwrap_or_default()
+    ))
+}
+
+fn report_state(is_assigned: bool, is_confirmed: bool) -> (&'static str, &'static str) {
+    if is_assigned {
+        ("Assigned", "assigned")
+    } else if is_confirmed {
+        ("Confirmed", "confirmed")
+    } else {
+        ("Needs triage", "triage")
+    }
 }
 
 fn default_report_search() -> String {

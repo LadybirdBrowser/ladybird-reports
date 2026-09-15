@@ -23,6 +23,7 @@ pub struct ReportQuery {
     pub since: Option<NaiveDate>,
     pub until: Option<NaiveDate>,
     pub before: Option<DateTime<Utc>>,
+    pub before_id: Option<ReportId>,
 }
 
 #[derive(Clone, Debug)]
@@ -32,6 +33,7 @@ pub struct ReportSummary {
     pub client_version: String,
     pub build: String,
     pub issue_id: Option<IssueId>,
+    pub confirmed_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
 }
 
@@ -67,6 +69,7 @@ pub struct ReportSearchResult {
     pub client_version: String,
     pub build: String,
     pub issue_title: Option<String>,
+    pub confirmed_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
 }
 
@@ -79,6 +82,7 @@ pub struct ReportRecord {
     pub client_version: String,
     pub build: String,
     pub issue_id: Option<IssueId>,
+    pub confirmed_at: Option<DateTime<Utc>>,
     pub source_ip: Option<String>,
     pub has_submission_source: bool,
     pub submission_source_is_blocked: bool,

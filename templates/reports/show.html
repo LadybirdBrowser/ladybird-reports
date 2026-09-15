@@ -2,6 +2,8 @@
 
 {% block title %}Report{% endblock %}
 
+{% block scripts %}<script src="/assets/reports.js" defer></script>{% endblock %}
+
 {% block content %}
     <header class="page-header">
         <div>
@@ -12,6 +14,8 @@
 
         {% if report.is_assigned %}
             <span class="badge badge-assigned">Assigned</span>
+        {% else if report.is_confirmed %}
+            <span class="badge badge-confirmed">Confirmed</span>
         {% else %}
             <span class="badge badge-triage">Needs triage</span>
         {% endif %}
@@ -208,174 +212,66 @@
             </div>
             <div class="card-body">
                 <section class="action-group">
-                    <h3>Assign to issue</h3>
-                    <p>Move this report out of triage by grouping it with a tracked issue.</p>
-                    <form method="post" action="/reports/assign">
-                        <input
-                            type="hidden"
-                            name="csrf"
-                            value="{{ navigation.as_ref().unwrap().csrf_token }}"
-                        >
-                        <input type="hidden" name="report_ids" value="{{ report.id }}">
-                        <label>
-                            Issue
-                            <select name="issue_id">
-                                <option value="">Leave in triage</option>
-                                {% for issue in issues %}
-                                    <option
-                                        value="{{ issue.id }}"
-                                        {% if issue.is_selected %}selected{% endif %}
-                                    >
-                                        {{ issue.title }}
-                                    </option>
-                                {% endfor %}
-                            </select>
-                        </label>
-                        <button type="submit">Save assignment</button>
-                    </form>
+                    <h3>Issue</h3>
+                    <button type="button" data-open-issue-dialog>
+                        {% if report.is_assigned %}Move to issue{% else %}Add to issue{% endif %}
+                    </button>
                 </section>
 
-                <section class="action-group">
-                    <details>
-                        <summary>Create a new issue from this report</summary>
-                        <p>Create an internal issue and assign only this report to it.</p>
-                        <form
-                            method="post"
-                            action="/reports/{{ report.id }}/issues"
-                            data-create-issue-form
-                        >
+                {% if report.is_triage %}
+                    <section class="action-group">
+                        <h3>Confirm report</h3>
+                        <form method="post" action="/reports/{{ report.id }}/confirm">
                             <input
                                 type="hidden"
                                 name="csrf"
                                 value="{{ navigation.as_ref().unwrap().csrf_token }}"
                             >
-                            <label>
-                                Title
-                                <input name="title" maxlength="256" required>
-                            </label>
-                            <label>
-                                Description
-                                <textarea name="description" rows="6"></textarea>
-                            </label>
-
-                            <fieldset class="github-choice" data-github-choice>
-                                <legend>GitHub issue</legend>
-                                <label class="choice-card">
-                                    <input type="radio" name="github_action" value="none" checked>
-                                    <span>
-                                        <strong>Do this later</strong>
-                                        <small>Keep the issue inside Reports for now.</small>
-                                    </span>
-                                </label>
-                                <label class="choice-card">
-                                    <input type="radio" name="github_action" value="link">
-                                    <span>
-                                        <strong>Link an existing issue</strong>
-                                        <small>Search issues in the configured GitHub repository.</small>
-                                    </span>
-                                </label>
-                                <label class="choice-card">
-                                    <input type="radio" name="github_action" value="create">
-                                    <span>
-                                        <strong>Create a new GitHub issue</strong>
-                                        <small>Publish it as your signed-in GitHub account.</small>
-                                    </span>
-                                </label>
-                            </fieldset>
-
-                            <div data-github-panel="link" hidden>
-                                <div
-                                    class="entity-selector"
-                                    data-entity-selector
-                                    data-search-url="/api/github-issue-options"
-                                    data-entity-singular="issue"
-                                    data-entity-plural="issues"
-                                    data-maximum-selections="1"
-                                >
-                                    <input
-                                        type="hidden"
-                                        name="github_issue_number"
-                                        value=""
-                                        data-entity-value
-                                    >
-                                    <div
-                                        class="entity-selector-selection"
-                                        data-entity-selection
-                                        hidden
-                                    >
-                                        <div class="entity-selector-selection-header">
-                                            <span>Selected GitHub issue</span>
-                                            <span data-entity-selection-count></span>
-                                        </div>
-                                        <div
-                                            class="entity-selector-chips"
-                                            data-entity-chips
-                                        ></div>
-                                    </div>
-                                    <div class="entity-selector-input-wrap">
-                                        <span class="search-glyph" aria-hidden="true"></span>
-                                        <input
-                                            type="search"
-                                            role="combobox"
-                                            aria-label="Search GitHub issues"
-                                            aria-autocomplete="list"
-                                            aria-controls="github-issue-results"
-                                            aria-expanded="false"
-                                            autocomplete="off"
-                                            placeholder="Search GitHub issues…"
-                                            data-entity-search
-                                        >
-                                    </div>
-                                    <div
-                                        class="entity-selector-popover"
-                                        data-entity-popover
-                                        popover="auto"
-                                    >
-                                        <div class="entity-selector-popover-header">
-                                            <span>Matching GitHub issues</span>
-                                            <span data-entity-result-count></span>
-                                        </div>
-                                        <div
-                                            id="github-issue-results"
-                                            class="entity-selector-results"
-                                            role="listbox"
-                                            aria-label="Matching GitHub issues"
-                                            data-entity-results
-                                        ></div>
-                                        <div
-                                            class="entity-selector-empty"
-                                            data-entity-empty
-                                            hidden
-                                        >
-                                            <span
-                                                class="entity-selector-empty-icon"
-                                                aria-hidden="true"
-                                            ></span>
-                                            <strong>No GitHub issues found</strong>
-                                            <span>Try an issue number or words from its title.</span>
-                                        </div>
-                                    </div>
-                                    <p class="visually-hidden" aria-live="polite" data-entity-status></p>
-                                </div>
-                            </div>
-
-                            <div class="stack" data-github-panel="create" hidden>
-                                <label>
-                                    GitHub title
-                                    <input name="github_title" maxlength="256" data-github-required>
-                                </label>
-                                <label>
-                                    GitHub body
-                                    <textarea
-                                        name="github_body"
-                                        rows="8"
-                                        data-github-required
-                                    ></textarea>
-                                </label>
-                            </div>
-                            <button type="submit">Create and assign</button>
+                            <button class="button-secondary" type="submit">Confirm</button>
                         </form>
-                    </details>
+                    </section>
+                {% endif %}
+
+                <section class="action-group">
+                    <h3>Remove report</h3>
+                    <button
+                        class="button-danger hide-report-trigger"
+                        type="button"
+                        popovertarget="hide-report-confirmation"
+                    >
+                        Delete
+                    </button>
+                    <div
+                        class="confirmation-popover"
+                        id="hide-report-confirmation"
+                        role="dialog"
+                        aria-labelledby="hide-report-confirmation-title"
+                        popover
+                    >
+                        <form method="post" action="/reports/{{ report.id }}/hide">
+                            <input
+                                type="hidden"
+                                name="csrf"
+                                value="{{ navigation.as_ref().unwrap().csrf_token }}"
+                            >
+                            <h3 id="hide-report-confirmation-title">Delete this report?</h3>
+                            <p>
+                                The report will disappear from the management UI. Its data stays
+                                stored until the configured retention period expires.
+                            </p>
+                            <div class="popover-actions">
+                                <button
+                                    class="button-secondary"
+                                    type="button"
+                                    popovertarget="hide-report-confirmation"
+                                    popovertargetaction="hide"
+                                >
+                                    Cancel
+                                </button>
+                                <button class="button-danger" type="submit">Delete</button>
+                            </div>
+                        </form>
+                    </div>
                 </section>
 
                 <section class="danger-zone" aria-labelledby="source-action-title">
@@ -452,4 +348,213 @@
             </div>
         </aside>
     </div>
+
+    <dialog class="issue-dialog" aria-labelledby="issue-dialog-title" data-issue-dialog>
+        <div class="issue-dialog-header">
+            <div>
+                <p class="eyebrow">Report workflow</p>
+                <h2 id="issue-dialog-title">Add report to an issue</h2>
+            </div>
+            <form method="dialog">
+                <button class="dialog-close" aria-label="Close issue workflow">×</button>
+            </form>
+        </div>
+
+        <div class="issue-mode-switch" role="group" aria-label="Issue action">
+            <button type="button" aria-pressed="true" data-issue-mode="create">
+                Create new
+            </button>
+            <button type="button" aria-pressed="false" data-issue-mode="existing">
+                Use existing
+            </button>
+        </div>
+
+        <section data-issue-panel="existing" hidden>
+            <form method="post" action="/reports/{{ report.id }}/issue">
+                <input
+                    type="hidden"
+                    name="csrf"
+                    value="{{ navigation.as_ref().unwrap().csrf_token }}"
+                >
+                <div
+                    class="entity-selector"
+                    data-entity-selector
+                    data-search-url="/api/issue-options"
+                    data-entity-singular="issue"
+                    data-entity-plural="issues"
+                    data-maximum-selections="1"
+                >
+                    <input type="hidden" name="issue_id" value="" required data-entity-value>
+                    <div class="entity-selector-selection" data-entity-selection hidden>
+                        <div class="entity-selector-selection-header">
+                            <span>Selected issue</span>
+                            <span data-entity-selection-count></span>
+                        </div>
+                        <div class="entity-selector-chips" data-entity-chips></div>
+                    </div>
+                    <div class="entity-selector-input-wrap">
+                        <span class="search-glyph" aria-hidden="true"></span>
+                        <input
+                            type="search"
+                            role="combobox"
+                            aria-label="Search existing issues"
+                            aria-autocomplete="list"
+                            aria-controls="internal-issue-results"
+                            aria-expanded="false"
+                            autocomplete="off"
+                            placeholder="Search by title, ID, or GitHub number…"
+                            data-entity-search
+                        >
+                    </div>
+                    <div class="entity-selector-popover" data-entity-popover popover="auto">
+                        <div class="entity-selector-popover-header">
+                            <span>Matching issues</span>
+                            <span data-entity-result-count></span>
+                        </div>
+                        <div
+                            id="internal-issue-results"
+                            class="entity-selector-results"
+                            role="listbox"
+                            aria-label="Matching issues"
+                            data-entity-results
+                        ></div>
+                        <div class="entity-selector-empty" data-entity-empty hidden>
+                            <span class="entity-selector-empty-icon" aria-hidden="true"></span>
+                            <strong>No issues found</strong>
+                            <span>Try words from the title or a GitHub issue number.</span>
+                        </div>
+                    </div>
+                    <p class="visually-hidden" aria-live="polite" data-entity-status></p>
+                </div>
+                <div class="dialog-actions">
+                    <button class="button-secondary" type="button" data-close-issue-dialog>
+                        Cancel
+                    </button>
+                    <button type="submit">Add to issue</button>
+                </div>
+            </form>
+        </section>
+
+        <section data-issue-panel="create">
+            <form
+                method="post"
+                action="/reports/{{ report.id }}/issues"
+                data-create-issue-form
+            >
+                <input
+                    type="hidden"
+                    name="csrf"
+                    value="{{ navigation.as_ref().unwrap().csrf_token }}"
+                >
+                <label>
+                    Title
+                    <input name="title" maxlength="256" required autofocus>
+                </label>
+                <label>
+                    Description
+                    <textarea name="description" rows="5"></textarea>
+                </label>
+
+                <fieldset class="github-choice" data-github-choice>
+                    <legend>GitHub issue</legend>
+                    <label class="choice-card">
+                        <input type="radio" name="github_action" value="none" checked>
+                        <span>
+                            <strong>Do this later</strong>
+                            <small>Create only the internal issue.</small>
+                        </span>
+                    </label>
+                    <label class="choice-card">
+                        <input type="radio" name="github_action" value="link">
+                        <span>
+                            <strong>Link an existing issue</strong>
+                            <small>Search the configured GitHub repository.</small>
+                        </span>
+                    </label>
+                    <label class="choice-card">
+                        <input type="radio" name="github_action" value="create">
+                        <span>
+                            <strong>Create a new GitHub issue</strong>
+                            <small>Publish with your GitHub account.</small>
+                        </span>
+                    </label>
+                </fieldset>
+
+                <div data-github-panel="link" hidden>
+                    <div
+                        class="entity-selector"
+                        data-entity-selector
+                        data-search-url="/api/github-issue-options"
+                        data-entity-singular="issue"
+                        data-entity-plural="issues"
+                        data-maximum-selections="1"
+                    >
+                        <input
+                            type="hidden"
+                            name="github_issue_number"
+                            value=""
+                            data-entity-value
+                        >
+                        <div class="entity-selector-selection" data-entity-selection hidden>
+                            <div class="entity-selector-selection-header">
+                                <span>Selected GitHub issue</span>
+                                <span data-entity-selection-count></span>
+                            </div>
+                            <div class="entity-selector-chips" data-entity-chips></div>
+                        </div>
+                        <div class="entity-selector-input-wrap">
+                            <span class="search-glyph" aria-hidden="true"></span>
+                            <input
+                                type="search"
+                                role="combobox"
+                                aria-label="Search GitHub issues"
+                                aria-autocomplete="list"
+                                aria-controls="github-issue-results"
+                                aria-expanded="false"
+                                autocomplete="off"
+                                placeholder="Search GitHub issues…"
+                                data-entity-search
+                            >
+                        </div>
+                        <div class="entity-selector-popover" data-entity-popover popover="auto">
+                            <div class="entity-selector-popover-header">
+                                <span>Matching GitHub issues</span>
+                                <span data-entity-result-count></span>
+                            </div>
+                            <div
+                                id="github-issue-results"
+                                class="entity-selector-results"
+                                role="listbox"
+                                aria-label="Matching GitHub issues"
+                                data-entity-results
+                            ></div>
+                            <div class="entity-selector-empty" data-entity-empty hidden>
+                                <span class="entity-selector-empty-icon" aria-hidden="true"></span>
+                                <strong>No GitHub issues found</strong>
+                                <span>Try an issue number or words from its title.</span>
+                            </div>
+                        </div>
+                        <p class="visually-hidden" aria-live="polite" data-entity-status></p>
+                    </div>
+                </div>
+
+                <div class="stack" data-github-panel="create" hidden>
+                    <label>
+                        GitHub title
+                        <input name="github_title" maxlength="256" data-github-required>
+                    </label>
+                    <label>
+                        GitHub body
+                        <textarea name="github_body" rows="7" data-github-required></textarea>
+                    </label>
+                </div>
+                <div class="dialog-actions">
+                    <button class="button-secondary" type="button" data-close-issue-dialog>
+                        Cancel
+                    </button>
+                    <button type="submit">Create and add</button>
+                </div>
+            </form>
+        </section>
+    </dialog>
 {% endblock %}

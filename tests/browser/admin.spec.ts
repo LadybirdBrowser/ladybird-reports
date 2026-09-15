@@ -88,7 +88,7 @@ test.describe("authenticated management UI", () => {
     expect(pageHeaders["x-content-type-options"]).toBe("nosniff");
     expect(pageHeaders["x-frame-options"]).toBe("DENY");
 
-    for (const asset of ["application.css", "application.js"]) {
+    for (const asset of ["application.css", "application.js", "reports.js"]) {
       const firstResponse = await request.get(`/assets/${asset}`);
       const etag = firstResponse.headers()["etag"];
 
@@ -154,7 +154,8 @@ test.describe("authenticated management UI", () => {
     });
 
     await page.goto(`/reports/${reportId}`);
-    await page.getByText("Create a new issue from this report").click();
+    await page.getByRole("button", { name: "Add to issue" }).click();
+    await expect(page.getByRole("dialog", { name: "Add report to an issue" })).toBeVisible();
     await page.getByText("Link an existing issue").click();
     await expect(page.getByLabel("GitHub title")).toBeHidden();
     await expect(page.getByLabel("GitHub body")).toBeHidden();
@@ -162,17 +163,21 @@ test.describe("authenticated management UI", () => {
     const issueSearch = page.getByRole("combobox", { name: "Search GitHub issues" });
     await issueSearch.fill("navigation");
 
-    const issuePopover = page.locator("[data-entity-popover]");
+    const issuePopover = page
+      .locator('[data-search-url="/api/github-issue-options"]')
+      .locator("[data-entity-popover]");
     await expect(issuePopover).toBeVisible();
     expect(await issuePopover.evaluate((element) => element.matches(":popover-open"))).toBe(true);
 
-    const [popoverBounds, actionCardBounds] = await Promise.all([
+    const [popoverBounds, dialogBounds] = await Promise.all([
       issuePopover.boundingBox(),
-      page.locator(".action-card").boundingBox(),
+      page.getByRole("dialog", { name: "Add report to an issue" }).boundingBox(),
     ]);
     expect(popoverBounds).not.toBeNull();
-    expect(actionCardBounds).not.toBeNull();
-    expect(popoverBounds!.x).toBeLessThan(actionCardBounds!.x);
+    expect(dialogBounds).not.toBeNull();
+    expect(popoverBounds!.y + popoverBounds!.height).toBeLessThanOrEqual(
+      page.viewportSize()!.height,
+    );
 
     const matchingIssue = page.getByRole("option", {
       name: /Fix overlapping navigation controls/,
@@ -194,30 +199,73 @@ test.describe("authenticated management UI", () => {
     await expect(page.getByLabel("GitHub body")).toBeVisible();
   });
 
-  test("uses a custom popover for select controls", async ({ page }) => {
-    await page.goto(`/reports/${reportId}`);
+  test("searches existing internal issues in the issue workflow", async ({ page }) => {
+    await page.goto("/?q=state%3Atriage+platform%3APaginationOS");
+    await page.locator(".report-type-link").first().click();
+    await page.getByRole("button", { name: "Add to issue" }).click();
+    await page.getByRole("button", { name: "Use existing" }).click();
 
-    const issueSelect = page.getByRole("combobox", { name: "Issue" });
-    await expect(issueSelect).toHaveText("Leave in triage");
-    await issueSelect.click();
+    const issueSearch = page.getByRole("combobox", { name: "Search existing issues" });
+    await issueSearch.fill("navigation timeout");
+    const option = page.getByRole("option", { name: /Intermittent navigation timeout/ });
+    await expect(option).toBeVisible();
+    await expect(option).toContainText("Linked to GitHub issue #4812");
+    await option.click();
 
-    const listbox = page.getByRole("listbox", { name: "Issue" });
-    await expect(listbox).toBeVisible();
-    await page.getByRole("option", { name: "Intermittent navigation timeout" }).click();
-    await expect(issueSelect).toHaveText("Intermittent navigation timeout");
+    await expect(page.locator('input[name="issue_id"]')).not.toHaveValue("");
+    await expect(page.locator(".entity-selector-chip")).toContainText(
+      "Intermittent navigation timeout",
+    );
+    await page.getByRole("dialog", { name: "Add report to an issue" })
+      .getByRole("button", { name: "Add to issue", exact: true })
+      .click();
+    await expect(page).toHaveURL(/\/issues\/[0-9a-f-]+$/);
+    await expect(page.getByRole("heading", { name: "Intermittent navigation timeout" }))
+      .toBeVisible();
   });
 
   test("searches reports with qualified syntax", async ({ page }) => {
     await page.goto("/");
     await expect(page.getByLabel("Search reports")).toHaveValue("state:triage");
     await expect(page.getByRole("button", { name: "Apply filters" })).toHaveCount(0);
-    await page.getByLabel("Search reports").fill("state:triage platform:macos kind:crash");
+    await page.evaluate(() => ((window as any).reportPageStayedLoaded = true));
+    const search = page.getByLabel("Search reports");
+    await search.fill("state:triage platform:macos kind:crash");
 
     await expect.poll(() => new URL(page.url()).searchParams.get("q"))
       .toBe("state:triage platform:macos kind:crash");
+    expect(await page.evaluate(() => (window as any).reportPageStayedLoaded)).toBe(true);
+    await expect(search).toBeFocused();
     await expect(page.locator("tbody tr")).toHaveCount(2);
     await expect(page.locator("tbody tr").nth(0)).toContainText("macOS");
     await expect(page.locator("tbody tr").nth(1)).toContainText("macOS");
+  });
+
+  test("autocompletes report search keys and low-cardinality values", async ({ page }) => {
+    await page.goto("/");
+    const search = page.getByLabel("Search reports");
+    await search.fill("plat");
+    await page.getByRole("option", { name: /^platform:/ }).click();
+    await expect(search).toHaveValue("platform:");
+
+    await search.pressSequentially("ma");
+    await page.getByRole("option", { name: /^macOS/ }).click();
+    await expect(search).toHaveValue("platform:macos");
+    await expect.poll(() => new URL(page.url()).searchParams.get("q"))
+      .toBe("platform:macos");
+
+    await search.fill("stack:Core");
+    await expect.poll(() => search.getAttribute("aria-expanded")).toBe("false");
+  });
+
+  test("loads reports fifty at a time without navigating", async ({ page }) => {
+    await page.goto("/");
+    await expect(page.locator("tbody tr")).toHaveCount(50);
+    const initialUrl = page.url();
+    await page.getByRole("button", { name: "Show more…" }).click();
+    await expect(page.locator("tbody tr")).toHaveCount(55);
+    expect(page.url()).toBe(initialUrl);
+    await expect(page.getByRole("button", { name: "Show more…" })).toHaveCount(0);
   });
 
   test("blocks and unblocks the submission source from the report actions", async ({ page }) => {
@@ -299,12 +347,34 @@ test.describe("authenticated management UI", () => {
     expect(await signOut.evaluate((button) => getComputedStyle(button).borderTopWidth)).toBe("0px");
   });
 
+  test("confirms and hides reports without deleting stored rows", async ({ page }) => {
+    await page.goto("/?q=state%3Atriage+platform%3APaginationOS");
+    const reportLink = page.locator(".report-type-link").first();
+    const href = await reportLink.getAttribute("href");
+    expect(href).not.toBeNull();
+    await reportLink.click();
+
+    await page.getByRole("button", { name: "Confirm", exact: true }).click();
+    await expect(page.locator(".badge-confirmed")).toHaveText("Confirmed");
+
+    await page.getByRole("button", { name: "Delete", exact: true }).click();
+    const confirmation = page.getByRole("dialog", { name: "Delete this report?" });
+    await expect(confirmation).toBeVisible();
+    await confirmation.getByRole("button", { name: "Delete" }).click();
+    await expect(page).toHaveURL(/\/$/);
+
+    await page.getByLabel("Search reports").fill("state:all platform:PaginationOS");
+    await expect.poll(() => new URL(page.url()).searchParams.get("q"))
+      .toBe("state:all platform:PaginationOS");
+    await expect(page.locator(`a[href="${href}"]`)).toHaveCount(0);
+  });
+
   test("creates an issue, assigns the report, and filters it from triage", async ({ page }) => {
     await page.goto(`/reports/${reportId}`);
-    await page.getByText("Create a new issue from this report").click();
+    await page.getByRole("button", { name: "Add to issue" }).click();
     await page.getByLabel("Title", { exact: true }).fill("Renderer overlap on test page");
     await page.getByLabel("Description", { exact: true }).fill("Created by the browser test.");
-    await page.getByRole("button", { name: "Create and assign" }).click();
+    await page.getByRole("button", { name: "Create and add" }).click();
 
     await expect(page).toHaveURL(/\/issues\/[0-9a-f-]+$/);
     await expect(
@@ -327,6 +397,8 @@ test.describe("authenticated management UI", () => {
     await expect(page.getByRole("heading", { name: "Audit log" })).toBeVisible();
     await expect(page.getByText("field_definitions.reordered", { exact: true })).toBeVisible();
     await expect(page.getByText("report.source_blocked", { exact: true })).toBeVisible();
+    await expect(page.getByText("report.confirmed", { exact: true })).toBeVisible();
+    await expect(page.getByText("report.hidden", { exact: true })).toBeVisible();
     await expect(page.getByText("issue.created", { exact: true })).toBeVisible();
     await expect(page.getByText("report.submitted", { exact: true }).first()).toBeVisible();
     await expect(page.getByText("session.signed_in", { exact: true })).toBeVisible();

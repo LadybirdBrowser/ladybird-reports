@@ -2,6 +2,8 @@
 
 {% block title %}Reports{% endblock %}
 
+{% block scripts %}<script src="/assets/reports.js" defer></script>{% endblock %}
+
 {% block content %}
     <header class="page-header">
         <div>
@@ -15,7 +17,7 @@
     </header>
 
     <section class="filter-panel" aria-label="Report filters">
-        <form class="filters" method="get" data-auto-filter>
+        <form class="filters" method="get" data-report-search>
             <label class="report-search-filter">
                 Search reports
                 <span class="search-input-wrap">
@@ -26,8 +28,21 @@
                         value="{{ search }}"
                         placeholder="platform:linux kind:crash"
                         autocomplete="off"
+                        role="combobox"
+                        aria-autocomplete="list"
+                        aria-expanded="false"
+                        aria-controls="report-search-completions"
+                        data-report-search-input
                     >
                 </span>
+                <div
+                    id="report-search-completions"
+                    class="search-completions"
+                    role="listbox"
+                    aria-label="Search suggestions"
+                    popover="manual"
+                    data-report-search-completions
+                ></div>
             </label>
         </form>
         <p class="filter-hint">
@@ -37,60 +52,8 @@
         </p>
     </section>
 
-    <section class="card" aria-labelledby="report-list-title">
-        <div class="card-header">
-            <h2 id="report-list-title">Newest matching reports</h2>
-            <p>Up to 100 results</p>
-        </div>
-
-        {% if reports.is_empty() %}
-            <div class="empty-state">
-                <strong>No matching reports</strong>
-                New reports that match these filters will appear here.
-            </div>
-        {% else %}
-            <div class="table-scroll">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Report type</th>
-                            <th>Version and build</th>
-                            <th>State</th>
-                            <th>Received</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for report in reports %}
-                            <tr>
-                                <td>
-                                    <a
-                                        class="primary-link report-type-link"
-                                        href="/reports/{{ report.id }}"
-                                    >
-                                        {{ report.kind_label }}
-                                    </a>
-                                </td>
-                                <td>
-                                    <strong>{{ report.client_version }}</strong><br>
-                                    <span class="quiet">{{ report.build }}</span>
-                                </td>
-                                <td>
-                                    {% if report.is_assigned %}
-                                        <span class="badge badge-assigned">Assigned</span>
-                                    {% else %}
-                                        <span class="badge badge-triage">Needs triage</span>
-                                    {% endif %}
-                                </td>
-                                <td class="quiet report-received-at">{{ report.received_at }}</td>
-                            </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-        {% endif %}
+    <section class="card report-list-card" aria-label="Reports" data-report-list>
+        {% include "reports/_list.html" %}
     </section>
-
-    {% if let Some(next_page) = next_page %}
-        <p class="button-row"><a class="button button-secondary" href="{{ next_page }}">Older reports</a></p>
-    {% endif %}
+    <p class="visually-hidden" aria-live="polite" data-report-search-status></p>
 {% endblock %}

@@ -425,11 +425,16 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
         .expect("create report for source block test");
     }
 
+    admin_database
+        .confirm_report(second_triage_report, 999)
+        .await
+        .expect("confirm one report from the blocked source");
+
     let block_outcome = admin_database
         .block_report_source(first_triage_report, 999, true)
         .await
         .expect("block source and remove its triage reports");
-    assert_eq!(block_outcome.removed_triage_reports, 2);
+    assert_eq!(block_outcome.removed_triage_reports, 1);
     assert!(block_outcome.current_report_removed);
 
     let removed_triage_reports: i64 = sqlx::query_scalar(
@@ -437,15 +442,42 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
          FROM reports
          WHERE source_client_key = repeat('8', 64)
             AND issue_id IS NULL
-            AND deleted_at IS NOT NULL",
+            AND hidden_at IS NOT NULL
+            AND deleted_at IS NULL",
     )
     .fetch_one(&admin_pool)
     .await
     .expect("count removed triage reports");
-    assert_eq!(removed_triage_reports, 2);
+    assert_eq!(removed_triage_reports, 1);
 
-    let assigned_report_is_active: bool = sqlx::query_scalar(
-        "SELECT deleted_at IS NULL
+    let confirmed_report_is_visible: bool = sqlx::query_scalar(
+        "SELECT confirmed_at IS NOT NULL AND hidden_at IS NULL
+         FROM reports
+         WHERE id = $1",
+    )
+    .bind(second_triage_report)
+    .fetch_one(&admin_pool)
+    .await
+    .expect("check confirmed report after source block");
+    assert!(confirmed_report_is_visible);
+
+    admin_database
+        .hide_report(second_triage_report, 999)
+        .await
+        .expect("hide the confirmed report");
+    let hidden_report_is_retained: bool = sqlx::query_scalar(
+        "SELECT hidden_at IS NOT NULL AND deleted_at IS NULL
+         FROM reports
+         WHERE id = $1",
+    )
+    .bind(second_triage_report)
+    .fetch_one(&admin_pool)
+    .await
+    .expect("check hidden report retention state");
+    assert!(hidden_report_is_retained);
+
+    let assigned_report_is_visible: bool = sqlx::query_scalar(
+        "SELECT hidden_at IS NULL AND deleted_at IS NULL
          FROM reports
          WHERE id = $1",
     )
@@ -453,7 +485,7 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
     .fetch_one(&admin_pool)
     .await
     .expect("check assigned report after source block");
-    assert!(assigned_report_is_active);
+    assert!(assigned_report_is_visible);
 
     sqlx::query(
         "UPDATE issues

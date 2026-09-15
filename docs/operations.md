@@ -19,7 +19,7 @@ the container logs.
 - `GET /health/live` confirms that the process can answer HTTP.
 - `GET /health/ready` checks PostgreSQL and, for the public API, attachment storage.
 
-Configure Coolify to use `/health/ready` for both resources.
+Configure the container platform to use `/health/ready` for both services.
 
 ## Response security and caching
 
