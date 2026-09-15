@@ -13,9 +13,11 @@ use super::super::AdminState;
 
 const STYLESHEET: &str = include_str!("../../../../assets/application.css");
 const JAVASCRIPT: &str = include_str!("../../../../assets/application.js");
+const LADYBIRD_MARK: &[u8] = include_bytes!("../../../../assets/ladybird-mark.png");
 
 static STYLESHEET_ETAG: LazyLock<HeaderValue> = LazyLock::new(|| asset_etag(STYLESHEET));
 static JAVASCRIPT_ETAG: LazyLock<HeaderValue> = LazyLock::new(|| asset_etag(JAVASCRIPT));
+static LADYBIRD_MARK_ETAG: LazyLock<HeaderValue> = LazyLock::new(|| asset_etag(LADYBIRD_MARK));
 
 pub async fn stylesheet(headers: HeaderMap) -> Response {
     static_asset(
@@ -35,9 +37,22 @@ pub async fn javascript(headers: HeaderMap) -> Response {
     )
 }
 
+pub async fn ladybird_mark(headers: HeaderMap) -> Response {
+    static_asset_bytes(&headers, LADYBIRD_MARK, "image/png", &LADYBIRD_MARK_ETAG)
+}
+
 fn static_asset(
     request_headers: &HeaderMap,
     body: &'static str,
+    content_type: &'static str,
+    etag: &HeaderValue,
+) -> Response {
+    static_asset_bytes(request_headers, body.as_bytes(), content_type, etag)
+}
+
+fn static_asset_bytes(
+    request_headers: &HeaderMap,
+    body: &'static [u8],
     content_type: &'static str,
     etag: &HeaderValue,
 ) -> Response {
@@ -60,7 +75,7 @@ fn static_asset(
     response
 }
 
-fn asset_etag(body: &str) -> HeaderValue {
+fn asset_etag(body: impl AsRef<[u8]>) -> HeaderValue {
     HeaderValue::from_str(&format!("\"{}\"", sha256_hex(body)))
         .expect("a SHA-256 digest is a valid ETag")
 }

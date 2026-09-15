@@ -13,6 +13,10 @@ test("unauthenticated visitors can only reach the sign-in page", async ({ page }
   await expect(page).toHaveURL(/\/login$/);
   await expect(page.getByRole("heading", { name: "Welcome to Reports" })).toBeVisible();
   await expect(page.getByText("REPORTING_DATABASE_URL")).toHaveCount(0);
+  await expect(page.locator(".login-emblem img")).toHaveAttribute(
+    "src",
+    "/assets/ladybird-mark.png",
+  );
 
   const visibleText = await page.locator("body").innerText();
   expect(visibleText).not.toMatch(/maintainer|LadybirdBrowser\/maintainers/i);
@@ -62,6 +66,7 @@ test.describe("authenticated management UI", () => {
     expect(pageHeaders["cache-control"]).toBe("private, no-store");
     expect(pageHeaders["content-security-policy"]).toContain("default-src 'none'");
     expect(pageHeaders["content-security-policy"]).toContain("script-src 'self'");
+    expect(pageHeaders["content-security-policy"]).toContain("connect-src 'self'");
     expect(pageHeaders["cross-origin-opener-policy"]).toBe("same-origin");
     expect(pageHeaders["cross-origin-resource-policy"]).toBe("same-origin");
     expect(pageHeaders["permissions-policy"]).toContain("camera=()");
@@ -86,6 +91,70 @@ test.describe("authenticated management UI", () => {
       expect(revalidatedResponse.status()).toBe(304);
       expect(revalidatedResponse.headers()["etag"]).toBe(etag);
     }
+
+    const markResponse = await request.get("/assets/ladybird-mark.png");
+    const markEtag = markResponse.headers()["etag"];
+
+    expect(markResponse.status()).toBe(200);
+    expect(markResponse.headers()["content-type"]).toBe("image/png");
+    expect(markResponse.headers()["cache-control"]).toBe(
+      "public, max-age=0, must-revalidate",
+    );
+    expect(markEtag).toMatch(/^\"[0-9a-f]{64}\"$/);
+
+    const revalidatedMark = await request.get("/assets/ladybird-mark.png", {
+      headers: { "if-none-match": markEtag },
+    });
+
+    expect(revalidatedMark.status()).toBe(304);
+    expect(revalidatedMark.headers()["etag"]).toBe(markEtag);
+  });
+
+  test("searches and selects reports when creating an issue", async ({ page }) => {
+    await page.goto("/issues");
+
+    await expect(page.getByLabel("Report IDs")).toHaveCount(0);
+
+    const reportSearch = page.getByRole("combobox", { name: "Reports" });
+    await reportSearch.fill("0.1.0-browser-test");
+
+    const matchingReport = page.getByRole("option").filter({
+      hasText: "0.1.0-browser-test",
+    });
+    await expect(matchingReport).toBeVisible();
+    await matchingReport.click();
+
+    await expect(page.locator(".entity-selector-chip")).toContainText(reportId);
+    await expect(page.locator('input[name="report_ids"]')).toHaveValue(reportId);
+
+    await page.locator(".entity-selector-chip-remove").click();
+    await expect(page.locator(".entity-selector-chip")).toHaveCount(0);
+    await expect(page.locator('input[name="report_ids"]')).toHaveValue("");
+
+    await reportSearch.fill("Nightly");
+    await expect(page.getByRole("option")).toHaveCount(3);
+    await expect(page.getByText("Needs triage", { exact: true })).toHaveCount(2);
+    await expect(page.getByText(/Assigned · Intermittent navigation timeout/)).toBeVisible();
+
+    await reportSearch.press("ArrowDown");
+    await reportSearch.press("Enter");
+    await expect(page.locator(".entity-selector-chip")).toContainText(
+      "Web compatibility report",
+    );
+    await expect(page.locator('input[name="report_ids"]')).toHaveValue(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+    );
+  });
+
+  test("enhances native select controls", async ({ page }) => {
+    await page.goto("/");
+
+    const stateSelect = page.getByLabel("State");
+    await expect(stateSelect).toBeVisible();
+    await expect(stateSelect.locator("xpath=..")).toHaveClass("select-control");
+    expect(
+      await stateSelect.evaluate((element) => getComputedStyle(element).appearance),
+    ).toBe("none");
   });
 
   test("blocks and unblocks the submission source from the report actions", async ({ page }) => {
@@ -144,7 +213,7 @@ test.describe("authenticated management UI", () => {
     await expect(page.getByRole("link", { name: reportId })).toBeVisible();
 
     await page.getByRole("link", { name: "Reports", exact: true }).click();
-    await expect(page.getByText("No matching reports", { exact: true })).toBeVisible();
+    await expect(page.getByRole("link", { name: reportId })).toHaveCount(0);
 
     await page.getByLabel("State").selectOption("assigned");
     await page.getByRole("button", { name: "Apply filters" }).click();

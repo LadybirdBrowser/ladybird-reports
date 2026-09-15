@@ -54,6 +54,16 @@ pub struct ReportSummary {
 }
 
 #[derive(Clone, Debug)]
+pub struct ReportSearchResult {
+    pub id: ReportId,
+    pub kind: String,
+    pub client_version: String,
+    pub build: String,
+    pub issue_title: Option<String>,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug)]
 pub struct ReportRecord {
     pub id: ReportId,
     pub submission_id: SubmissionId,

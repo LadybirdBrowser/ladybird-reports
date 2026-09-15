@@ -1,5 +1,5 @@
 use ladybird_reports::{
-    domain::{ReportId, SubmissionId, UploadId},
+    domain::{IssueId, ReportId, SubmissionId, UploadId},
     error::Result,
     infrastructure::hash_secret,
     runtime::required_environment,
@@ -126,6 +126,113 @@ async fn main() -> Result<()> {
     .execute(&mut *transaction)
     .await?;
 
+    let existing_issue_id = IssueId::new();
+    sqlx::query(
+        "INSERT INTO issues (id, title, description)
+         VALUES (
+            $1,
+            'Intermittent navigation timeout',
+            'Reports collected while investigating navigation stalls.'
+         )",
+    )
+    .bind(existing_issue_id)
+    .execute(&mut *transaction)
+    .await?;
+
+    let example_reports = [
+        ExampleReport {
+            kind: "crash",
+            client_version: "Ladybird Nightly 2026-09-15",
+            build: "macOS · arm64 · Release",
+            hours_ago: 1,
+            issue_id: None,
+        },
+        ExampleReport {
+            kind: "web_compat",
+            client_version: "Ladybird Nightly 2026-09-15",
+            build: "Linux · x86_64 · Debug",
+            hours_ago: 3,
+            issue_id: None,
+        },
+        ExampleReport {
+            kind: "crash",
+            client_version: "0.7.0-alpha",
+            build: "macOS · arm64 · ASan",
+            hours_ago: 7,
+            issue_id: None,
+        },
+        ExampleReport {
+            kind: "web_compat",
+            client_version: "Ladybird Nightly 2026-09-14",
+            build: "Linux · x86_64 · Release",
+            hours_ago: 18,
+            issue_id: Some(existing_issue_id),
+        },
+    ];
+
+    for report in example_reports {
+        insert_example_report(&mut transaction, report).await?;
+    }
+
     transaction.commit().await?;
+    Ok(())
+}
+
+#[derive(Clone, Copy)]
+struct ExampleReport<'a> {
+    kind: &'a str,
+    client_version: &'a str,
+    build: &'a str,
+    hours_ago: i32,
+    issue_id: Option<IssueId>,
+}
+
+async fn insert_example_report(
+    transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    report: ExampleReport<'_>,
+) -> Result<()> {
+    sqlx::query(
+        "INSERT INTO reports (
+            id,
+            submission_id,
+            manifest_digest,
+            kind,
+            client_version,
+            build,
+            storage_state,
+            staging_id,
+            source_client_key,
+            issue_id,
+            assigned_at,
+            created_at,
+            updated_at
+         )
+         VALUES (
+            $1,
+            $2,
+            repeat('c', 64),
+            $3,
+            $4,
+            $5,
+            'ready',
+            $6,
+            repeat('d', 64),
+            $7,
+            CASE WHEN $7::uuid IS NULL THEN NULL ELSE now() END,
+            now() - make_interval(hours => $8),
+            now() - make_interval(hours => $8)
+         )",
+    )
+    .bind(ReportId::new())
+    .bind(SubmissionId::new())
+    .bind(report.kind)
+    .bind(report.client_version)
+    .bind(report.build)
+    .bind(UploadId::new())
+    .bind(report.issue_id)
+    .bind(report.hours_ago)
+    .execute(&mut **transaction)
+    .await?;
+
     Ok(())
 }

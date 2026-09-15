@@ -1,11 +1,11 @@
 use askama::Template;
 use axum::{
-    Extension, Form,
+    Extension, Form, Json,
     extract::{Path, Query, State},
     response::{IntoResponse, Redirect, Response},
 };
 use chrono::{DateTime, NaiveDate, Utc};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     domain::{AttachmentId, IssueId, ReportId, SubmissionId},
@@ -67,6 +67,28 @@ pub struct ReportRow {
     build: String,
     is_assigned: bool,
     created_at: DateTime<Utc>,
+}
+
+#[derive(Deserialize)]
+pub struct ReportSearchQuery {
+    #[serde(default)]
+    query: String,
+}
+
+#[derive(Serialize)]
+pub struct EntitySearchResponse {
+    results: Vec<EntitySearchOption>,
+}
+
+#[derive(Serialize)]
+pub struct EntitySearchOption {
+    value: String,
+    label: String,
+    description: String,
+    identifier: String,
+    badge: String,
+    badge_tone: &'static str,
+    footnote: String,
 }
 
 #[derive(Template)]
@@ -166,6 +188,58 @@ pub async fn index(
         reports: report_rows,
         next_page,
     }))
+}
+
+pub async fn search_options(
+    State(state): State<AdminState>,
+    Query(parameters): Query<ReportSearchQuery>,
+) -> Result<Json<EntitySearchResponse>> {
+    let search = parameters.query.trim();
+
+    if search.len() > 128 {
+        return Err(AppError::InvalidRequest("Report search is too long"));
+    }
+
+    let results = state
+        .database
+        .search_reports(search)
+        .await?
+        .into_iter()
+        .map(|report| {
+            let (badge, badge_tone) = match report.issue_title {
+                Some(issue_title) => (format!("Assigned · {issue_title}"), "assigned"),
+                None => ("Needs triage".into(), "triage"),
+            };
+            let description = if report.build.trim().is_empty() {
+                report.client_version
+            } else {
+                format!("{} · {}", report.client_version, report.build)
+            };
+
+            EntitySearchOption {
+                value: report.id.to_string(),
+                label: report_kind_label(&report.kind).into(),
+                description,
+                identifier: report.id.to_string(),
+                badge,
+                badge_tone,
+                footnote: format!(
+                    "Received {}",
+                    report.created_at.format("%d %b %Y, %H:%M UTC")
+                ),
+            }
+        })
+        .collect();
+
+    Ok(Json(EntitySearchResponse { results }))
+}
+
+fn report_kind_label(kind: &str) -> &str {
+    match kind {
+        "crash" => "Crash report",
+        "web_compat" => "Web compatibility report",
+        _ => "Diagnostic report",
+    }
 }
 
 pub async fn show(

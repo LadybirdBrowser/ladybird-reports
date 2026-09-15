@@ -91,7 +91,7 @@ fn add_security_headers(headers: &mut HeaderMap) {
         HeaderName::from_static("content-security-policy"),
         HeaderValue::from_static(
             "default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self'; \
-             form-action 'self'; frame-ancestors 'none'; base-uri 'none'",
+             connect-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'",
         ),
     );
     headers.insert(

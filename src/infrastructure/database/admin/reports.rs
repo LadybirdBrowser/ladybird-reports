@@ -7,8 +7,8 @@ use crate::{
 };
 
 use super::{
-    AuditEvent, ReportDetails, ReportQuery, ReportRecord, ReportSummary, StoredAttachment,
-    StoredDiagnosticField,
+    AuditEvent, ReportDetails, ReportQuery, ReportRecord, ReportSearchResult, ReportSummary,
+    StoredAttachment, StoredDiagnosticField,
 };
 
 impl AdminDatabase {
@@ -95,6 +95,54 @@ impl AdminDatabase {
                 client_version: row.get("client_version"),
                 build: row.get("build"),
                 issue_id: row.get("issue_id"),
+                created_at: row.get("created_at"),
+            })
+            .collect())
+    }
+
+    pub async fn search_reports(&self, search: &str) -> Result<Vec<ReportSearchResult>> {
+        let rows = sqlx::query(
+            "SELECT
+                reports.id,
+                reports.kind,
+                reports.client_version,
+                reports.build,
+                issues.title AS issue_title,
+                reports.created_at
+             FROM reports
+             LEFT JOIN issues ON issues.id = reports.issue_id
+             WHERE reports.deleted_at IS NULL
+                AND reports.storage_state = 'ready'
+                AND (
+                    $1 = ''
+                    OR position(lower($1) in reports.id::text) > 0
+                    OR position(lower($1) in lower(reports.kind)) > 0
+                    OR position(lower($1) in lower(reports.client_version)) > 0
+                    OR position(lower($1) in lower(reports.build)) > 0
+                    OR position(lower($1) in lower(COALESCE(issues.title, ''))) > 0
+                )
+             ORDER BY
+                CASE
+                    WHEN $1 <> '' AND reports.id::text LIKE lower($1) || '%' THEN 0
+                    ELSE 1
+                END,
+                reports.issue_id IS NOT NULL,
+                reports.created_at DESC,
+                reports.id DESC
+             LIMIT 20",
+        )
+        .bind(search)
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows
+            .into_iter()
+            .map(|row| ReportSearchResult {
+                id: row.get("id"),
+                kind: row.get("kind"),
+                client_version: row.get("client_version"),
+                build: row.get("build"),
+                issue_title: row.get("issue_title"),
                 created_at: row.get("created_at"),
             })
             .collect())

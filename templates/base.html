@@ -4,6 +4,7 @@
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <title>{% block title %}Ladybird Reports{% endblock %} · Ladybird Reports</title>
+        <link rel="icon" href="/assets/ladybird-mark.png">
         <link rel="stylesheet" href="/assets/application.css">
     </head>
     <body>
@@ -11,7 +12,7 @@
             <div class="header-inner">
                 <a class="brand" href="/" aria-label="Ladybird Reports home">
                     <span class="brand-mark" aria-hidden="true">
-                        <span></span>
+                        <img src="/assets/ladybird-mark.png" alt="">
                     </span>
                     <span class="brand-copy">
                         <strong>Ladybird</strong>
@@ -68,6 +69,6 @@
             <span>Diagnostic triage</span>
         </footer>
 
-        {% block scripts %}{% endblock %}
+        <script src="/assets/application.js" defer></script>
     </body>
 </html>

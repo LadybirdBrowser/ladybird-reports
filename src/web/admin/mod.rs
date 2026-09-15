@@ -29,6 +29,10 @@ pub fn router(state: AdminState) -> Router {
     let authenticated = Router::new()
         .route("/", get(handlers::reports::index))
         .route("/reports/{id}", get(handlers::reports::show))
+        .route(
+            "/api/report-options",
+            get(handlers::reports::search_options),
+        )
         .route("/reports/{id}/block-ip", post(handlers::reports::block_ip))
         .route(
             "/reports/{id}/unblock-ip",
@@ -75,6 +79,10 @@ pub fn router(state: AdminState) -> Router {
         .route("/auth/callback", get(authentication::github_callback))
         .route("/assets/application.css", get(handlers::assets::stylesheet))
         .route("/assets/application.js", get(handlers::assets::javascript))
+        .route(
+            "/assets/ladybird-mark.png",
+            get(handlers::assets::ladybird_mark),
+        )
         .route("/health/live", get(handlers::assets::live))
         .route("/health/ready", get(handlers::assets::ready))
         .layer(middleware::from_fn(super::admin_response_headers));

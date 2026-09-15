@@ -96,15 +96,71 @@
                     Description
                     <textarea name="description" rows="7"></textarea>
                 </label>
-                <label>
-                    Report IDs
-                    <textarea
-                        class="monospace"
-                        name="report_ids"
-                        rows="3"
-                        placeholder="One UUID per line"
-                    ></textarea>
-                </label>
+                <div class="field-group">
+                    <label class="field-label" for="new-issue-report-search">
+                        Reports <span class="field-optional">Optional</span>
+                    </label>
+                    <div
+                        class="entity-selector"
+                        data-entity-selector
+                        data-search-url="/api/report-options"
+                        data-entity-singular="report"
+                        data-entity-plural="reports"
+                        data-maximum-selections="100"
+                    >
+                        <input type="hidden" name="report_ids" value="" data-entity-value>
+
+                        <div class="entity-selector-selection" data-entity-selection hidden>
+                            <div class="entity-selector-selection-header">
+                                <span>Selected reports</span>
+                                <span data-entity-selection-count></span>
+                            </div>
+                            <div class="entity-selector-chips" data-entity-chips></div>
+                        </div>
+
+                        <div class="entity-selector-input-wrap">
+                            <span class="search-glyph" aria-hidden="true"></span>
+                            <input
+                                id="new-issue-report-search"
+                                type="search"
+                                role="combobox"
+                                aria-autocomplete="list"
+                                aria-controls="new-issue-report-results"
+                                aria-expanded="false"
+                                autocomplete="off"
+                                spellcheck="false"
+                                placeholder="Search reports…"
+                                data-entity-search
+                            >
+                            <span class="key-hint" aria-hidden="true">/</span>
+                        </div>
+
+                        <div class="entity-selector-popover" data-entity-popover hidden>
+                            <div class="entity-selector-popover-header">
+                                <span>Matching reports</span>
+                                <span data-entity-result-count></span>
+                            </div>
+                            <div
+                                id="new-issue-report-results"
+                                class="entity-selector-results"
+                                role="listbox"
+                                aria-label="Matching reports"
+                                data-entity-results
+                            ></div>
+                            <div class="entity-selector-empty" data-entity-empty hidden>
+                                <span class="entity-selector-empty-icon" aria-hidden="true"></span>
+                                <strong>No reports found</strong>
+                                <span>Try a report ID, version, build, kind, or issue title.</span>
+                            </div>
+                        </div>
+
+                        <p class="form-note entity-selector-note">
+                            Search recent reports or enter part of a report ID. Use arrow keys
+                            and Enter to select.
+                        </p>
+                        <p class="visually-hidden" aria-live="polite" data-entity-status></p>
+                    </div>
+                </div>
                 <button type="submit">Create issue</button>
             </form>
         </aside>
