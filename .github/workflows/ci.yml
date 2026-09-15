@@ -83,17 +83,47 @@ jobs:
       - name: Run browser tests
         run: npm run test:browser
 
-  deploy:
-    name: Deploy
+  image:
+    name: Build and publish image
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     needs: [rust, browser]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v5
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          platforms: linux/amd64
+          tags: |
+            ghcr.io/ladybirdbrowser/ladybird-reports:${{ github.sha }}
+            ghcr.io/ladybirdbrowser/ladybird-reports:master
+          labels: |
+            org.opencontainers.image.source=https://github.com/LadybirdBrowser/ladybird-reports
+            org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    name: Deploy
+    needs: image
     runs-on: ubuntu-24.04
     env:
       COOLIFY_WEBHOOK_URL: ${{ vars.COOLIFY_WEBHOOK_URL }}
       COOLIFY_WEBHOOK_SECRET: ${{ secrets.COOLIFY_WEBHOOK_SECRET }}
 
     steps:
-      - name: Trigger Coolify source deployment
+      - name: Trigger Coolify deployment
         shell: bash
         run: |
           test -n "$COOLIFY_WEBHOOK_URL"
