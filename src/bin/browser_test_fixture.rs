@@ -180,6 +180,17 @@ async fn main() -> Result<()> {
             architecture: "arm64",
             hours_ago: 1,
             issue_id: None,
+            confirmed: false,
+        },
+        ExampleReport {
+            kind: "web_compat",
+            client_version: "Ladybird Nightly 2026-09-15",
+            build: "ConfirmedOS · arm64 · Release",
+            platform: "ConfirmedOS",
+            architecture: "arm64",
+            hours_ago: 2,
+            issue_id: None,
+            confirmed: true,
         },
         ExampleReport {
             kind: "web_compat",
@@ -189,6 +200,7 @@ async fn main() -> Result<()> {
             architecture: "x86_64",
             hours_ago: 3,
             issue_id: None,
+            confirmed: false,
         },
         ExampleReport {
             kind: "crash",
@@ -198,6 +210,7 @@ async fn main() -> Result<()> {
             architecture: "arm64",
             hours_ago: 7,
             issue_id: None,
+            confirmed: false,
         },
         ExampleReport {
             kind: "web_compat",
@@ -207,6 +220,7 @@ async fn main() -> Result<()> {
             architecture: "x86_64",
             hours_ago: 18,
             issue_id: Some(existing_issue_id),
+            confirmed: false,
         },
     ];
 
@@ -229,6 +243,7 @@ async fn main() -> Result<()> {
                 architecture: "x86_64",
                 hours_ago: 24 + index,
                 issue_id: None,
+                confirmed: false,
             },
         )
         .await?;
@@ -248,6 +263,7 @@ struct ExampleReport<'a> {
     architecture: &'a str,
     hours_ago: i32,
     issue_id: Option<IssueId>,
+    confirmed: bool,
 }
 
 async fn insert_example_report(
@@ -271,6 +287,7 @@ async fn insert_example_report(
             source_ip,
             issue_id,
             assigned_at,
+            confirmed_at,
             created_at,
             updated_at
          )
@@ -287,6 +304,7 @@ async fn insert_example_report(
             '127.0.0.1'::inet,
             $7,
             CASE WHEN $7::uuid IS NULL THEN NULL ELSE now() END,
+            CASE WHEN $9 THEN now() ELSE NULL END,
             now() - make_interval(hours => $8),
             now() - make_interval(hours => $8)
          )",
@@ -299,6 +317,7 @@ async fn insert_example_report(
     .bind(UploadId::new())
     .bind(report.issue_id)
     .bind(report.hours_ago)
+    .bind(report.confirmed)
     .execute(&mut **transaction)
     .await?;
 

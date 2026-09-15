@@ -1,4 +1,3 @@
-const REPORT_FILTER_DELAY_MS = 650;
 const SEARCH_COMPLETION_DELAY_MS = 120;
 
 function initializeIssueDialogs() {
@@ -45,7 +44,6 @@ class ReportListController {
         this.list = document.querySelector("[data-report-list]");
         this.status = document.querySelector("[data-report-search-status]");
         this.completions = form.querySelector("[data-report-search-completions]");
-        this.searchTimer = null;
         this.completionTimer = null;
         this.searchRequest = null;
         this.completionRequest = null;
@@ -59,10 +57,13 @@ class ReportListController {
             event.preventDefault();
             this.updateResults();
         });
-        this.input.addEventListener("input", () => {
-            clearTimeout(this.searchTimer);
-            this.searchTimer = setTimeout(() => this.updateResults(), REPORT_FILTER_DELAY_MS);
-            this.queueCompletions();
+        this.input.addEventListener("input", () => this.queueCompletions());
+        this.form.addEventListener("focusout", () => {
+            setTimeout(() => {
+                if (!this.form.contains(document.activeElement)) {
+                    this.updateResults();
+                }
+            });
         });
         this.input.addEventListener("focus", () => this.queueCompletions());
         this.input.addEventListener("click", () => this.queueCompletions());
@@ -97,13 +98,12 @@ class ReportListController {
     }
 
     async updateResults() {
-        clearTimeout(this.searchTimer);
         this.closeCompletions();
         this.searchRequest?.abort();
         this.searchRequest = new AbortController();
 
         const pageUrl = new URL(window.location.href);
-        pageUrl.searchParams.set("q", this.input.value.trim() || "state:triage");
+        pageUrl.searchParams.set("q", this.input.value.trim());
         pageUrl.searchParams.delete("before");
         pageUrl.searchParams.delete("before_id");
         const requestUrl = new URL("/api/report-list", window.location.origin);
@@ -252,7 +252,7 @@ class ReportListController {
                 Math.min(this.activeOption + direction, this.options.length - 1),
             );
             this.renderCompletions();
-        } else if ((event.key === "Enter" || event.key === "Tab") && this.activeOption >= 0) {
+        } else if (event.key === "Tab" && this.activeOption >= 0) {
             event.preventDefault();
             this.applyCompletion(this.activeOption);
         } else if (event.key === "Escape") {

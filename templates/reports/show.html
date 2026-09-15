@@ -242,7 +242,7 @@
                         Delete
                     </button>
                     <div
-                        class="confirmation-popover"
+                        class="confirmation-popover modal-overlay"
                         id="hide-report-confirmation"
                         role="dialog"
                         aria-labelledby="hide-report-confirmation-title"
@@ -301,7 +301,7 @@
                                 Block IP
                             </button>
                             <div
-                                class="confirmation-popover"
+                                class="confirmation-popover modal-overlay"
                                 id="block-source-confirmation"
                                 role="dialog"
                                 aria-labelledby="block-source-confirmation-title"
@@ -349,7 +349,11 @@
         </aside>
     </div>
 
-    <dialog class="issue-dialog" aria-labelledby="issue-dialog-title" data-issue-dialog>
+    <dialog
+        class="issue-dialog modal-overlay"
+        aria-labelledby="issue-dialog-title"
+        data-issue-dialog
+    >
         <div class="issue-dialog-header">
             <div>
                 <p class="eyebrow">Report workflow</p>

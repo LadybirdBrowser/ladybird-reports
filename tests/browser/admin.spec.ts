@@ -155,7 +155,14 @@ test.describe("authenticated management UI", () => {
 
     await page.goto(`/reports/${reportId}`);
     await page.getByRole("button", { name: "Add to issue" }).click();
-    await expect(page.getByRole("dialog", { name: "Add report to an issue" })).toBeVisible();
+    const issueDialog = page.getByRole("dialog", { name: "Add report to an issue" });
+    await expect(issueDialog).toBeVisible();
+    await expect(issueDialog).toHaveClass(/modal-overlay/);
+    expect(
+      await issueDialog.evaluate(
+        (element) => getComputedStyle(element, "::backdrop").backdropFilter,
+      ),
+    ).toBe("blur(2px)");
     await page.getByText("Link an existing issue").click();
     await expect(page.getByLabel("GitHub title")).toBeHidden();
     await expect(page.getByLabel("GitHub body")).toBeHidden();
@@ -230,7 +237,12 @@ test.describe("authenticated management UI", () => {
     await expect(page.getByRole("button", { name: "Apply filters" })).toHaveCount(0);
     await page.evaluate(() => ((window as any).reportPageStayedLoaded = true));
     const search = page.getByLabel("Search reports");
+    const initialUrl = page.url();
     await search.fill("state:triage platform:macos kind:crash");
+    await page.waitForTimeout(800);
+
+    expect(page.url()).toBe(initialUrl);
+    await search.press("Enter");
 
     await expect.poll(() => new URL(page.url()).searchParams.get("q"))
       .toBe("state:triage platform:macos kind:crash");
@@ -239,6 +251,25 @@ test.describe("authenticated management UI", () => {
     await expect(page.locator("tbody tr")).toHaveCount(2);
     await expect(page.locator("tbody tr").nth(0)).toContainText("macOS");
     await expect(page.locator("tbody tr").nth(1)).toContainText("macOS");
+
+    await search.fill("platform:linux");
+    await search.blur();
+    await expect.poll(() => new URL(page.url()).searchParams.get("q"))
+      .toBe("platform:linux");
+    await expect(page.locator("tbody tr")).toHaveCount(2);
+  });
+
+  test("shows confirmed reports when the search field is cleared", async ({ page }) => {
+    await page.goto("/");
+    await expect(page.locator(".badge-confirmed")).toHaveCount(0);
+
+    const search = page.getByLabel("Search reports");
+    await search.fill("");
+    await search.blur();
+
+    await expect.poll(() => new URL(page.url()).searchParams.get("q")).toBe("");
+    await expect(page.locator(".badge-confirmed")).toHaveText("Confirmed");
+    await expect(page.getByText("ConfirmedOS · arm64 · Release")).toBeVisible();
   });
 
   test("autocompletes report search keys and low-cardinality values", async ({ page }) => {
@@ -275,6 +306,12 @@ test.describe("authenticated management UI", () => {
     await page.getByRole("button", { name: "Block IP" }).click();
     const confirmation = page.getByRole("dialog", { name: "Block this IP?" });
     await expect(confirmation).toBeVisible();
+    await expect(confirmation).toHaveClass(/modal-overlay/);
+    expect(
+      await confirmation.evaluate(
+        (element) => getComputedStyle(element, "::backdrop").backdropFilter,
+      ),
+    ).toBe("blur(2px)");
     await expect(confirmation.getByRole("checkbox")).toBeChecked();
     await confirmation.getByRole("button", { name: "Cancel" }).click();
     await expect(confirmation).toBeHidden();
@@ -364,6 +401,7 @@ test.describe("authenticated management UI", () => {
     await expect(page).toHaveURL(/\/$/);
 
     await page.getByLabel("Search reports").fill("state:all platform:PaginationOS");
+    await page.getByLabel("Search reports").press("Enter");
     await expect.poll(() => new URL(page.url()).searchParams.get("q"))
       .toBe("state:all platform:PaginationOS");
     await expect(page.locator(`a[href="${href}"]`)).toHaveCount(0);
@@ -386,6 +424,7 @@ test.describe("authenticated management UI", () => {
     await expect(page.locator(`a[href="/reports/${reportId}"]`)).toHaveCount(0);
 
     await page.getByLabel("Search reports").fill("state:assigned");
+    await page.getByLabel("Search reports").press("Enter");
     await expect.poll(() => new URL(page.url()).searchParams.get("q"))
       .toBe("state:assigned");
     await expect(page.locator(`a[href="/reports/${reportId}"]`)).toBeVisible();
