@@ -252,7 +252,7 @@ test.describe("authenticated management UI", () => {
     await page.goto("/");
 
     await page.getByRole("button", { name: "Open account menu for browser-tester" }).click();
-    await expect(page.getByText("Signed in as")).toBeVisible();
+    await expect(page.getByText("Signed in as")).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible();
   });
 

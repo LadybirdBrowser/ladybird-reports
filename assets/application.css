@@ -254,7 +254,7 @@ nav a:hover {
     right: anchor(right);
     bottom: auto;
     left: auto;
-    width: min(18rem, calc(100vw - 1rem));
+    width: min(10rem, calc(100vw - 1rem));
     margin: 0.5rem 0 0;
     padding: 0.5rem;
     position-anchor: --account-trigger;
@@ -269,37 +269,8 @@ nav a:hover {
     background: transparent;
 }
 
-.account-profile {
-    display: flex;
-    padding: 0.65rem;
-    align-items: center;
-    border-bottom: 1px solid var(--border);
-    gap: 0.7rem;
-}
-
-.account-profile small,
-.account-profile strong {
-    display: block;
-}
-
-.account-profile small {
-    color: var(--ink-faint);
-    font-size: 0.68rem;
-}
-
-.account-avatar {
-    display: grid;
-    width: 2rem;
-    height: 2rem;
-    border-radius: 50%;
-    background: var(--ink);
-    color: var(--surface);
-    place-items: center;
-}
-
 .account-sign-out {
     width: 100%;
-    margin-top: 0.5rem;
 }
 
 .page-shell,
@@ -1828,19 +1799,6 @@ pre {
 
 .settings-help-empty p {
     margin: 0;
-}
-
-.settings-help-icon {
-    display: grid;
-    width: 2rem;
-    height: 2rem;
-    margin-bottom: 0.7rem;
-    border-radius: 50%;
-    background: var(--brand-soft);
-    color: var(--brand);
-    font-family: Georgia, serif;
-    font-weight: 700;
-    place-items: center;
 }
 
 .setting-help-entry h3 {
