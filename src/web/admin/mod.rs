@@ -1,0 +1,83 @@
+mod authentication;
+mod handlers;
+mod session;
+mod templates;
+
+use std::sync::Arc;
+
+use axum::{
+    Router, middleware,
+    routing::{get, post},
+};
+
+use crate::infrastructure::{
+    SecretCipher, attachments::FileAttachmentStore, database::AdminDatabase, github::GithubClient,
+};
+
+pub use templates::TemplateResponse;
+
+#[derive(Clone)]
+pub struct AdminState {
+    pub database: AdminDatabase,
+    pub attachments: FileAttachmentStore,
+    pub github: GithubClient,
+    pub secret_cipher: SecretCipher,
+    pub bootstrap_reporting_database_url: Option<Arc<str>>,
+}
+
+pub fn router(state: AdminState) -> Router {
+    let authenticated = Router::new()
+        .route("/", get(handlers::reports::index))
+        .route("/reports/{id}", get(handlers::reports::show))
+        .route("/reports/{id}/block-ip", post(handlers::reports::block_ip))
+        .route(
+            "/reports/{id}/unblock-ip",
+            post(handlers::reports::unblock_ip),
+        )
+        .route("/reports/assign", post(handlers::reports::assign))
+        .route("/attachments/{id}", get(handlers::reports::attachment))
+        .route("/issues", get(handlers::issues::index))
+        .route("/issues", post(handlers::issues::create))
+        .route("/issues/{id}", get(handlers::issues::show))
+        .route("/issues/{id}", post(handlers::issues::update))
+        .route("/issues/{id}/merge", post(handlers::issues::merge))
+        .route("/issues/{id}/github/link", post(handlers::github::link))
+        .route(
+            "/issues/{id}/github/preview",
+            get(handlers::github::preview),
+        )
+        .route(
+            "/issues/{id}/github/publish",
+            post(handlers::github::publish),
+        )
+        .route(
+            "/issues/{id}/github/clear-uncertain",
+            post(handlers::github::clear_uncertain),
+        )
+        .route("/settings", get(handlers::settings::show))
+        .route("/settings", post(handlers::settings::update))
+        .route("/settings/fields", post(handlers::settings::update_field))
+        .route(
+            "/settings/fields/order",
+            post(handlers::settings::reorder_fields),
+        )
+        .route("/operations", get(handlers::settings::operations))
+        .route("/logout", post(authentication::logout))
+        .route_layer(middleware::from_fn_with_state(
+            state.clone(),
+            session::require_session,
+        ));
+
+    let routes = Router::new()
+        .merge(authenticated)
+        .route("/login", get(authentication::login))
+        .route("/auth/github", get(authentication::start_github_login))
+        .route("/auth/callback", get(authentication::github_callback))
+        .route("/assets/application.css", get(handlers::assets::stylesheet))
+        .route("/assets/application.js", get(handlers::assets::javascript))
+        .route("/health/live", get(handlers::assets::live))
+        .route("/health/ready", get(handlers::assets::ready))
+        .layer(middleware::from_fn(super::admin_response_headers));
+
+    super::with_observability(routes).with_state(state)
+}

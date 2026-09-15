@@ -1,0 +1,43 @@
+[package]
+name = "ladybird-reports"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+license = "BSD-2-Clause"
+
+[dependencies]
+anyhow = "1.0"
+askama = "0.16"
+async-trait = "0.1"
+axum = { version = "0.8", features = ["macros", "multipart"] }
+base64 = "0.22"
+chacha20poly1305 = "0.10"
+chrono = { version = "0.4", features = ["serde"] }
+cookie = "0.18"
+fs2 = "0.4"
+hex = "0.4"
+hmac = "0.12"
+ipnet = { version = "2.11", features = ["serde"] }
+png = "0.18"
+rand = "0.8"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+sha2 = "0.10"
+sqlx = { version = "0.8", features = ["chrono", "json", "postgres", "runtime-tokio-rustls", "uuid"] }
+thiserror = "2.0"
+tokio = { version = "1.47", features = ["fs", "macros", "net", "rt-multi-thread", "signal", "time"] }
+tower = "0.5"
+tower-http = { version = "0.6", features = ["limit", "request-id", "set-header", "trace"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+uuid = { version = "1.18", features = ["serde", "v7"] }
+
+[dev-dependencies]
+http-body-util = "0.1"
+tempfile = "3.21"
+tower = { version = "0.5", features = ["util"] }
+
+[profile.release]
+lto = "thin"
+strip = true

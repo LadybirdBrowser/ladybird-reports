@@ -1,0 +1,258 @@
+{% extends "base.html" %}
+
+{% block title %}Report{% endblock %}
+
+{% block content %}
+    <header class="page-header">
+        <div>
+            <p class="eyebrow">Submitted diagnostic</p>
+            <h1>{{ report.client_version }}</h1>
+            <p class="page-summary monospace report-id">{{ report.id }}</p>
+        </div>
+
+        {% if report.is_assigned %}
+            <span class="badge badge-assigned">Assigned</span>
+        {% else %}
+            <span class="badge badge-triage">Needs triage</span>
+        {% endif %}
+    </header>
+
+    <div class="report-layout">
+        <div class="stack">
+            <section class="card" aria-labelledby="overview-title">
+                <div class="card-header">
+                    <h2 id="overview-title">Overview</h2>
+                    <p>{{ report.created_at }}</p>
+                </div>
+                <dl class="definition-list">
+                    <div>
+                        <dt>Client version</dt>
+                        <dd>{{ report.client_version }}</dd>
+                    </div>
+                    <div>
+                        <dt>Build</dt>
+                        <dd>{{ report.build }}</dd>
+                    </div>
+                    <div>
+                        <dt>Submission ID</dt>
+                        <dd><code>{{ report.submission_id }}</code></dd>
+                    </div>
+                    <div>
+                        <dt>Manifest digest</dt>
+                        <dd><code>{{ report.manifest_digest }}</code></dd>
+                    </div>
+                </dl>
+            </section>
+
+            <section aria-labelledby="diagnostics-title">
+                <div class="page-header">
+                    <div>
+                        <p class="eyebrow">Captured data</p>
+                        <h2 id="diagnostics-title">Diagnostics</h2>
+                    </div>
+                </div>
+
+                {% if known_fields.is_empty() %}
+                    <div class="card empty-state">
+                        <strong>No recognized diagnostics</strong>
+                        This report did not include any currently recognized fields.
+                    </div>
+                {% endif %}
+
+                {% for field in known_fields %}
+                    <article class="report-field">
+                        <header class="report-field-header">
+                            <h3>{{ field.label }}</h3>
+                            <p class="quiet"><code>{{ field.key }}</code> · {{ field.kind }}</p>
+                        </header>
+                        <pre>{{ field.value }}</pre>
+                    </article>
+                {% endfor %}
+            </section>
+
+            {% if !unknown_fields.is_empty() %}
+                <section aria-labelledby="unknown-fields-title">
+                    <div class="page-header">
+                        <div>
+                            <p class="eyebrow">Forward compatibility</p>
+                            <h2 id="unknown-fields-title">Unknown fields</h2>
+                            <p class="page-summary">
+                                These fields are preserved from a newer or specialized client.
+                            </p>
+                        </div>
+                    </div>
+
+                    {% for field in unknown_fields %}
+                        <article class="report-field">
+                            <header class="report-field-header">
+                                <h3>{{ field.key }}</h3>
+                                <span class="badge badge-warning">Unknown field</span>
+                            </header>
+                            <pre>{{ field.value }}</pre>
+                        </article>
+                    {% endfor %}
+                </section>
+            {% endif %}
+
+            <section class="card" aria-labelledby="attachments-title">
+                <div class="card-header">
+                    <h2 id="attachments-title">Attachments</h2>
+                    <p>{{ attachments.len() }} files</p>
+                </div>
+                <div class="card-body stack">
+                    {% if attachments.is_empty() %}
+                        <div class="empty-state">
+                            <strong>No attachments</strong>
+                            The client submitted diagnostics only.
+                        </div>
+                    {% else %}
+                        {% for attachment in attachments %}
+                            <article class="attachment">
+                                <p>
+                                    <a class="primary-link" href="/attachments/{{ attachment.id }}">
+                                        {{ attachment.name }}
+                                    </a>
+                                    <span class="quiet">
+                                        {{ attachment.media_type }} · {{ attachment.size }} bytes
+                                    </span>
+                                </p>
+                                {% if attachment.is_png %}
+                                    <details>
+                                        <summary>Preview image</summary>
+                                        <img
+                                            loading="lazy"
+                                            src="/attachments/{{ attachment.id }}"
+                                            alt="Report attachment"
+                                        >
+                                    </details>
+                                {% endif %}
+                            </article>
+                        {% endfor %}
+                    {% endif %}
+                </div>
+            </section>
+
+            <section class="card" aria-labelledby="history-title">
+                <div class="card-header">
+                    <h2 id="history-title">Activity</h2>
+                    <p>Recorded actions</p>
+                </div>
+                <div class="card-body">
+                    {% if events.is_empty() %}
+                        <div class="empty-state">
+                            <strong>No activity yet</strong>
+                            Actions taken on this report will appear here.
+                        </div>
+                    {% else %}
+                        <ol class="history">
+                            {% for event in events %}
+                                <li>
+                                    <strong>{{ event.action }}</strong><br>
+                                    {{ event.created_at }} · {{ event.actor }}<br>
+                                    <code>{{ event.details }}</code>
+                                </li>
+                            {% endfor %}
+                        </ol>
+                    {% endif %}
+                </div>
+            </section>
+        </div>
+
+        <aside class="card sticky-card action-card" aria-labelledby="actions-title">
+            <div class="card-header">
+                <h2 id="actions-title">Actions</h2>
+                <span class="badge badge-neutral">Restricted</span>
+            </div>
+            <div class="card-body">
+                <section class="action-group">
+                    <h3>Assign to issue</h3>
+                    <p>Move this report out of triage by grouping it with a tracked issue.</p>
+                    <form method="post" action="/reports/assign">
+                        <input
+                            type="hidden"
+                            name="csrf"
+                            value="{{ navigation.as_ref().unwrap().csrf_token }}"
+                        >
+                        <input type="hidden" name="report_ids" value="{{ report.id }}">
+                        <label>
+                            Issue
+                            <select name="issue_id">
+                                <option value="">Leave in triage</option>
+                                {% for issue in issues %}
+                                    <option
+                                        value="{{ issue.id }}"
+                                        {% if issue.is_selected %}selected{% endif %}
+                                    >
+                                        {{ issue.title }}
+                                    </option>
+                                {% endfor %}
+                            </select>
+                        </label>
+                        <button type="submit">Save assignment</button>
+                    </form>
+                </section>
+
+                <section class="action-group">
+                    <details>
+                        <summary>Create a new issue from this report</summary>
+                        <p>Create an internal issue and assign this report to it immediately.</p>
+                        <form method="post" action="/issues">
+                            <input
+                                type="hidden"
+                                name="csrf"
+                                value="{{ navigation.as_ref().unwrap().csrf_token }}"
+                            >
+                            <input type="hidden" name="report_ids" value="{{ report.id }}">
+                            <label>
+                                Title
+                                <input name="title" maxlength="256" required>
+                            </label>
+                            <label>
+                                Description
+                                <textarea name="description" rows="6"></textarea>
+                            </label>
+                            <button type="submit">Create and assign</button>
+                        </form>
+                    </details>
+                </section>
+
+                <section class="danger-zone" aria-labelledby="source-action-title">
+                    <h3 id="source-action-title">Submission source</h3>
+
+                    {% if report.has_submission_source %}
+                        {% if report.submission_source_is_blocked %}
+                            <div class="source-status">IP is blocked indefinitely</div>
+                            <p>
+                                Requests from this source receive a rate-limit response before
+                                a challenge is issued.
+                            </p>
+                            <form method="post" action="/reports/{{ report.id }}/unblock-ip">
+                                <input
+                                    type="hidden"
+                                    name="csrf"
+                                    value="{{ navigation.as_ref().unwrap().csrf_token }}"
+                                >
+                                <button class="button-secondary" type="submit">Unblock IP</button>
+                            </form>
+                        {% else %}
+                            <p>
+                                Permanently rate-limit the source of this report. The server stores
+                                a keyed identifier and never stores or reveals the raw IP address.
+                            </p>
+                            <form method="post" action="/reports/{{ report.id }}/block-ip">
+                                <input
+                                    type="hidden"
+                                    name="csrf"
+                                    value="{{ navigation.as_ref().unwrap().csrf_token }}"
+                                >
+                                <button class="button-danger" type="submit">Block IP</button>
+                            </form>
+                        {% endif %}
+                    {% else %}
+                        <p>This report predates submission-source tracking and cannot be blocked.</p>
+                    {% endif %}
+                </section>
+            </div>
+        </aside>
+    </div>
+{% endblock %}

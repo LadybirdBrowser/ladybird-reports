@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+
+{% block title %}Issues{% endblock %}
+
+{% block content %}
+    <header class="page-header">
+        <div>
+            <p class="eyebrow">Report groups</p>
+            <h1>Issues</h1>
+            <p class="page-summary">
+                Track groups of related reports and connect them to Ladybird issues on GitHub.
+            </p>
+        </div>
+    </header>
+
+    <div class="issue-layout">
+        <section class="card" aria-labelledby="issue-list-title">
+            <div class="card-header">
+                <h2 id="issue-list-title">Tracked issues</h2>
+                <form class="inline-form" method="get">
+                    <label class="checkbox-label">
+                        <input
+                            type="checkbox"
+                            name="resolved"
+                            value="true"
+                            {% if include_resolved %}checked{% endif %}
+                        >
+                        Include resolved
+                    </label>
+                    <button class="button-secondary" type="submit">Apply</button>
+                </form>
+            </div>
+
+            {% if issues.is_empty() %}
+                <div class="empty-state">
+                    <strong>No issues yet</strong>
+                    Create one here or directly from a report.
+                </div>
+            {% else %}
+                <div class="table-scroll">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Issue</th>
+                                <th>Reports</th>
+                                <th>GitHub</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for issue in issues %}
+                                <tr>
+                                    <td>
+                                        <a class="primary-link" href="/issues/{{ issue.id }}">
+                                            {{ issue.title }}
+                                        </a>
+                                    </td>
+                                    <td>{{ issue.report_count }}</td>
+                                    <td>
+                                        {% if let Some(number) = issue.github_number %}
+                                            <span class="badge badge-neutral">#{{ number }}</span>
+                                        {% else %}
+                                            <span class="quiet">Not linked</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% if issue.is_resolved %}
+                                            <span class="badge badge-success">Resolved</span>
+                                        {% else %}
+                                            <span class="badge badge-triage">Open</span>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            {% endif %}
+        </section>
+
+        <aside class="card sticky-card" aria-labelledby="new-issue-title">
+            <div class="card-header">
+                <h2 id="new-issue-title">Create issue</h2>
+            </div>
+            <form class="card-body" method="post" action="/issues">
+                <input
+                    type="hidden"
+                    name="csrf"
+                    value="{{ navigation.as_ref().unwrap().csrf_token }}"
+                >
+                <label>
+                    Title
+                    <input name="title" maxlength="256" required>
+                </label>
+                <label>
+                    Description
+                    <textarea name="description" rows="7"></textarea>
+                </label>
+                <label>
+                    Report IDs
+                    <textarea
+                        class="monospace"
+                        name="report_ids"
+                        rows="3"
+                        placeholder="One UUID per line"
+                    ></textarea>
+                </label>
+                <button type="submit">Create issue</button>
+            </form>
+        </aside>
+    </div>
+{% endblock %}

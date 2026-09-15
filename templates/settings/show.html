@@ -1,0 +1,166 @@
+{% extends "base.html" %}
+
+{% block title %}Settings{% endblock %}
+
+{% block content %}
+    <header class="page-header">
+        <div>
+            <p class="eyebrow">Service configuration</p>
+            <h1>Settings</h1>
+            <p class="page-summary">
+                Tune runtime limits and define how submitted fields appear in reports.
+                Compiled safety ceilings still apply.
+            </p>
+        </div>
+        <span class="badge badge-neutral">Revision {{ revision }}</span>
+    </header>
+
+    <div class="settings-grid">
+        <section class="card" aria-labelledby="runtime-configuration-title">
+            <div class="card-header">
+                <h2 id="runtime-configuration-title">Runtime configuration</h2>
+                <p>Updated {{ updated_at }}</p>
+            </div>
+            <form class="card-body" method="post" action="/settings">
+                <input
+                    type="hidden"
+                    name="csrf"
+                    value="{{ navigation.as_ref().unwrap().csrf_token }}"
+                >
+                <input type="hidden" name="revision" value="{{ revision }}">
+                <label>
+                    Configuration JSON
+                    <textarea
+                        class="code-editor"
+                        name="configuration"
+                        rows="34"
+                        spellcheck="false"
+                    >{{ configuration }}</textarea>
+                </label>
+                <p class="form-note">
+                    Saving validates the complete document and rejects stale revisions.
+                </p>
+                <button type="submit">Validate and save</button>
+            </form>
+        </section>
+
+        <aside class="card sticky-card" aria-labelledby="field-definition-title">
+            <div class="card-header">
+                <h2 id="field-definition-title">Field definition</h2>
+            </div>
+            <form class="card-body" method="post" action="/settings/fields">
+                <input
+                    type="hidden"
+                    name="csrf"
+                    value="{{ navigation.as_ref().unwrap().csrf_token }}"
+                >
+                <p class="form-note">
+                    Submissions may contain unknown fields. Add a definition to give a field a
+                    stable label and type. New fields are placed at the end of the list.
+                </p>
+                <label>
+                    Key
+                    <input name="key" maxlength="64" required>
+                </label>
+                <label>
+                    Label
+                    <input name="label" maxlength="128" required>
+                </label>
+                <label>
+                    Type
+                    <select name="kind">
+                        <option value="text">Text</option>
+                        <option value="multiline">Multiline text</option>
+                        <option value="number">Number</option>
+                        <option value="boolean">Boolean</option>
+                        <option value="attachment">Attachment</option>
+                    </select>
+                </label>
+                <button type="submit">Save field definition</button>
+            </form>
+        </aside>
+    </div>
+
+    <form
+        class="card settings-table"
+        method="post"
+        action="/settings/fields/order"
+        data-field-order-form
+        aria-labelledby="recognized-fields-title"
+    >
+        <input
+            type="hidden"
+            name="csrf"
+            value="{{ navigation.as_ref().unwrap().csrf_token }}"
+        >
+        <input
+            type="hidden"
+            name="keys"
+            value="{% for field in fields %}{{ field.key }}{% if !loop.last %},{% endif %}{% endfor %}"
+            data-field-order-input
+        >
+        <div class="card-header">
+            <div>
+                <h2 id="recognized-fields-title">Recognized fields</h2>
+                <p>Drag rows into their display order.</p>
+            </div>
+            <span class="badge badge-neutral">{{ fields.len() }}</span>
+        </div>
+        <div class="table-scroll">
+            <table class="field-order-table">
+                <thead>
+                    <tr>
+                        <th>Order</th>
+                        <th>Key</th>
+                        <th>Label</th>
+                        <th>Type</th>
+                    </tr>
+                </thead>
+                <tbody data-field-order-list>
+                    {% for field in fields %}
+                        <tr
+                            draggable="true"
+                            tabindex="-1"
+                            data-field-row
+                            data-field-key="{{ field.key }}"
+                        >
+                            <td class="reorder-cell">
+                                <span class="drag-handle" draggable="true" aria-hidden="true">⠿</span>
+                                <span class="visually-hidden">Drag {{ field.label }}</span>
+                                <span class="reorder-buttons">
+                                    <button
+                                        class="reorder-button"
+                                        type="button"
+                                        data-move="up"
+                                        aria-label="Move {{ field.label }} up"
+                                        {% if loop.first %}disabled{% endif %}
+                                    >↑</button>
+                                    <button
+                                        class="reorder-button"
+                                        type="button"
+                                        data-move="down"
+                                        aria-label="Move {{ field.label }} down"
+                                        {% if loop.last %}disabled{% endif %}
+                                    >↓</button>
+                                </span>
+                            </td>
+                            <td><code>{{ field.key }}</code></td>
+                            <td>{{ field.label }}</td>
+                            <td><span class="badge badge-neutral">{{ field.kind }}</span></td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <div class="field-order-footer">
+            <p class="form-note" data-field-order-status aria-live="polite">
+                Order changes are saved when you submit this list.
+            </p>
+            <button type="submit">Save field order</button>
+        </div>
+    </form>
+{% endblock %}
+
+{% block scripts %}
+    <script src="/assets/application.js" defer></script>
+{% endblock %}

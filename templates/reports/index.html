@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+
+{% block title %}Reports{% endblock %}
+
+{% block content %}
+    <header class="page-header">
+        <div>
+            <p class="eyebrow">Incoming diagnostics</p>
+            <h1>Reports</h1>
+            <p class="page-summary">
+                Review incoming diagnostics and group matching reports into issues.
+                Assigned reports are hidden from the default view.
+            </p>
+        </div>
+    </header>
+
+    <section class="filter-panel" aria-label="Report filters">
+        <form class="filters" method="get">
+            <label>
+                State
+                <select name="state">
+                    <option value="triage"{% if state == "triage" %} selected{% endif %}>Triage</option>
+                    <option value="assigned"{% if state == "assigned" %} selected{% endif %}>Assigned</option>
+                    <option value="all"{% if state == "all" %} selected{% endif %}>All reports</option>
+                </select>
+            </label>
+
+            <label>
+                Build
+                <input name="build" value="{{ build }}" placeholder="Exact build">
+            </label>
+            <label>
+                Platform
+                <input name="platform" value="{{ platform }}" placeholder="macOS, Linux…">
+            </label>
+            <label>
+                Kind
+                <input name="kind" value="{{ kind }}" placeholder="web_compat">
+            </label>
+            <button type="submit">Apply filters</button>
+        </form>
+    </section>
+
+    <section class="card" aria-labelledby="report-list-title">
+        <div class="card-header">
+            <h2 id="report-list-title">Newest matching reports</h2>
+            <p>Up to 100 results</p>
+        </div>
+
+        {% if reports.is_empty() %}
+            <div class="empty-state">
+                <strong>No matching reports</strong>
+                New reports that match these filters will appear here.
+            </div>
+        {% else %}
+            <div class="table-scroll">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Report</th>
+                            <th>Version and build</th>
+                            <th>State</th>
+                            <th>Received</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for report in reports %}
+                            <tr>
+                                <td>
+                                    <a class="primary-link monospace" href="/reports/{{ report.id }}">
+                                        {{ report.id }}
+                                    </a>
+                                </td>
+                                <td>
+                                    <strong>{{ report.client_version }}</strong><br>
+                                    <span class="quiet">{{ report.build }}</span>
+                                </td>
+                                <td>
+                                    {% if report.is_assigned %}
+                                        <span class="badge badge-assigned">Assigned</span>
+                                    {% else %}
+                                        <span class="badge badge-triage">Needs triage</span>
+                                    {% endif %}
+                                </td>
+                                <td class="quiet">{{ report.created_at }}</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% endif %}
+    </section>
+
+    {% if let Some(next_page) = next_page %}
+        <p class="button-row"><a class="button button-secondary" href="{{ next_page }}">Older reports</a></p>
+    {% endif %}
+{% endblock %}

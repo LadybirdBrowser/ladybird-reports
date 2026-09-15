@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+
+{% block title %}Create GitHub issue{% endblock %}
+
+{% block content %}
+    <header class="page-header">
+        <div>
+            <p class="eyebrow">Publish to GitHub</p>
+            <h1>Create a GitHub issue</h1>
+            <p class="page-summary">
+                Review the exact text below. GitHub will attribute the issue to your signed-in
+                account and the reporting service will link it automatically.
+            </p>
+        </div>
+    </header>
+
+    <section class="card narrow-card" aria-labelledby="github-content-title">
+        <div class="card-header">
+            <h2 id="github-content-title">Issue content</h2>
+            <span class="badge badge-neutral">LadybirdBrowser/ladybird</span>
+        </div>
+        <form class="card-body" method="post" action="/issues/{{ issue_id }}/github/publish">
+            <input
+                type="hidden"
+                name="csrf"
+                value="{{ navigation.as_ref().unwrap().csrf_token }}"
+            >
+            <label>
+                Title
+                <input name="title" value="{{ title }}" maxlength="256" required>
+            </label>
+            <label>
+                Body
+                <textarea class="code-editor" name="body" rows="18">{{ body }}</textarea>
+            </label>
+            <div class="button-row">
+                <button type="submit">Create GitHub issue</button>
+                <a class="button button-secondary" href="/issues/{{ issue_id }}">Cancel</a>
+            </div>
+        </form>
+    </section>
+{% endblock %}

@@ -1,0 +1,27 @@
+# Threat model
+
+The anonymous API is hostile input. It must remain bounded in request size, decoded
+image size, field count, processing time, storage use, request rate, and concurrent
+uploads. Submitted content is never written to logs or interpreted as HTML.
+
+Proof of work raises the cost of bulk submissions but does not establish authenticity.
+IP rate limits and global capacity limits remain necessary.
+
+The server HMACs normalized client addresses before storing or logging any identifier
+derived from them. Reports retain that keyed identifier so an administrator can impose an
+indefinite rate limit from the report action panel. The raw address cannot be recovered
+from the stored value. Rotating `CLIENT_ADDRESS_HMAC_KEY` intentionally breaks matching
+against earlier blocks, so the key must remain stable during normal operation.
+
+The ingestion database role cannot read report bodies, attachments, sessions, audit
+events, or GitHub tokens. It can execute narrowly scoped functions for challenges,
+rate limits, upload leases, idempotency checks, and report acceptance.
+
+Management access requires GitHub authentication and an authorized account. The
+GitHub App uses a user access token with read-only organization membership and
+read-write issue permissions; it has no source-code write permission. State-changing
+forms require a CSRF token. GitHub issue creation always presents an editable preview,
+and only the selected text is published.
+
+Secrets are supplied at runtime by Coolify. They are absent from the source tree,
+container build arguments, image environment, and logs.

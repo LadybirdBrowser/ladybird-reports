@@ -1,0 +1,204 @@
+{% extends "base.html" %}
+
+{% block title %}{{ issue.title }}{% endblock %}
+
+{% block content %}
+    <header class="page-header">
+        <div>
+            <p class="eyebrow">Tracked issue</p>
+            <h1>{{ issue.title }}</h1>
+            <p class="page-summary monospace report-id">{{ issue.id }}</p>
+        </div>
+        {% if issue.is_resolved %}
+            <span class="badge badge-success">Resolved</span>
+        {% else %}
+            <span class="badge badge-triage">Open</span>
+        {% endif %}
+    </header>
+
+    <div class="issue-layout">
+        <div class="stack">
+            <section class="card" aria-labelledby="issue-details-title">
+                <div class="card-header">
+                    <h2 id="issue-details-title">Issue details</h2>
+                    <p>Internal triage record</p>
+                </div>
+                <form class="card-body" method="post" action="/issues/{{ issue.id }}">
+                    <input
+                        type="hidden"
+                        name="csrf"
+                        value="{{ navigation.as_ref().unwrap().csrf_token }}"
+                    >
+                    <label>
+                        Title
+                        <input name="title" value="{{ issue.title }}" maxlength="256" required>
+                    </label>
+                    <label>
+                        Description
+                        <textarea name="description" rows="10">{{ issue.description }}</textarea>
+                    </label>
+                    <label class="checkbox-label">
+                        <input
+                            type="checkbox"
+                            name="resolved"
+                            value="true"
+                            {% if issue.is_resolved %}checked{% endif %}
+                        >
+                        Mark this issue as resolved
+                    </label>
+                    <button type="submit">Save issue</button>
+                </form>
+            </section>
+
+            <section class="card" aria-labelledby="assigned-reports-title">
+                <div class="card-header">
+                    <h2 id="assigned-reports-title">Assigned reports</h2>
+                    <span class="badge badge-neutral">{{ reports.len() }}</span>
+                </div>
+                {% if reports.is_empty() %}
+                    <div class="empty-state">
+                        <strong>No assigned reports</strong>
+                        Reports grouped into this issue will appear here.
+                    </div>
+                {% else %}
+                    <div class="table-scroll">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Report</th>
+                                    <th>Version</th>
+                                    <th>Received</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for report in reports %}
+                                    <tr>
+                                        <td>
+                                            <a
+                                                class="primary-link monospace"
+                                                href="/reports/{{ report.id }}"
+                                            >
+                                                {{ report.id }}
+                                            </a>
+                                        </td>
+                                        <td>{{ report.client_version }}</td>
+                                        <td class="quiet">{{ report.created_at }}</td>
+                                    </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                {% endif %}
+            </section>
+
+            <section class="card" aria-labelledby="issue-history-title">
+                <div class="card-header">
+                    <h2 id="issue-history-title">Activity</h2>
+                    <p>Recorded actions</p>
+                </div>
+                <div class="card-body">
+                    {% if events.is_empty() %}
+                        <div class="empty-state">
+                            <strong>No activity yet</strong>
+                            Changes to this issue will appear here.
+                        </div>
+                    {% else %}
+                        <ol class="history">
+                            {% for event in events %}
+                                <li>
+                                    <strong>{{ event.action }}</strong><br>
+                                    {{ event.created_at }} · {{ event.actor }}<br>
+                                    <code>{{ event.details }}</code>
+                                </li>
+                            {% endfor %}
+                        </ol>
+                    {% endif %}
+                </div>
+            </section>
+        </div>
+
+        <aside class="stack sticky-stack" aria-label="Issue actions">
+            <section class="card">
+                <div class="card-header">
+                    <h2>GitHub</h2>
+                </div>
+                <div class="card-body">
+                    {% if let Some(url) = issue.github_url %}
+                        <p class="form-note">This issue is linked to Ladybird on GitHub.</p>
+                        <a class="button button-secondary" href="{{ url }}">
+                            Open GitHub issue #{{ issue.github_number.unwrap() }}
+                        </a>
+                    {% else %}
+                        {% if issue.github_publish_state.as_deref() == Some("uncertain") %}
+                            <div class="warning-panel">
+                                <strong>GitHub creation needs review</strong>
+                                <p>
+                                    Check the repository before retrying. The previous request may
+                                    have reached GitHub even though its response was lost.
+                                </p>
+                                <form
+                                    method="post"
+                                    action="/issues/{{ issue.id }}/github/clear-uncertain"
+                                >
+                                    <input
+                                        type="hidden"
+                                        name="csrf"
+                                        value="{{ navigation.as_ref().unwrap().csrf_token }}"
+                                    >
+                                    <button class="button-secondary" type="submit">
+                                        Confirm no issue was created
+                                    </button>
+                                </form>
+                            </div>
+                        {% endif %}
+
+                        <form method="post" action="/issues/{{ issue.id }}/github/link">
+                            <input
+                                type="hidden"
+                                name="csrf"
+                                value="{{ navigation.as_ref().unwrap().csrf_token }}"
+                            >
+                            <label>
+                                Existing issue number
+                                <input type="number" min="1" name="number" required>
+                            </label>
+                            <button class="button-secondary" type="submit">Link issue</button>
+                        </form>
+
+                        {% if issue.github_publish_state.is_none() %}
+                            <hr class="section-divider">
+                            <a class="button" href="/issues/{{ issue.id }}/github/preview">
+                                Create a GitHub issue
+                            </a>
+                        {% endif %}
+                    {% endif %}
+                </div>
+            </section>
+
+            <section class="card">
+                <div class="card-header">
+                    <h2>Merge issue</h2>
+                </div>
+                <form class="card-body" method="post" action="/issues/{{ issue.id }}/merge">
+                    <input
+                        type="hidden"
+                        name="csrf"
+                        value="{{ navigation.as_ref().unwrap().csrf_token }}"
+                    >
+                    <p class="form-note">
+                        Move every assigned report into another issue and close this group.
+                    </p>
+                    <label>
+                        Destination issue
+                        <select name="destination" required>
+                            {% for destination in merge_destinations %}
+                                <option value="{{ destination.id }}">{{ destination.title }}</option>
+                            {% endfor %}
+                        </select>
+                    </label>
+                    <button class="button-secondary" type="submit">Merge this issue</button>
+                </form>
+            </section>
+        </aside>
+    </div>
+{% endblock %}

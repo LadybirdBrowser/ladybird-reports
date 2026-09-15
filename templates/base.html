@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>{% block title %}Ladybird Reports{% endblock %} · Ladybird Reports</title>
+        <link rel="stylesheet" href="/assets/application.css">
+    </head>
+    <body>
+        <header class="site-header">
+            <div class="header-inner">
+                <a class="brand" href="/" aria-label="Ladybird Reports home">
+                    <span class="brand-mark" aria-hidden="true">
+                        <span></span>
+                    </span>
+                    <span class="brand-copy">
+                        <strong>Ladybird</strong>
+                        <small>Reports</small>
+                    </span>
+                </a>
+
+                {% if let Some(navigation) = navigation %}
+                    <nav aria-label="Main navigation">
+                        <a href="/">Reports</a>
+                        <a href="/issues">Issues</a>
+                        <a href="/settings">Settings</a>
+                        <a href="/operations">Audit log</a>
+                    </nav>
+
+                    <div class="account">
+                        <span class="account-indicator" aria-hidden="true"></span>
+                        <span>{{ navigation.login }}</span>
+                        <form method="post" action="/logout">
+                            <input type="hidden" name="csrf" value="{{ navigation.csrf_token }}">
+                            <button class="button-quiet" type="submit">Sign out</button>
+                        </form>
+                    </div>
+                {% endif %}
+            </div>
+        </header>
+
+        {% if let Some(navigation) = navigation %}
+            {% if let Some(database_url) = navigation.bootstrap_reporting_database_url %}
+                <aside class="setup-banner" aria-labelledby="setup-title">
+                    <div class="notice-icon" aria-hidden="true">!</div>
+                    <div class="notice-content">
+                        <strong id="setup-title">Reporting database setup is incomplete.</strong>
+                        <p>
+                            Add this secret as <code>REPORTING_DATABASE_URL</code> to the public
+                            API and admin services, then restart both services.
+                        </p>
+                        <textarea
+                            readonly
+                            rows="3"
+                            aria-label="Generated reporting database URL"
+                        >{{ database_url }}</textarea>
+                    </div>
+                </aside>
+            {% endif %}
+        {% endif %}
+
+        <main class="page-shell">
+            {% block content %}{% endblock %}
+        </main>
+
+        <footer class="site-footer">
+            <span>Ladybird Reports</span>
+            <span>Diagnostic triage</span>
+        </footer>
+
+        {% block scripts %}{% endblock %}
+    </body>
+</html>
