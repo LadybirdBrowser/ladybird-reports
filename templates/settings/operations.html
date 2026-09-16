@@ -31,6 +31,7 @@
                             <th>Time</th>
                             <th>Actor</th>
                             <th>Action</th>
+                            <th>Target</th>
                             <th>Details</th>
                         </tr>
                     </thead>
@@ -40,6 +41,15 @@
                                 <td class="quiet">{{ event.created_at }}</td>
                                 <td>{{ event.actor }}</td>
                                 <td><span class="badge badge-neutral">{{ event.action }}</span></td>
+                                <td>
+                                    {% if let Some(url) = event.target_url %}
+                                        <a href="{{ url }}" title="Open {{ event.target_label.as_ref().unwrap() }}">
+                                            {{ event.target_label.as_ref().unwrap() }}
+                                        </a>
+                                    {% else if let Some(label) = event.target_label %}
+                                        <span class="quiet">{{ label }}</span>
+                                    {% endif %}
+                                </td>
                                 <td><code>{{ event.details }}</code></td>
                             </tr>
                         {% endfor %}

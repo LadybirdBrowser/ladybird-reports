@@ -344,6 +344,11 @@ impl AdminDatabase {
         .await?
         .ok_or(AppError::NotFound("Report not found"))?;
 
+        if previous_issue == Some(issue_id) {
+            transaction.commit().await?;
+            return Ok(());
+        }
+
         sqlx::query(
             "UPDATE reports
              SET issue_id = $2, assigned_at = now(), updated_at = now()
@@ -356,7 +361,7 @@ impl AdminDatabase {
 
         sqlx::query(
             "INSERT INTO audit_events (actor, action, entity_id, details)
-             VALUES ($1, 'report.assignment', $2, $3)",
+             VALUES ($1, 'report.update_issue', $2, $3)",
         )
         .bind(actor)
         .bind(report_id.0)
@@ -410,16 +415,16 @@ impl AdminDatabase {
         .await?;
 
         sqlx::query(
-            "INSERT INTO audit_events (actor, action, entity_id)
-             VALUES ($1, $2, $3)",
+            "INSERT INTO audit_events (actor, action, entity_id, details)
+             VALUES ($1, 'report.update_state', $2, $3)",
         )
         .bind(actor)
-        .bind(if confirmed {
-            "report.confirmed"
-        } else {
-            "report.returned_to_triage"
-        })
         .bind(report_id.0)
+        .bind(if confirmed {
+            serde_json::json!({ "from": "triage", "to": "confirmed" })
+        } else {
+            serde_json::json!({ "from": "confirmed", "to": "triage" })
+        })
         .execute(&mut *transaction)
         .await?;
 
@@ -446,8 +451,13 @@ impl AdminDatabase {
         }
 
         sqlx::query(
-            "INSERT INTO audit_events (actor, action, entity_id)
-             VALUES ($1, 'report.hidden', $2)",
+            "INSERT INTO audit_events (actor, action, entity_id, details)
+             VALUES (
+                $1,
+                'report.update_visibility',
+                $2,
+                jsonb_build_object('from', 'visible', 'to', 'hidden')
+             )",
         )
         .bind(actor)
         .bind(report_id.0)
@@ -575,13 +585,41 @@ impl AdminDatabase {
             Vec::new()
         };
 
+        if !removed_report_ids.is_empty() {
+            let hidden_ids = removed_report_ids
+                .iter()
+                .map(|report_id| report_id.0)
+                .collect::<Vec<_>>();
+            sqlx::query(
+                "INSERT INTO audit_events (actor, action, entity_id, details)
+                 SELECT
+                    $1,
+                    'report.update_visibility',
+                    hidden.id,
+                    jsonb_build_object(
+                        'from', 'visible',
+                        'to', 'hidden',
+                        'reason', 'source_blocked'
+                    )
+                 FROM unnest($2::uuid[]) AS hidden(id)",
+            )
+            .bind(actor)
+            .bind(hidden_ids)
+            .execute(&mut *transaction)
+            .await?;
+        }
+
         sqlx::query(
             "INSERT INTO audit_events (actor, action, entity_id, details)
              VALUES (
                 $1,
-                'report.source_blocked',
+                'submission_source.update_state',
                 $2,
-                jsonb_build_object('triage_reports_removed', $3::bigint)
+                jsonb_build_object(
+                    'from', 'allowed',
+                    'to', 'blocked',
+                    'triage_reports_hidden', $3::bigint
+                )
              )",
         )
         .bind(actor)
@@ -618,8 +656,13 @@ impl AdminDatabase {
         }
 
         sqlx::query(
-            "INSERT INTO audit_events (actor, action, entity_id)
-             VALUES ($1, 'report.source_unblocked', $2)",
+            "INSERT INTO audit_events (actor, action, entity_id, details)
+             VALUES (
+                $1,
+                'submission_source.update_state',
+                $2,
+                jsonb_build_object('from', 'blocked', 'to', 'allowed')
+             )",
         )
         .bind(actor)
         .bind(report_id.0)
@@ -635,6 +678,7 @@ impl AdminDatabase {
             "SELECT
                 audit_events.action,
                 maintainers.login AS actor_login,
+                audit_events.entity_id,
                 audit_events.details,
                 audit_events.created_at
              FROM audit_events
@@ -652,6 +696,7 @@ impl AdminDatabase {
             .map(|row| AuditEvent {
                 action: row.get("action"),
                 actor_login: row.get("actor_login"),
+                entity_id: row.get("entity_id"),
                 details: row.get("details"),
                 created_at: row.get("created_at"),
             })

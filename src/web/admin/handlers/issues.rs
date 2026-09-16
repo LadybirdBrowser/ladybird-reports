@@ -145,7 +145,7 @@ pub async fn create_from_report(
         .await?;
 
     tracing::info!(
-        event = "issue.created",
+        event = "issue.create",
         issue_id = %assignment.issue_id,
         %report_id,
         github_number = github_issue.number,
@@ -245,6 +245,12 @@ pub async fn update(
         )
         .await?;
 
+    tracing::info!(
+        event = "issue.update",
+        %issue_id,
+        actor = session.login,
+    );
+
     Ok(Redirect::to(&format!("/issues/{issue_id}")))
 }
 
@@ -268,7 +274,7 @@ pub async fn merge(
         .await?;
 
     tracing::info!(
-        event = "issue.merged",
+        event = "issue.merge",
         source_issue_id = %issue_id,
         destination_issue_id = %form.destination,
         actor = session.login,

@@ -1,5 +1,6 @@
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
 
+use serde_json::Value;
 use sqlx::Row;
 
 use crate::{
@@ -45,6 +46,17 @@ impl AdminDatabase {
         let value = serde_json::to_value(configuration)
             .map_err(|error| AppError::Internal(error.into()))?;
         let mut transaction = self.pool.begin().await?;
+        let previous: Value = sqlx::query_scalar(
+            "SELECT value FROM runtime_configuration WHERE singleton = true FOR UPDATE",
+        )
+        .fetch_one(&mut *transaction)
+        .await?;
+        let changed = changed_configuration_paths(&previous, &value);
+
+        if changed.is_empty() {
+            transaction.commit().await?;
+            return Ok(());
+        }
 
         sqlx::query(
             "UPDATE runtime_configuration
@@ -57,9 +69,10 @@ impl AdminDatabase {
 
         sqlx::query(
             "INSERT INTO audit_events (actor, action, details)
-             VALUES ($1, 'configuration.updated', '{}')",
+             VALUES ($1, 'configuration.update', $2)",
         )
         .bind(actor)
+        .bind(serde_json::json!({ "changed": changed }))
         .execute(&mut *transaction)
         .await?;
 
@@ -101,6 +114,24 @@ impl AdminDatabase {
             .execute(&mut *transaction)
             .await?;
 
+        let previous =
+            sqlx::query("SELECT label, kind FROM field_definitions WHERE key = $1 FOR UPDATE")
+                .bind(key)
+                .fetch_optional(&mut *transaction)
+                .await?;
+        let old = previous.as_ref().map(|row| {
+            serde_json::json!({
+                "label": row.get::<String, _>("label"),
+                "kind": row.get::<String, _>("kind"),
+            })
+        });
+        let new = serde_json::json!({ "label": label, "kind": kind.as_str() });
+
+        if old.as_ref() == Some(&new) {
+            transaction.commit().await?;
+            return Ok(());
+        }
+
         sqlx::query(
             "INSERT INTO field_definitions (key, label, kind, position)
              SELECT $1, $2, $3, COALESCE(MAX(position) + 10, 0)
@@ -117,10 +148,15 @@ impl AdminDatabase {
 
         sqlx::query(
             "INSERT INTO audit_events (actor, action, details)
-             VALUES ($1, 'field_definition.updated', $2)",
+             VALUES ($1, $2, $3)",
         )
         .bind(actor)
-        .bind(serde_json::json!({ "key": key }))
+        .bind(if old.is_some() {
+            "field_definition.update"
+        } else {
+            "field_definition.create"
+        })
+        .bind(serde_json::json!({ "key": key, "from": old, "to": new }))
         .execute(&mut *transaction)
         .await?;
 
@@ -147,17 +183,22 @@ impl AdminDatabase {
             .execute(&mut *transaction)
             .await?;
 
-        let existing_keys = sqlx::query_scalar::<_, String>(
-            "SELECT key FROM field_definitions ORDER BY key FOR UPDATE",
+        let existing_order = sqlx::query_scalar::<_, String>(
+            "SELECT key FROM field_definitions ORDER BY position, key FOR UPDATE",
         )
         .fetch_all(&mut *transaction)
         .await?;
-        let existing_keys = existing_keys.iter().collect::<HashSet<_>>();
+        let existing_keys = existing_order.iter().collect::<HashSet<_>>();
 
         if unique_keys != existing_keys {
             return Err(AppError::Conflict(
                 "Field definitions changed while they were being reordered",
             ));
+        }
+
+        if keys == existing_order {
+            transaction.commit().await?;
+            return Ok(());
         }
 
         sqlx::query(
@@ -175,10 +216,13 @@ impl AdminDatabase {
 
         sqlx::query(
             "INSERT INTO audit_events (actor, action, details)
-             VALUES ($1, 'field_definitions.reordered', $2)",
+             VALUES ($1, 'field_definitions.reorder', $2)",
         )
         .bind(actor)
-        .bind(serde_json::json!({ "keys": keys }))
+        .bind(serde_json::json!({
+            "from": existing_order,
+            "to": keys,
+        }))
         .execute(&mut *transaction)
         .await?;
 
@@ -191,6 +235,7 @@ impl AdminDatabase {
             "SELECT
                 audit_events.action,
                 maintainers.login AS actor_login,
+                audit_events.entity_id,
                 audit_events.details,
                 audit_events.created_at
              FROM audit_events
@@ -206,11 +251,39 @@ impl AdminDatabase {
             .map(|row| super::AuditEvent {
                 action: row.get("action"),
                 actor_login: row.get("actor_login"),
+                entity_id: row.get("entity_id"),
                 details: row.get("details"),
                 created_at: row.get("created_at"),
             })
             .collect())
     }
+}
+
+fn changed_configuration_paths(previous: &Value, current: &Value) -> Vec<String> {
+    fn collect(previous: &Value, current: &Value, prefix: &str, changed: &mut Vec<String>) {
+        match (previous, current) {
+            (Value::Object(before), Value::Object(after)) => {
+                let keys = before.keys().chain(after.keys()).collect::<BTreeSet<_>>();
+                for key in keys {
+                    let path = if prefix.is_empty() {
+                        key.to_owned()
+                    } else {
+                        format!("{prefix}.{key}")
+                    };
+                    match (before.get(key), after.get(key)) {
+                        (Some(old), Some(new)) => collect(old, new, &path, changed),
+                        _ => changed.push(path),
+                    }
+                }
+            }
+            _ if previous != current => changed.push(prefix.to_owned()),
+            _ => {}
+        }
+    }
+
+    let mut changed = Vec::new();
+    collect(previous, current, "", &mut changed);
+    changed
 }
 
 fn validate_field_definition(key: &str, label: &str) -> Result<()> {
@@ -235,4 +308,28 @@ fn validate_field_key(key: &str) -> Result<()> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::changed_configuration_paths;
+
+    #[test]
+    fn configuration_audit_records_paths_without_values() {
+        let previous = json!({
+            "limits": { "report_count": 10 },
+            "discord_webhook_url": "old-secret",
+        });
+        let current = json!({
+            "limits": { "report_count": 20 },
+            "discord_webhook_url": "new-secret",
+        });
+
+        assert_eq!(
+            changed_configuration_paths(&previous, &current),
+            ["discord_webhook_url", "limits.report_count"]
+        );
+    }
 }

@@ -570,7 +570,7 @@ pub async fn assign_to_issue(
     };
 
     tracing::info!(
-        event = "report.assigned",
+        event = "report.update_issue",
         %report_id,
         %issue_id,
         actor = session.login,
@@ -612,11 +612,9 @@ pub async fn set_state(
 
     if changed {
         tracing::info!(
-            event = if confirmed {
-                "report.confirmed"
-            } else {
-                "report.returned_to_triage"
-            },
+            event = "report.update_state",
+            from = if confirmed { "triage" } else { "confirmed" },
+            to = if confirmed { "confirmed" } else { "triage" },
             %report_id,
             actor = session.login,
         );
@@ -636,7 +634,13 @@ pub async fn hide(
         .hide_report(report_id, session.github_id)
         .await?;
 
-    tracing::warn!(event = "report.hidden", %report_id, actor = session.login);
+    tracing::warn!(
+        event = "report.update_visibility",
+        %report_id,
+        from = "visible",
+        to = "hidden",
+        actor = session.login,
+    );
     Ok(Redirect::to("/"))
 }
 
@@ -660,9 +664,11 @@ pub async fn block_ip(
         .await?;
 
     tracing::warn!(
-        event = "report.source_blocked",
+        event = "submission_source.update_state",
         %report_id,
-        removed_triage_reports = outcome.removed_triage_reports,
+        from = "allowed",
+        to = "blocked",
+        triage_reports_hidden = outcome.removed_triage_reports,
         actor = session.login,
     );
 
@@ -686,8 +692,10 @@ pub async fn unblock_ip(
         .await?;
 
     tracing::warn!(
-        event = "report.source_unblocked",
+        event = "submission_source.update_state",
         %report_id,
+        from = "blocked",
+        to = "allowed",
         actor = session.login,
     );
 

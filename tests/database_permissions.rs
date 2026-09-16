@@ -600,6 +600,79 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
     .expect("count active internal issues for one GitHub issue");
     assert_eq!(active_issue_count, 1);
 
+    let created_issue_audit: serde_json::Value = sqlx::query_scalar(
+        "SELECT details
+         FROM audit_events
+         WHERE entity_id = $1 AND action = 'issue.create'",
+    )
+    .bind(created_issue.issue_id)
+    .fetch_one(&admin_pool)
+    .await
+    .expect("read issue creation audit");
+    assert_eq!(created_issue_audit["github_number"], 4813);
+    assert_eq!(
+        created_issue_audit["report_id"],
+        second_github_report.to_string()
+    );
+
+    admin_database
+        .update_issue(
+            created_issue.issue_id,
+            "New linked issue, verified",
+            "Created while assigning a report.",
+            true,
+            999,
+        )
+        .await
+        .expect("update issue with an audit event");
+    let issue_update_audit: serde_json::Value = sqlx::query_scalar(
+        "SELECT details
+         FROM audit_events
+         WHERE entity_id = $1 AND action = 'issue.update'",
+    )
+    .bind(created_issue.issue_id)
+    .fetch_one(&admin_pool)
+    .await
+    .expect("read issue update audit");
+    assert_eq!(
+        issue_update_audit["fields"],
+        serde_json::json!(["title", "resolved"])
+    );
+    assert_eq!(issue_update_audit["resolved"]["from"], false);
+    assert_eq!(issue_update_audit["resolved"]["to"], true);
+
+    admin_database
+        .merge_issue(created_issue.issue_id, issue_id, 999)
+        .await
+        .expect("merge issues with per-report audits");
+    let merged_report_audits: i64 = sqlx::query_scalar(
+        "SELECT count(*)
+         FROM audit_events
+         WHERE action = 'report.update_issue'
+            AND entity_id = ANY($1::uuid[])
+            AND details->>'from' = $2
+            AND details->>'to' = $3",
+    )
+    .bind(vec![second_github_report.0, third_github_report.0])
+    .bind(created_issue.issue_id.to_string())
+    .bind(issue_id.to_string())
+    .fetch_one(&admin_pool)
+    .await
+    .expect("count report reassignment audits from merge");
+    assert_eq!(merged_report_audits, 2);
+
+    let merge_audit: serde_json::Value = sqlx::query_scalar(
+        "SELECT details
+         FROM audit_events
+         WHERE entity_id = $1 AND action = 'issue.merge'",
+    )
+    .bind(created_issue.issue_id)
+    .fetch_one(&admin_pool)
+    .await
+    .expect("read issue merge audit");
+    assert_eq!(merge_audit["into"], issue_id.to_string());
+    assert_eq!(merge_audit["reports_moved"], 2);
+
     sqlx::query("DELETE FROM discord_report_notifications")
         .execute(&admin_pool)
         .await

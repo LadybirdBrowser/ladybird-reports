@@ -175,21 +175,39 @@ impl AdminDatabase {
 
             sqlx::query(
                 "INSERT INTO audit_events (actor, action, entity_id, details)
-                 VALUES
-                    ($1, 'issue.created', $2, '{}'::jsonb),
-                    ($1, 'issue.github_linked', $2, $3)",
+                 VALUES ($1, 'issue.create', $2, $3)",
             )
             .bind(actor)
             .bind(issue_id.0)
             .bind(serde_json::json!({
-                "number": github_number,
-                "url": github_url,
+                "github_number": github_number,
+                "github_url": github_url,
+                "report_id": report_id,
             }))
             .execute(&mut *transaction)
             .await?;
 
             (issue_id, true)
         };
+
+        let previous_issue: Option<IssueId> = sqlx::query_scalar(
+            "SELECT issue_id
+             FROM reports
+             WHERE id = $1
+                AND deleted_at IS NULL
+                AND hidden_at IS NULL
+                AND storage_state = 'ready'
+             FOR UPDATE",
+        )
+        .bind(report_id)
+        .fetch_optional(&mut *transaction)
+        .await?
+        .ok_or(AppError::NotFound("Report not found"))?;
+
+        if previous_issue == Some(issue_id) {
+            transaction.commit().await?;
+            return Ok(GithubIssueAssignment { issue_id, created });
+        }
 
         let updated = sqlx::query(
             "UPDATE reports
@@ -210,11 +228,14 @@ impl AdminDatabase {
 
         sqlx::query(
             "INSERT INTO audit_events (actor, action, entity_id, details)
-             VALUES ($1, 'report.assignment', $2, $3)",
+             VALUES ($1, 'report.update_issue', $2, $3)",
         )
         .bind(actor)
         .bind(report_id.0)
-        .bind(serde_json::json!({ "to": issue_id }))
+        .bind(serde_json::json!({
+            "from": previous_issue,
+            "to": issue_id,
+        }))
         .execute(&mut *transaction)
         .await?;
 
@@ -307,7 +328,39 @@ impl AdminDatabase {
     ) -> Result<()> {
         validate_issue_text(title, description)?;
 
-        let result = sqlx::query(
+        let mut transaction = self.pool.begin().await?;
+        let current = sqlx::query(
+            "SELECT title, description, resolved_at IS NOT NULL AS resolved
+             FROM issues
+             WHERE id = $1 AND merged_into IS NULL
+             FOR UPDATE",
+        )
+        .bind(issue_id)
+        .fetch_optional(&mut *transaction)
+        .await?
+        .ok_or(AppError::NotFound("Issue not found"))?;
+
+        let old_title: String = current.get("title");
+        let old_description: String = current.get("description");
+        let was_resolved: bool = current.get("resolved");
+        let mut changed_fields = Vec::new();
+
+        if old_title != title.trim() {
+            changed_fields.push("title");
+        }
+        if old_description != description {
+            changed_fields.push("description");
+        }
+        if was_resolved != resolved {
+            changed_fields.push("resolved");
+        }
+
+        if changed_fields.is_empty() {
+            transaction.commit().await?;
+            return Ok(());
+        }
+
+        sqlx::query(
             "UPDATE issues
              SET
                 title = $2,
@@ -324,20 +377,29 @@ impl AdminDatabase {
         .bind(title.trim())
         .bind(description)
         .bind(resolved)
-        .execute(&self.pool)
+        .execute(&mut *transaction)
         .await?;
 
-        if result.rows_affected() != 1 {
-            return Err(AppError::NotFound("Issue not found"));
+        let mut details = serde_json::json!({ "fields": changed_fields });
+        if was_resolved != resolved {
+            details["resolved"] = serde_json::json!({
+                "from": was_resolved,
+                "to": resolved,
+            });
         }
 
-        self.insert_audit_event(
-            actor,
-            "issue.updated",
-            issue_id.0,
-            serde_json::json!({ "resolved": resolved }),
+        sqlx::query(
+            "INSERT INTO audit_events (actor, action, entity_id, details)
+             VALUES ($1, 'issue.update', $2, $3)",
         )
-        .await
+        .bind(actor)
+        .bind(issue_id.0)
+        .bind(details)
+        .execute(&mut *transaction)
+        .await?;
+
+        transaction.commit().await?;
+        Ok(())
     }
 
     pub async fn merge_issue(
@@ -385,48 +447,42 @@ impl AdminDatabase {
             return Err(AppError::NotFound("Source issue not found"));
         }
 
-        sqlx::query(
-            "UPDATE reports
-             SET issue_id = $2, updated_at = now()
-             WHERE issue_id = $1",
+        let moved_reports = sqlx::query(
+            "WITH moved AS (
+                UPDATE reports
+                SET issue_id = $2, updated_at = now()
+                WHERE issue_id = $1
+                RETURNING id
+             )
+             INSERT INTO audit_events (actor, action, entity_id, details)
+             SELECT
+                $3,
+                'report.update_issue',
+                moved.id,
+                jsonb_build_object('from', $1::uuid, 'to', $2::uuid)
+             FROM moved",
         )
         .bind(source)
         .bind(destination)
+        .bind(actor)
         .execute(&mut *transaction)
-        .await?;
+        .await?
+        .rows_affected();
 
         sqlx::query(
             "INSERT INTO audit_events (actor, action, entity_id, details)
-             VALUES ($1, 'issue.merged', $2, $3)",
+             VALUES ($1, 'issue.merge', $2, $3)",
         )
         .bind(actor)
         .bind(source.0)
-        .bind(serde_json::json!({ "into": destination }))
+        .bind(serde_json::json!({
+            "into": destination,
+            "reports_moved": moved_reports,
+        }))
         .execute(&mut *transaction)
         .await?;
 
         transaction.commit().await?;
-        Ok(())
-    }
-
-    async fn insert_audit_event(
-        &self,
-        actor: i64,
-        action: &str,
-        entity_id: uuid::Uuid,
-        details: serde_json::Value,
-    ) -> Result<()> {
-        sqlx::query(
-            "INSERT INTO audit_events (actor, action, entity_id, details)
-             VALUES ($1, $2, $3, $4)",
-        )
-        .bind(actor)
-        .bind(action)
-        .bind(entity_id)
-        .bind(details)
-        .execute(&self.pool)
-        .await?;
-
         Ok(())
     }
 }

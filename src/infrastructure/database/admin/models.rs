@@ -158,6 +158,7 @@ pub struct IssueDetails {
 pub struct AuditEvent {
     pub action: String,
     pub actor_login: Option<String>,
+    pub entity_id: Option<uuid::Uuid>,
     pub details: Value,
     pub created_at: DateTime<Utc>,
 }

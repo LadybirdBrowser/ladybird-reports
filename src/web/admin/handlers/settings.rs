@@ -44,8 +44,10 @@ pub struct OperationsTemplate {
 pub struct EventView {
     action: String,
     actor: String,
+    target_label: Option<String>,
+    target_url: Option<String>,
     details: String,
-    created_at: DateTime<Utc>,
+    created_at: String,
 }
 
 pub async fn show(
@@ -107,7 +109,7 @@ pub async fn update(
         .update_configuration(&configuration, session.github_id)
         .await?;
 
-    tracing::info!(event = "configuration.updated", actor = session.login,);
+    tracing::info!(event = "configuration.update", actor = session.login,);
 
     Ok(Redirect::to("/settings"))
 }
@@ -135,7 +137,7 @@ pub async fn update_field(
         .await?;
 
     tracing::info!(
-        event = "field_definition.updated",
+        event = "field_definition.update",
         field_key = form.key,
         actor = session.login,
     );
@@ -170,7 +172,7 @@ pub async fn reorder_fields(
         .await?;
 
     tracing::info!(
-        event = "field_definitions.reordered",
+        event = "field_definitions.reorder",
         field_count = keys.len(),
         actor = session.login,
     );
@@ -187,11 +189,34 @@ pub async fn operations(
         .recent_operations()
         .await?
         .into_iter()
-        .map(|event| EventView {
-            action: event.action,
-            actor: event.actor_login.unwrap_or_else(|| "system".into()),
-            details: event.details.to_string(),
-            created_at: event.created_at,
+        .map(|event| {
+            let target = event.entity_id.map(|id| {
+                let identifier = id.to_string();
+                let suffix = &identifier[identifier.len() - 8..];
+                let is_issue = event.action.starts_with("issue.");
+                let label = if is_issue {
+                    format!("Issue ·{suffix}")
+                } else {
+                    format!("Report ·{suffix}")
+                };
+                let url = if is_issue {
+                    Some(format!("/issues/{id}"))
+                } else if event.action == "report.update_visibility" {
+                    None
+                } else {
+                    Some(format!("/reports/{id}"))
+                };
+                (label, url)
+            });
+
+            EventView {
+                action: event.action,
+                actor: event.actor_login.unwrap_or_else(|| "system".into()),
+                target_label: target.as_ref().map(|(label, _)| label.clone()),
+                target_url: target.and_then(|(_, url)| url),
+                details: event.details.to_string(),
+                created_at: event.created_at.format("%d %b %Y, %H:%M UTC").to_string(),
+            }
         })
         .collect();
 

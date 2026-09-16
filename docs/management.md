@@ -61,5 +61,8 @@ fields remain available in reports until a definition is added.
 ## Audit log
 
 The audit log records report submissions, sign-ins and sign-outs, configuration
-changes, field definition changes, source blocks, and issue actions. Anonymous
-report submission events have no maintainer actor.
+changes, field definition changes, source blocks, and issue actions. Action
+names describe the operation; details record the affected fields or state
+transition. For example, `report.update_state` includes `from` and `to` values.
+Configuration events record changed setting paths without storing their values
+again. Anonymous report submission events have no maintainer actor.

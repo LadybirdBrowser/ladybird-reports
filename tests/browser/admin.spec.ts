@@ -445,12 +445,17 @@ test.describe("authenticated management UI", () => {
     await page.goto("/operations");
 
     await expect(page.getByRole("heading", { name: "Audit log" })).toBeVisible();
-    await expect(page.getByText("field_definitions.reordered", { exact: true })).toBeVisible();
-    await expect(page.getByText("report.source_blocked", { exact: true })).toBeVisible();
-    await expect(page.getByText("report.confirmed", { exact: true })).toBeVisible();
-    await expect(page.getByText("report.returned_to_triage", { exact: true })).toBeVisible();
-    await expect(page.getByText("report.hidden", { exact: true })).toBeVisible();
-    await expect(page.getByText("issue.created", { exact: true })).toBeVisible();
+    await expect(page.getByText("field_definitions.reorder", { exact: true })).toBeVisible();
+    await expect(page.getByText("submission_source.update_state", { exact: true }))
+      .toHaveCount(2);
+    const stateChanges = page.locator("tbody tr").filter({ hasText: "report.update_state" });
+    await expect(stateChanges).toHaveCount(2);
+    await expect(stateChanges.filter({ hasText: '"from":"triage","to":"confirmed"' }))
+      .toHaveCount(1);
+    await expect(stateChanges.filter({ hasText: '"from":"confirmed","to":"triage"' }))
+      .toHaveCount(1);
+    await expect(page.getByText("report.update_visibility", { exact: true })).toBeVisible();
+    await expect(page.getByText("issue.create", { exact: true })).toBeVisible();
     await expect(page.getByText("report.submitted", { exact: true }).first()).toBeVisible();
     await expect(page.getByText("session.signed_in", { exact: true })).toBeVisible();
   });
