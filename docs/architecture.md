@@ -53,14 +53,21 @@ An admin background job indexes existing and new reports in bounded batches.
 When the algorithm version changes, it rebuilds older signatures from their
 preserved source text. The signature table is owned by the admin database role
 and cascades away with its source field at retention time. Similarity candidates
-are shown to maintainers on an unassigned report; assignment always requires a
-maintainer action. No signature is treated as a proof that two failures share a
-root cause.
+are shown to maintainers on an unassigned report. A new report with an exact
+signature match to one active, linked issue is assigned to that issue by the
+background job during its first index. Historical and reindexed reports are not
+assigned automatically. Conflicting issue matches stay in triage for a maintainer to
+resolve. Similarity without an exact signature match never assigns a report.
 
 ## Discord notifications
 
 When a report becomes ready, a database trigger adds it to a transactional outbox in
-the same transaction. The admin process claims the oldest pending notification and
+the same transaction. The public request finishes without waiting for signature
+indexing or Discord. The admin process indexes stacks first and removes an outbox
+entry if an exact signature links the report to an issue, or if an unlinked report
+with the same signature arrived in the preceding five minutes. Reports with
+conflicting issue matches still notify maintainers. The admin process only claims
+stack reports after indexing, then claims the oldest eligible notification and
 sends a bounded report summary through the configured Discord webhook. The summary
 includes an excerpt of the native stack when one is available and links to the full
 report in the management interface. URLs, source addresses, and other report fields

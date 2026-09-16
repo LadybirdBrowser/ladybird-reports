@@ -31,6 +31,7 @@ impl AdminDatabase {
     ) -> Result<Vec<PendingStackTrace>> {
         let rows = sqlx::query(
             "SELECT reports.id AS report_id, reports.kind, fields.key,
+                    reports.auto_match_eligible,
                     fields.value #>> '{}' AS text,
                     signal.value #>> '{}' AS signal,
                     process.value #>> '{}' AS process
@@ -70,6 +71,7 @@ impl AdminDatabase {
                 text: row.get("text"),
                 signal: row.get("signal"),
                 process: row.get("process"),
+                auto_match_eligible: row.get("auto_match_eligible"),
             })
             .collect())
     }
@@ -89,6 +91,29 @@ impl AdminDatabase {
                 "insufficient"
             };
 
+            let mut transaction = self.pool.begin().await?;
+
+            // Share the issue-operation lock so a merge or hide cannot race with
+            // selecting the issue for an incoming report. It also serializes
+            // matching reports indexed by two admin instances.
+            sqlx::query("SELECT pg_advisory_xact_lock(891125)")
+                .execute(&mut *transaction)
+                .await?;
+
+            let prior_version: Option<i32> = sqlx::query_scalar(
+                "SELECT algorithm_version
+                 FROM report_stack_signatures
+                 WHERE report_id = $1 AND field_key = $2",
+            )
+            .bind(trace.report_id)
+            .bind(&trace.key)
+            .fetch_optional(&mut *transaction)
+            .await?;
+
+            if prior_version == Some(STACK_SIGNATURE_VERSION) {
+                continue;
+            }
+
             sqlx::query(
                 "INSERT INTO report_stack_signatures
                     (report_id, field_key, algorithm_version, status,
@@ -102,14 +127,141 @@ impl AdminDatabase {
                     indexed_at = now()",
             )
             .bind(trace.report_id)
-            .bind(trace.key)
+            .bind(&trace.key)
             .bind(STACK_SIGNATURE_VERSION)
             .bind(status)
-            .bind(fingerprint)
+            .bind(&fingerprint)
             .bind(parsed.frame_keys)
-            .execute(&self.pool)
+            .execute(&mut *transaction)
             .await?;
+
+            if trace.auto_match_eligible && prior_version.is_none() {
+                if let Some(fingerprint) = fingerprint {
+                    self.match_indexed_report(&mut transaction, &trace, &fingerprint)
+                        .await?;
+                }
+            }
+
+            transaction.commit().await?;
         }
+        Ok(())
+    }
+
+    async fn match_indexed_report(
+        &self,
+        transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        trace: &PendingStackTrace,
+        fingerprint: &str,
+    ) -> Result<()> {
+        let issues: Vec<IssueId> = sqlx::query_scalar(
+            "SELECT DISTINCT issues.id
+             FROM report_stack_signatures AS signatures
+             JOIN reports ON reports.id = signatures.report_id
+             JOIN issues ON issues.id = reports.issue_id
+             WHERE signatures.report_id <> $1
+                AND signatures.algorithm_version = $2
+                AND signatures.fingerprint = $3
+                AND reports.kind = $4
+                AND reports.storage_state = 'ready'
+                AND reports.hidden_at IS NULL
+                AND reports.deleted_at IS NULL
+                AND issues.hidden_at IS NULL
+                AND issues.merged_into IS NULL
+                AND issues.resolved_at IS NULL
+                AND issues.github_state = 'open'
+             LIMIT 2",
+        )
+        .bind(trace.report_id)
+        .bind(STACK_SIGNATURE_VERSION)
+        .bind(fingerprint)
+        .bind(&trace.kind)
+        .fetch_all(&mut **transaction)
+        .await?;
+
+        if issues.len() == 1 {
+            let issue_id = issues[0];
+            let assigned = sqlx::query(
+                "UPDATE reports
+                 SET issue_id = $2, assigned_at = now(), updated_at = now()
+                 WHERE id = $1
+                    AND issue_id IS NULL
+                    AND hidden_at IS NULL
+                    AND deleted_at IS NULL
+                    AND storage_state = 'ready'",
+            )
+            .bind(trace.report_id)
+            .bind(issue_id)
+            .execute(&mut **transaction)
+            .await?
+            .rows_affected()
+                == 1;
+
+            if assigned {
+                sqlx::query(
+                    "INSERT INTO audit_events (action, entity_id, details)
+                     VALUES ('report.update_issue', $1, $2)",
+                )
+                .bind(trace.report_id.0)
+                .bind(serde_json::json!({
+                    "from": null,
+                    "to": issue_id,
+                    "source": "stack_signature",
+                    "signature": fingerprint,
+                }))
+                .execute(&mut **transaction)
+                .await?;
+            }
+
+            // A signature already associated with an issue needs no Discord alert.
+            sqlx::query("DELETE FROM discord_report_notifications WHERE report_id = $1")
+                .bind(trace.report_id)
+                .execute(&mut **transaction)
+                .await?;
+            return Ok(());
+        }
+
+        if issues.len() > 1 {
+            tracing::warn!(
+                event = "stack_index.ambiguous_issue_match",
+                report_id = %trace.report_id,
+                signature = fingerprint,
+            );
+            return Ok(());
+        }
+
+        // With no linked issue, only suppress the alert when another report
+        // with this signature arrived in the preceding five minutes.
+        let recent_duplicate: bool = sqlx::query_scalar(
+            "SELECT EXISTS (
+                SELECT 1
+                FROM report_stack_signatures AS signatures
+                JOIN reports ON reports.id = signatures.report_id
+                JOIN reports AS incoming ON incoming.id = $1
+                WHERE signatures.report_id <> $1
+                    AND signatures.algorithm_version = $2
+                    AND signatures.fingerprint = $3
+                    AND reports.kind = $4
+                    AND reports.storage_state = 'ready'
+                    AND reports.hidden_at IS NULL
+                    AND reports.deleted_at IS NULL
+                    AND reports.created_at BETWEEN
+                        incoming.created_at - interval '5 minutes' AND incoming.created_at
+            )",
+        )
+        .bind(trace.report_id)
+        .bind(STACK_SIGNATURE_VERSION)
+        .bind(fingerprint)
+        .bind(&trace.kind)
+        .fetch_one(&mut **transaction)
+        .await?;
+
+        if recent_duplicate {
+            sqlx::query("DELETE FROM discord_report_notifications WHERE report_id = $1")
+                .bind(trace.report_id)
+                .execute(&mut **transaction)
+                .await?;
+        }
+
         Ok(())
     }
 
@@ -205,6 +357,7 @@ struct PendingStackTrace {
     text: String,
     signal: Option<String>,
     process: Option<String>,
+    auto_match_eligible: bool,
 }
 
 fn compare_frames(left: &[String], right: &[String]) -> (usize, usize) {

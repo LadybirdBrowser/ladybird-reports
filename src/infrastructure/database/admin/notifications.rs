@@ -52,9 +52,25 @@ impl AdminDatabase {
                 AND reports.storage_state = 'ready'
                 AND reports.deleted_at IS NULL
                 AND reports.hidden_at IS NULL
+                AND NOT EXISTS (
+                    SELECT 1
+                    FROM report_fields AS fields
+                    LEFT JOIN field_definitions AS definitions ON definitions.key = fields.key
+                    LEFT JOIN report_stack_signatures AS signatures
+                        ON signatures.report_id = fields.report_id
+                        AND signatures.field_key = fields.key
+                    WHERE fields.report_id = reports.id
+                        AND (fields.kind = 'stack_trace'
+                            OR (fields.kind = 'multiline'
+                                AND (fields.key = 'stack'
+                                    OR definitions.kind = 'stack_trace')))
+                        AND (signatures.report_id IS NULL
+                            OR signatures.algorithm_version <> $1)
+                )
              ORDER BY notifications.created_at, notifications.report_id
              LIMIT 1",
         )
+        .bind(crate::domain::STACK_SIGNATURE_VERSION)
         .fetch_optional(&mut *transaction)
         .await?;
 

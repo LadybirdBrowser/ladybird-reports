@@ -101,10 +101,10 @@ async fn run_stack_indexer(database: AdminDatabase) {
     loop {
         let delay = match database.index_pending_stack_traces().await {
             Ok(50) => std::time::Duration::from_millis(100),
-            Ok(0) => std::time::Duration::from_secs(10),
+            Ok(0) => std::time::Duration::from_secs(1),
             Ok(count) => {
                 tracing::info!(event = "stack_index.batch_complete", count);
-                std::time::Duration::from_secs(10)
+                std::time::Duration::from_secs(1)
             }
             Err(error) => {
                 tracing::warn!(event = "stack_index.failed", ?error);

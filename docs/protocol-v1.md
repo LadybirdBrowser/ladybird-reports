@@ -29,7 +29,7 @@ named with the client attachment UUID from the manifest.
 The supported field value types are `text`, `multiline`, `stack_trace`, `number`,
 `boolean`, and `attachment`. `stack_trace` accepts the same text length as
 `multiline` and preserves the submitted text exactly. The server also interprets
-it for display and manual issue matching. Field keys are extensible. Unknown keys receive generic validation
+it for display, similarity search, and exact signature matching. Field keys are extensible. Unknown keys receive generic validation
 limits and are identified as unknown in the management interface. Unknown envelope
 members are rejected; envelope changes require a new protocol version.
 

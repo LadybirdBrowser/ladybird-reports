@@ -1090,6 +1090,159 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
     .await
     .expect("read regenerated signature");
     assert_eq!(current_version, 1);
+
+    let matching_issue = IssueId::new();
+    sqlx::query(
+        "INSERT INTO issues (
+            id, title, github_number, github_url,
+            github_repository, github_state
+         ) VALUES (
+            $1, 'Matching stack', 60001,
+            'https://github.com/LadybirdBrowser/ladybird/issues/60001',
+            'LadybirdBrowser/ladybird', 'open'
+         )",
+    )
+    .bind(matching_issue)
+    .execute(&admin_pool)
+    .await
+    .expect("create open issue for signature matching");
+    admin_database
+        .assign_report_to_issue(stack_reports[0], matching_issue, 999)
+        .await
+        .expect("link first report manually");
+
+    let matching_report =
+        insert_stack_report_for_matching(&admin_pool, original_stacks[1], 0).await;
+    let queued_before_indexing: bool = sqlx::query_scalar(
+        "SELECT EXISTS (
+            SELECT 1 FROM discord_report_notifications WHERE report_id = $1
+         )",
+    )
+    .bind(matching_report)
+    .fetch_one(&admin_pool)
+    .await
+    .expect("check transactional notification enqueue");
+    assert!(queued_before_indexing);
+
+    admin_database
+        .index_report_stack_traces(matching_report)
+        .await
+        .expect("index matching report asynchronously");
+    let linked_issue: Option<IssueId> =
+        sqlx::query_scalar("SELECT issue_id FROM reports WHERE id = $1")
+            .bind(matching_report)
+            .fetch_one(&admin_pool)
+            .await
+            .expect("read automatically linked issue");
+    assert_eq!(linked_issue, Some(matching_issue));
+    let queued_after_matching: bool = sqlx::query_scalar(
+        "SELECT EXISTS (
+            SELECT 1 FROM discord_report_notifications WHERE report_id = $1
+         )",
+    )
+    .bind(matching_report)
+    .fetch_one(&admin_pool)
+    .await
+    .expect("check matched report notification suppression");
+    assert!(!queued_after_matching);
+
+    admin_database
+        .unlink_report_from_issue(matching_issue, matching_report, 999)
+        .await
+        .expect("intentionally unlink the automatically matched report");
+    sqlx::query("UPDATE report_stack_signatures SET algorithm_version = 0 WHERE report_id = $1")
+        .bind(matching_report)
+        .execute(&admin_pool)
+        .await
+        .expect("mark unlinked signature for reindexing");
+    admin_database
+        .index_report_stack_traces(matching_report)
+        .await
+        .expect("reindex intentionally unlinked report");
+    let relinked_issue: Option<IssueId> =
+        sqlx::query_scalar("SELECT issue_id FROM reports WHERE id = $1")
+            .bind(matching_report)
+            .fetch_one(&admin_pool)
+            .await
+            .expect("check reindexed issue assignment");
+    assert_eq!(relinked_issue, None);
+
+    let separate_stack = "#0 abcdef1234567890 0x100 Web::Document::destroy() at /WebContent\n#1 abcdef1234567890 0x200 Web::Page::close() at /WebContent";
+    let first_unlinked = insert_stack_report_for_matching(&admin_pool, separate_stack, 7).await;
+    let later_unlinked = insert_stack_report_for_matching(&admin_pool, separate_stack, 0).await;
+    let recent_duplicate = insert_stack_report_for_matching(&admin_pool, separate_stack, 0).await;
+    admin_database
+        .index_report_stack_traces(first_unlinked)
+        .await
+        .expect("index first unlinked report");
+    admin_database
+        .index_report_stack_traces(later_unlinked)
+        .await
+        .expect("index report outside the five-minute window");
+    admin_database
+        .index_report_stack_traces(recent_duplicate)
+        .await
+        .expect("index recent duplicate");
+
+    let first_queued: bool = sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM discord_report_notifications WHERE report_id = $1)",
+    )
+    .bind(first_unlinked)
+    .fetch_one(&admin_pool)
+    .await
+    .expect("check first unlinked notification");
+    let duplicate_queued: bool = sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM discord_report_notifications WHERE report_id = $1)",
+    )
+    .bind(recent_duplicate)
+    .fetch_one(&admin_pool)
+    .await
+    .expect("check recent duplicate notification");
+    let later_queued: bool = sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM discord_report_notifications WHERE report_id = $1)",
+    )
+    .bind(later_unlinked)
+    .fetch_one(&admin_pool)
+    .await
+    .expect("check out-of-window notification");
+    assert!(first_queued);
+    assert!(later_queued);
+    assert!(!duplicate_queued);
+}
+
+async fn insert_stack_report_for_matching(
+    pool: &sqlx::PgPool,
+    stack: &str,
+    minutes_ago: i32,
+) -> ReportId {
+    let report_id = ReportId::new();
+    sqlx::query(
+        "INSERT INTO reports (
+            id, submission_id, manifest_digest, kind, client_version,
+            build, storage_state, staging_id, created_at
+         ) VALUES (
+            $1, $2, repeat('d', 64), 'crash', 'matching-test',
+            'release', 'ready', $3, now() - make_interval(mins => $4)
+         )",
+    )
+    .bind(report_id)
+    .bind(SubmissionId::new())
+    .bind(UploadId::new())
+    .bind(minutes_ago)
+    .execute(pool)
+    .await
+    .expect("insert matching test report");
+    sqlx::query(
+        "INSERT INTO report_fields
+            (report_id, key, kind, value, recognized_at_submission)
+         VALUES ($1, 'stack', 'stack_trace', $2, true)",
+    )
+    .bind(report_id)
+    .bind(serde_json::json!(stack))
+    .execute(pool)
+    .await
+    .expect("insert matching test stack");
+    report_id
 }
 
 fn github_issue(number: i64, title: &str) -> GithubIssue {
