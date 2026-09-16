@@ -1319,11 +1319,13 @@ tbody tr:hover {
     min-height: 1.65rem;
     padding: 0.2rem 0.55rem;
     align-items: center;
+    flex: 0 0 auto;
     border: 1px solid transparent;
     border-radius: 999px;
     font-size: 0.72rem;
     font-weight: 750;
     line-height: 1;
+    white-space: nowrap;
 }
 
 .badge-triage,
@@ -1403,19 +1405,62 @@ tbody tr:hover {
 
 .issue-link-field {
     display: flex;
-    align-items: baseline;
+    align-items: center;
     justify-content: space-between;
     gap: 1rem;
 }
 
 .issue-link-field span {
     color: var(--ink-soft);
+    font-size: 0.84rem;
+    font-weight: 650;
 }
 
 .issue-link-field a {
     min-width: 0;
+    padding: 0.35rem 0.6rem;
+    border-radius: var(--radius-sm);
+    background: var(--brand-soft);
+    color: var(--brand);
+    font-size: 0.84rem;
+    font-weight: 700;
     overflow-wrap: anywhere;
-    font-weight: 650;
+    text-decoration: none;
+}
+
+.issue-link-field a:hover,
+.issue-link-field a:focus-visible {
+    color: var(--brand-strong);
+    text-decoration: underline;
+}
+
+.issue-link-warning {
+    margin: 1rem 0 0;
+    padding: 0.75rem 0.85rem;
+    border: 1px solid color-mix(in srgb, var(--warning) 25%, transparent);
+    border-radius: var(--radius-sm);
+    background: var(--warning-soft);
+    color: var(--ink);
+    font-size: 0.82rem;
+}
+
+.issue-recovery-actions {
+    display: grid;
+    margin-top: 1rem;
+    gap: 0.5rem;
+}
+
+.issue-recovery-actions button {
+    width: 100%;
+}
+
+.replacement-issue-popover {
+    width: min(30rem, calc(100vw - 1rem));
+    padding: 1.3rem;
+}
+
+.replacement-issue-popover label {
+    margin-bottom: 0;
 }
 
 .action-card h2 {

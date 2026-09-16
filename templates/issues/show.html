@@ -142,34 +142,88 @@
                     </div>
                     {% if issue.merged_into.is_none() %}
                         {% if issue.github_state == "missing" %}
-                            <p class="form-note">The GitHub issue was deleted. Link a replacement to resume tracking.</p>
+                            <p class="issue-link-warning">The GitHub issue was deleted. Link a replacement to resume tracking.</p>
                         {% else if issue.github_state == "moved" %}
-                            <p class="form-note">The GitHub issue moved out of the configured repository.</p>
+                            <p class="issue-link-warning">The GitHub issue moved out of the configured repository.</p>
                         {% else if issue.github_state == "unavailable" %}
-                            <p class="form-note">GitHub could not verify this issue. Check access before changing its link.</p>
+                            <p class="issue-link-warning">GitHub could not verify this issue. Check access before changing its link.</p>
                         {% else if issue.github_state == "unknown" %}
-                            <p class="form-note">GitHub has not confirmed the current status yet.</p>
+                            <p class="issue-link-warning">GitHub has not confirmed the current status yet.</p>
                         {% endif %}
 
                         {% if issue.github_state == "missing" || issue.github_state == "moved" || issue.github_state == "unavailable" %}
-                            <form method="post" action="/issues/{{ issue.id }}/github">
-                                <input type="hidden" name="csrf" value="{{ navigation.as_ref().unwrap().csrf_token }}">
-                                <label>
-                                    Replacement GitHub issue URL
-                                    <input
-                                        name="github_url"
-                                        type="url"
-                                        placeholder="https://github.com/LadybirdBrowser/ladybird/issues/…"
-                                        required
+                            <div class="issue-recovery-actions">
+                                <button type="button" popovertarget="link-replacement-issue">
+                                    Link replacement issue
+                                </button>
+                                {% if issue.github_state == "missing" %}
+                                    <button
+                                        class="button-secondary"
+                                        type="button"
+                                        popovertarget="create-replacement-issue"
                                     >
-                                </label>
-                                <button class="button-secondary" type="submit">Link replacement issue</button>
-                            </form>
-                            {% if issue.github_state == "missing" %}
-                                <form method="post" action="/issues/{{ issue.id }}/github/new">
+                                        Create replacement GitHub issue
+                                    </button>
+                                {% endif %}
+                            </div>
+                            <div
+                                class="confirmation-popover replacement-issue-popover modal-overlay"
+                                id="link-replacement-issue"
+                                role="dialog"
+                                aria-labelledby="link-replacement-issue-title"
+                                popover
+                            >
+                                <form method="post" action="/issues/{{ issue.id }}/github">
                                     <input type="hidden" name="csrf" value="{{ navigation.as_ref().unwrap().csrf_token }}">
-                                    <button class="button-secondary" type="submit">Create replacement GitHub issue</button>
+                                    <h3 id="link-replacement-issue-title">Link replacement issue</h3>
+                                    <p>Enter the URL of an existing GitHub issue to resume tracking.</p>
+                                    <label>
+                                        GitHub issue URL
+                                        <input
+                                            name="github_url"
+                                            type="url"
+                                            placeholder="https://github.com/LadybirdBrowser/ladybird/issues/…"
+                                            required
+                                        >
+                                    </label>
+                                    <div class="popover-actions">
+                                        <button
+                                            class="button-secondary"
+                                            type="button"
+                                            popovertarget="link-replacement-issue"
+                                            popovertargetaction="hide"
+                                        >
+                                            Cancel
+                                        </button>
+                                        <button type="submit">Link issue</button>
+                                    </div>
                                 </form>
+                            </div>
+                            {% if issue.github_state == "missing" %}
+                                <div
+                                    class="confirmation-popover replacement-issue-popover modal-overlay"
+                                    id="create-replacement-issue"
+                                    role="dialog"
+                                    aria-labelledby="create-replacement-issue-title"
+                                    popover
+                                >
+                                    <form method="post" action="/issues/{{ issue.id }}/github/new">
+                                        <input type="hidden" name="csrf" value="{{ navigation.as_ref().unwrap().csrf_token }}">
+                                        <h3 id="create-replacement-issue-title">Create replacement GitHub issue?</h3>
+                                        <p>A new GitHub issue will be created and linked to this tracked issue.</p>
+                                        <div class="popover-actions">
+                                            <button
+                                                class="button-secondary"
+                                                type="button"
+                                                popovertarget="create-replacement-issue"
+                                                popovertargetaction="hide"
+                                            >
+                                                Cancel
+                                            </button>
+                                            <button type="submit">Create issue</button>
+                                        </div>
+                                    </form>
+                                </div>
                             {% endif %}
                         {% endif %}
                     {% endif %}

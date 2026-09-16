@@ -552,13 +552,32 @@ test.describe("authenticated management UI", () => {
     expect((await deliverWebhook("deleted")).status()).toBe(204);
     await page.goto(`/issues/${trackedIssueId}`);
     await expect(page.getByText("Needs attention", { exact: true })).toBeVisible();
-    await page.getByRole("textbox", { name: "Replacement GitHub issue URL" }).fill(
+    const attentionBadge = page.locator(".page-header .badge-warning");
+    expect(await attentionBadge.evaluate((badge) => badge.getClientRects().length)).toBe(1);
+    expect(await attentionBadge.evaluate((badge) =>
+      getComputedStyle(badge).whiteSpace,
+    )).toBe("nowrap");
+
+    const createDialog = page.getByRole("dialog", {
+      name: "Create replacement GitHub issue?",
+    });
+    await expect(createDialog).toBeHidden();
+    await page.getByRole("button", { name: "Create replacement GitHub issue" }).click();
+    await expect(createDialog).toBeVisible();
+    await createDialog.getByRole("button", { name: "Cancel" }).click();
+    await expect(createDialog).toBeHidden();
+
+    const linkDialog = page.getByRole("dialog", { name: "Link replacement issue" });
+    await expect(linkDialog).toBeHidden();
+    await page.getByRole("button", { name: "Link replacement issue" }).click();
+    await expect(linkDialog).toBeVisible();
+    await linkDialog.getByRole("textbox", { name: "GitHub issue URL" }).fill(
       "https://github.com/LadybirdBrowser/ladybird/issues/6200",
     );
     await page.request.post("http://127.0.0.1:3101/test/field-visibility", {
       data: { visibility: "all" },
     });
-    await page.getByRole("button", { name: "Link replacement issue" }).click();
+    await linkDialog.getByRole("button", { name: "Link issue" }).click();
     await expect(page.getByRole("link", { name: "Issue #6200" })).toBeVisible();
     await expect(page.getByText("The Reports link could not be added"))
       .toBeVisible();
