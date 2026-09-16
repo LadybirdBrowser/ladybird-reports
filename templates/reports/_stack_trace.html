@@ -1,15 +1,4 @@
                                 <div class="stack-trace stack-trace-view">
-                                    <div class="stack-trace-heading">
-                                        {% if let Some(signature) = field.stack_signature %}
-                                            <span class="stack-signature">
-                                                Signature <code title="{{ signature.full }}">{{ signature.short }}</code>
-                                            </span>
-                                        {% endif %}
-                                        <label class="stack-raw-control">
-                                            <input class="stack-raw-toggle" type="checkbox">
-                                            Show raw
-                                        </label>
-                                    </div>
                                     <div class="stack-frame-scroll">
                                         <table class="stack-frame-table">
                                             <thead>

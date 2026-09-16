@@ -63,6 +63,17 @@ test.describe("authenticated management UI", () => {
     expect(await page.evaluate(() => document.documentElement.scrollWidth))
       .toBeLessThanOrEqual(390);
     await page.setViewportSize({ width: 1280, height: 800 });
+    const stackHeader = page.locator(".report-field-header").filter({
+      has: page.getByRole("heading", { name: "Stack trace" }),
+    });
+    await expect(stackHeader.locator(".stack-signature")).toBeVisible();
+    await expect(stackHeader.getByLabel("Show raw")).toBeVisible();
+    expect(await stackHeader.evaluate((header) => {
+      const title = header.querySelector("h3")!.getBoundingClientRect();
+      const actions = header.querySelector(".stack-header-actions")!.getBoundingClientRect();
+      return Math.abs(title.top - actions.top);
+    })).toBeLessThan(12);
+    await expect(page.locator(".stack-trace-heading")).toHaveCount(0);
     await expect(page.locator(".stack-frame-table").getByRole("row").first()).toBeVisible();
     await expect(page.getByText("Core::ThreadEventQueue::process()", { exact: true })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Possible matches" })).toBeVisible();

@@ -75,8 +75,13 @@
                         <header class="report-field-header">
                             <div>
                                 <h3>{{ field.label }}</h3>
-                                <p class="quiet"><code>{{ field.key }}</code> · {{ field.kind }}</p>
+                                {% if field.stack.is_none() %}
+                                    <p class="quiet"><code>{{ field.key }}</code> · {{ field.kind }}</p>
+                                {% endif %}
                             </div>
+                            {% if field.stack.is_some() %}
+                                {% include "reports/_stack_trace_controls.html" %}
+                            {% endif %}
                         </header>
                         {% if field.is_multiline %}
                             {% if let Some(stack) = field.stack %}
@@ -165,6 +170,9 @@
                                     <h3>{{ field.key }}</h3>
                                     <span class="badge badge-warning">Unknown field</span>
                                 </div>
+                                {% if field.stack.is_some() %}
+                                    {% include "reports/_stack_trace_controls.html" %}
+                                {% endif %}
                             </header>
                             {% if field.is_multiline %}
                                 {% if let Some(stack) = field.stack %}

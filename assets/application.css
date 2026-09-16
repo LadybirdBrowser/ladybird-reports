@@ -1924,22 +1924,20 @@ pre {
     overflow: hidden;
 }
 
-.stack-trace-heading {
+.stack-header-actions {
     display: flex;
-    padding: 0.8rem 1rem;
     align-items: center;
-    justify-content: space-between;
     flex-wrap: wrap;
-    gap: 0.4rem 1rem;
-    border-bottom: 1px solid #34384c;
-    color: #aeb4ca;
-    font-size: 0.75rem;
+    justify-content: flex-end;
+    gap: 0.5rem 1rem;
+    color: var(--ink-soft);
+    font-size: 0.8rem;
 }
 
-.stack-trace-heading code {
+.stack-header-actions code {
     max-width: 100%;
     overflow: hidden;
-    color: #a9a4ff;
+    color: var(--brand);
     text-overflow: ellipsis;
     white-space: nowrap;
 }
@@ -1954,13 +1952,12 @@ pre {
     display: inline-flex;
     align-items: center;
     gap: 0.45rem;
-    margin-left: auto;
-    color: #d8dced;
+    color: var(--ink);
     cursor: pointer;
 }
 
 .stack-raw-control input {
-    accent-color: #a9a4ff;
+    accent-color: var(--brand);
 }
 
 .stack-raw-text {
@@ -1975,12 +1972,12 @@ pre {
     overflow-wrap: anywhere;
 }
 
-.stack-trace:has(.stack-raw-toggle:checked) .stack-frame-scroll,
-.stack-trace:has(.stack-raw-toggle:checked) .stack-truncated-note {
+.report-field:has(.stack-raw-toggle:checked) .stack-frame-scroll,
+.report-field:has(.stack-raw-toggle:checked) .stack-truncated-note {
     display: none;
 }
 
-.stack-trace:has(.stack-raw-toggle:checked) .stack-raw-text {
+.report-field:has(.stack-raw-toggle:checked) .stack-raw-text {
     display: block;
 }
 

@@ -1,0 +1,11 @@
+<div class="stack-header-actions">
+    {% if let Some(signature) = field.stack_signature %}
+        <span class="stack-signature">
+            Signature <code title="{{ signature.full }}">{{ signature.short }}</code>
+        </span>
+    {% endif %}
+    <label class="stack-raw-control">
+        <input class="stack-raw-toggle" type="checkbox">
+        Show raw
+    </label>
+</div>
