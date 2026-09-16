@@ -27,6 +27,13 @@ as a submitted field key. Values containing spaces can be quoted.
 Report metadata and single-line diagnostic fields provide filter buttons that
 construct the corresponding qualified search.
 
+Stack trace fields render as a frame table with the exact original text available
+below it. Reports stores that text unchanged. A background job also generates
+versioned signatures for existing and new reports, regenerating old signatures
+when the algorithm version changes. Possible matches appear on unassigned
+report pages for maintainers to review and link manually; no report is linked
+automatically. Signature data is removed when its report is purged.
+
 The state selector moves an unassigned report between triage and confirmed.
 Deleting a report hides it from the management interface while retention
 continues to govern when its stored data is removed.

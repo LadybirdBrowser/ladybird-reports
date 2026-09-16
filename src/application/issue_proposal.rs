@@ -144,6 +144,7 @@ mod tests {
             value,
             recognized_at_submission: true,
             current_label: None,
+            current_kind: None,
             current_position: None,
         }
     }

@@ -79,8 +79,8 @@
                             </div>
                         </header>
                         {% if field.is_multiline %}
-                            {% if field.is_stack %}
-                                <pre class="stack-trace"><code>{{ field.value }}</code></pre>
+                            {% if let Some(stack) = field.stack %}
+                                {% include "reports/_stack_trace.html" %}
                             {% else %}
                                 <pre>{{ field.value }}</pre>
                             {% endif %}
@@ -102,6 +102,47 @@
                     </article>
                 {% endfor %}
             </section>
+
+            {% if !similar_reports.is_empty() %}
+                <section class="card" aria-labelledby="similar-reports-title">
+                    <div class="card-header">
+                        <div>
+                            <p class="eyebrow">Stack signatures</p>
+                            <h2 id="similar-reports-title">Possible matches</h2>
+                        </div>
+                        <p>Review before linking</p>
+                    </div>
+                    <div class="similar-report-list">
+                        {% for candidate in similar_reports %}
+                            <article class="similar-report">
+                                <div>
+                                    {% if let Some(issue_id) = candidate.issue_id %}
+                                        <a class="primary-link" href="/issues/{{ issue_id }}">
+                                            {{ candidate.issue_title.as_deref().unwrap_or("Issue") }}
+                                        </a>
+                                    {% else %}
+                                        <a class="primary-link" href="/reports/{{ candidate.report_id }}">
+                                            Unassigned report
+                                        </a>
+                                    {% endif %}
+                                    <p>
+                                        {% if candidate.exact %}Exact signature{% else %}{{ candidate.matching_frames }} matching frames{% endif %}
+                                        · {{ candidate.client_version }}
+                                        · <a href="/reports/{{ candidate.report_id }}">View example</a>
+                                    </p>
+                                </div>
+                                {% if let Some(issue_id) = candidate.issue_id %}
+                                    <form method="post" action="/reports/{{ report.id }}/issue">
+                                        <input type="hidden" name="csrf" value="{{ navigation.as_ref().unwrap().csrf_token }}">
+                                        <input type="hidden" name="issue_selection" value="issue:{{ issue_id }}">
+                                        <button class="button-secondary" type="submit">Add to issue</button>
+                                    </form>
+                                {% endif %}
+                            </article>
+                        {% endfor %}
+                    </div>
+                </section>
+            {% endif %}
 
             {% if !unknown_fields.is_empty() %}
                 <section aria-labelledby="unknown-fields-title">
@@ -126,7 +167,11 @@
                                 </div>
                             </header>
                             {% if field.is_multiline %}
-                                <pre>{{ field.value }}</pre>
+                                {% if let Some(stack) = field.stack %}
+                                    {% include "reports/_stack_trace.html" %}
+                                {% else %}
+                                    <pre>{{ field.value }}</pre>
+                                {% endif %}
                             {% else %}
                                 <div class="report-field-value">
                                     <span>{{ field.value }}</span>

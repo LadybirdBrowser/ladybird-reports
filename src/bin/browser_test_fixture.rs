@@ -1,7 +1,9 @@
 use ladybird_reports::{
     domain::{IssueId, ReportId, SubmissionId, UploadId},
     error::Result,
-    infrastructure::{SecretCipher, hash_secret, random_token, read_secret},
+    infrastructure::{
+        SecretCipher, database::AdminDatabase, hash_secret, random_token, read_secret,
+    },
     runtime::required_environment,
 };
 use sqlx::postgres::PgPoolOptions;
@@ -265,6 +267,11 @@ async fn main() -> Result<()> {
     }
 
     transaction.commit().await?;
+
+    // Exercise the same backfill used for reports submitted before deployment.
+    let database = AdminDatabase::from_pool(pool);
+    while database.index_pending_stack_traces().await? == 50 {}
+
     println!("{session_token}");
     Ok(())
 }
@@ -355,6 +362,18 @@ async fn insert_example_report(
     .bind(serde_json::json!(WEB_CONTENT_STACK.trim()))
     .execute(&mut **transaction)
     .await?;
+
+    if report.issue_id.is_some() {
+        sqlx::query(
+            "INSERT INTO report_fields
+                (report_id, key, kind, value, recognized_at_submission)
+             VALUES ($1, 'signal', 'text', $2, true)",
+        )
+        .bind(report_id)
+        .bind(serde_json::json!("SIGABRT"))
+        .execute(&mut **transaction)
+        .await?;
+    }
 
     sqlx::query(
         "INSERT INTO audit_events (action, entity_id, details, created_at)

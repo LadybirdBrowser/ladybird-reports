@@ -98,6 +98,7 @@ pub struct StoredDiagnosticField {
     pub value: Value,
     pub recognized_at_submission: bool,
     pub current_label: Option<String>,
+    pub current_kind: Option<String>,
     pub current_position: Option<i32>,
 }
 
@@ -117,6 +118,18 @@ pub struct ReportDetails {
     pub fields: Vec<StoredDiagnosticField>,
     pub attachments: Vec<StoredAttachment>,
     pub events: Vec<AuditEvent>,
+}
+
+#[derive(Clone, Debug)]
+pub struct SimilarReport {
+    pub report_id: ReportId,
+    pub issue_id: Option<IssueId>,
+    pub issue_title: Option<String>,
+    pub client_version: String,
+    pub created_at: DateTime<Utc>,
+    pub exact: bool,
+    pub matching_frames: usize,
+    pub score: usize,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

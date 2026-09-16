@@ -248,11 +248,14 @@ impl AdminDatabase {
                 report_fields.value,
                 report_fields.recognized_at_submission,
                 field_definitions.label AS current_label,
+                field_definitions.kind AS current_kind,
                 field_definitions.position AS current_position
              FROM report_fields
              LEFT JOIN field_definitions
                 ON field_definitions.key = report_fields.key
-                AND field_definitions.kind = report_fields.kind
+                AND (field_definitions.kind = report_fields.kind
+                    OR (field_definitions.kind = 'stack_trace'
+                        AND report_fields.kind = 'multiline'))
              WHERE report_fields.report_id = $1
              ORDER BY field_definitions.position NULLS LAST, report_fields.key",
         )
@@ -268,6 +271,7 @@ impl AdminDatabase {
                 value: row.get("value"),
                 recognized_at_submission: row.get("recognized_at_submission"),
                 current_label: row.get("current_label"),
+                current_kind: row.get("current_kind"),
                 current_position: row.get("current_position"),
             })
             .collect())

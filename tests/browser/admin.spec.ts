@@ -49,7 +49,24 @@ test.describe("authenticated management UI", () => {
 
     await reportLink.click();
     await expect(page.getByRole("heading", { name: "Native stack" })).toBeVisible();
-    await expect(page.getByText("Core::ThreadEventQueue::process()")).toBeVisible();
+    await page.setViewportSize({ width: 390, height: 800 });
+    expect(await page.locator(".stack-frame-symbol").first().evaluate(
+      (cell) => cell.getBoundingClientRect().width,
+    )).toBeGreaterThan(200);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth))
+      .toBeLessThanOrEqual(390);
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await expect(page.locator(".stack-frame-table").getByRole("row").first()).toBeVisible();
+    await expect(page.getByText("Core::ThreadEventQueue::process()", { exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Possible matches" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Intermittent navigation timeout" }))
+      .toBeVisible();
+    await expect(page.getByText("Exact signature")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Add to issue" })).toBeVisible();
+    await expect(page.locator(".badge-triage")).toHaveText("Needs triage");
+    await page.getByText("Original stack text").click();
+    await expect(page.locator(".stack-original pre"))
+      .toContainText("Native stack (binary build ID, object address):");
     await expect(page.getByText("macOS", { exact: true }).first()).toBeVisible();
     await expect(page.getByText("arm64", { exact: true }).first()).toBeVisible();
     await expect(page.getByText("127.0.0.1", { exact: true })).toBeVisible();
@@ -211,7 +228,8 @@ test.describe("authenticated management UI", () => {
     await expect(page.locator(".entity-selector-chip")).toContainText(
       "Investigate renderer overlap",
     );
-    await expect(page.locator('input[name="issue_selection"]')).toHaveValue("github:6200");
+    await expect(issueDialog.locator('input[name="issue_selection"]'))
+      .toHaveValue("github:6200");
 
     await page.getByRole("button", { name: "Create new" }).click();
     await expect(page.getByLabel("Title", { exact: true }))
@@ -236,7 +254,8 @@ test.describe("authenticated management UI", () => {
     await expect(option).toContainText("GitHub issue #4812");
     await option.click();
 
-    await expect(page.locator('input[name="issue_selection"]'))
+    await expect(page.getByRole("dialog", { name: "Add report to an issue" })
+      .locator('input[name="issue_selection"]'))
       .toHaveValue(/^issue:[0-9a-f-]+$/);
     await expect(page.locator(".entity-selector-chip")).toContainText(
       "Intermittent navigation timeout",

@@ -70,6 +70,14 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
     assert!(configured);
 
     assert!(
+        sqlx::query("SELECT * FROM report_stack_signatures LIMIT 1")
+            .execute(&reporting_pool)
+            .await
+            .is_err(),
+        "reporting role cannot read derived stack signatures"
+    );
+
+    assert!(
         sqlx::query("SELECT * FROM reports LIMIT 1")
             .execute(&reporting_pool)
             .await
@@ -983,6 +991,98 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
             .expect("check drained Discord queue")
             .is_none()
     );
+
+    // The backfill interprets old multiline stacks and new stack_trace fields
+    // without changing either submitted value or assigning either report.
+    let original_stacks = [
+        "#0 abcdef1234567890 0x100 Web::Window::close() at /old/WebContent\n#1 abcdef1234567890 0x200 Web::Page::destroy() at /old/WebContent",
+        "#0 1234567890abcdef 0x999 Web::Window::close() at /new/WebContent\n#1 1234567890abcdef 0xaaa Web::Page::destroy() at /new/WebContent",
+    ];
+    let stack_reports = [ReportId::new(), ReportId::new()];
+    for (index, stack_report) in stack_reports.iter().enumerate() {
+        sqlx::query(
+            "INSERT INTO reports (
+                id, submission_id, manifest_digest, kind, client_version,
+                build, storage_state, staging_id
+             ) VALUES (
+                $1, $2, repeat('c', 64), 'crash',
+                'stack-index-test', 'macOS arm64', 'ready', $3
+             )",
+        )
+        .bind(stack_report)
+        .bind(SubmissionId::new())
+        .bind(UploadId::new())
+        .execute(&admin_pool)
+        .await
+        .expect("create stack report");
+        sqlx::query(
+            "INSERT INTO report_fields
+                (report_id, key, kind, value, recognized_at_submission)
+             VALUES ($1, 'stack', $2, $3, true)",
+        )
+        .bind(stack_report)
+        .bind(if index == 0 {
+            "multiline"
+        } else {
+            "stack_trace"
+        })
+        .bind(serde_json::json!(original_stacks[index]))
+        .execute(&admin_pool)
+        .await
+        .expect("store original stack text");
+    }
+
+    assert_eq!(
+        admin_database
+            .index_pending_stack_traces()
+            .await
+            .expect("backfill existing reports"),
+        2
+    );
+    let candidates = admin_database
+        .similar_reports(stack_reports[0])
+        .await
+        .expect("find matching stack signatures");
+    assert_eq!(candidates.len(), 1);
+    assert_eq!(candidates[0].report_id, stack_reports[1]);
+    assert!(candidates[0].exact);
+    assert_eq!(candidates[0].matching_frames, 2);
+    let stored_stack: serde_json::Value = sqlx::query_scalar(
+        "SELECT value FROM report_fields WHERE report_id = $1 AND key = 'stack'",
+    )
+    .bind(stack_reports[0])
+    .fetch_one(&admin_pool)
+    .await
+    .expect("read unchanged submitted stack");
+    assert_eq!(stored_stack, serde_json::json!(original_stacks[0]));
+    let still_unassigned: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM reports WHERE id = ANY($1) AND issue_id IS NULL")
+            .bind(&stack_reports[..])
+            .fetch_one(&admin_pool)
+            .await
+            .expect("check matching never assigns reports");
+    assert_eq!(still_unassigned, 2);
+
+    sqlx::query("UPDATE report_stack_signatures SET algorithm_version = 0 WHERE report_id = $1")
+        .bind(stack_reports[0])
+        .execute(&admin_pool)
+        .await
+        .expect("mark an old signature for regeneration");
+    assert_eq!(
+        admin_database
+            .index_pending_stack_traces()
+            .await
+            .expect("reprocess outdated signature"),
+        1
+    );
+    let current_version: i32 = sqlx::query_scalar(
+        "SELECT algorithm_version FROM report_stack_signatures WHERE report_id = $1",
+    )
+    .bind(stack_reports[0])
+    .fetch_one(&admin_pool)
+    .await
+    .expect("read regenerated signature");
+    assert_eq!(current_version, 1);
 }
 
 fn github_issue(number: i64, title: &str) -> GithubIssue {

@@ -6,6 +6,7 @@ mod models;
 mod notifications;
 mod reports;
 mod settings;
+mod stack_signatures;
 
 pub(crate) use issues::validate_issue_text;
 pub use models::*;

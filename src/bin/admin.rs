@@ -76,6 +76,7 @@ async fn run() -> Result<()> {
     };
     let maintenance = tokio::spawn(run_maintenance(state.clone()));
     let discord_notifications = tokio::spawn(discord_notifications.run());
+    let stack_indexer = tokio::spawn(run_stack_indexer(state.database.clone()));
 
     let address = listen_address("ADMIN_LISTEN_ADDRESS", "0.0.0.0:3000")?;
     let listener = tokio::net::TcpListener::bind(address).await?;
@@ -89,9 +90,29 @@ async fn run() -> Result<()> {
     let _ = maintenance.await;
     discord_notifications.abort();
     let _ = discord_notifications.await;
+    stack_indexer.abort();
+    let _ = stack_indexer.await;
 
     tracing::info!(event = "shutdown.complete", service = "admin");
     Ok(())
+}
+
+async fn run_stack_indexer(database: AdminDatabase) {
+    loop {
+        let delay = match database.index_pending_stack_traces().await {
+            Ok(50) => std::time::Duration::from_millis(100),
+            Ok(0) => std::time::Duration::from_secs(10),
+            Ok(count) => {
+                tracing::info!(event = "stack_index.batch_complete", count);
+                std::time::Duration::from_secs(10)
+            }
+            Err(error) => {
+                tracing::warn!(event = "stack_index.failed", ?error);
+                std::time::Duration::from_secs(30)
+            }
+        };
+        tokio::time::sleep(delay).await;
+    }
 }
 
 async fn run_maintenance(state: AdminState) {

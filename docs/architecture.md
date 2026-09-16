@@ -39,6 +39,24 @@ links a replacement. Old GitHub links remain searchable through aliases.
 The web layer translates requests into application calls. Public handlers return
 JSON. Admin handlers construct typed view models rendered by Askama templates.
 
+## Stack signatures
+
+The public API stores stack trace text exactly as submitted in `report_fields`.
+Older `stack` fields tagged `multiline` remain valid; newer clients can use the
+`stack_trace` type. The admin process parses either form for a frame table and
+derives a versioned signature from normalized function names, report kind, and
+optional process and signal. Build IDs, addresses, paths, URLs, and source IPs do
+not enter the signature. Unrecognized lines remain visible and the original text
+is always available in the report view.
+
+An admin background job indexes existing and new reports in bounded batches.
+When the algorithm version changes, it rebuilds older signatures from their
+preserved source text. The signature table is owned by the admin database role
+and cascades away with its source field at retention time. Similarity candidates
+are shown to maintainers on an unassigned report; assignment always requires a
+maintainer action. No signature is treated as a proof that two failures share a
+root cause.
+
 ## Discord notifications
 
 When a report becomes ready, a database trigger adds it to a transactional outbox in

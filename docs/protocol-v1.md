@@ -26,8 +26,10 @@ named with the client attachment UUID from the manifest.
 }
 ```
 
-The supported field value types are `text`, `multiline`, `number`, `boolean`, and
-`attachment`. Field keys are extensible. Unknown keys receive generic validation
+The supported field value types are `text`, `multiline`, `stack_trace`, `number`,
+`boolean`, and `attachment`. `stack_trace` accepts the same text length as
+`multiline` and preserves the submitted text exactly. The server also interprets
+it for display and manual issue matching. Field keys are extensible. Unknown keys receive generic validation
 limits and are identified as unknown in the management interface. Unknown envelope
 members are rejected; envelope changes require a new protocol version.
 
@@ -35,8 +37,9 @@ The initial client uses these conventional diagnostic fields:
 
 | Key | Type | Meaning |
 | --- | --- | --- |
-| `stack` | `multiline` | Client-symbolicated native stack trace, one frame per line. |
+| `stack` | `stack_trace` | Client-symbolicated native stack trace, one frame per line. Legacy clients may keep using `multiline`. |
 | `signal` | `text` | Terminating signal or equivalent exception name. |
+| `process` | `text` | Optional executable or process name. |
 | `platform` | `text` | Operating system or platform name. |
 | `architecture` | `text` | Process architecture such as `arm64` or `x86_64`. |
 | `description` | `multiline` | User-provided problem description. |

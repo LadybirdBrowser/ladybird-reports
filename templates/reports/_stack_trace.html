@@ -1,0 +1,54 @@
+                                <div class="stack-trace stack-trace-view">
+                                    <div class="stack-trace-heading">
+                                        <span>{{ stack.frame_count }} frames · {{ stack.rows.len() }} lines</span>
+                                        {% if let Some(signature) = field.stack_signature %}
+                                            <span class="stack-signature">
+                                                Signature <code title="{{ signature.full }}">{{ signature.short }}</code>
+                                            </span>
+                                        {% endif %}
+                                    </div>
+                                    <div class="stack-frame-scroll">
+                                        <table class="stack-frame-table">
+                                            <thead>
+                                                <tr>
+                                                    <th scope="col">Frame</th>
+                                                    <th scope="col">Function</th>
+                                                    <th scope="col">Module</th>
+                                                    <th scope="col">Address</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {% for row in stack.rows %}
+                                                    {% if let Some(number) = row.number %}
+                                                        <tr class="{% if row.top %}stack-frame-top{% endif %}{% if !row.relevant %} stack-frame-runtime{% endif %}">
+                                                            <td class="stack-frame-number">#{{ number }}</td>
+                                                            <td class="stack-frame-symbol">
+                                                                <code>{{ row.symbol }}</code>
+                                                                <span class="stack-frame-mobile-meta">
+                                                                    {{ row.module }} · {{ row.address }}
+                                                                </span>
+                                                            </td>
+                                                            <td class="stack-frame-module" title="Build ID: {{ row.build_id }}">
+                                                                {{ row.module }}
+                                                            </td>
+                                                            <td class="stack-frame-address"><code>{{ row.address }}</code></td>
+                                                        </tr>
+                                                    {% else %}
+                                                        {% if !row.raw.is_empty() %}
+                                                            <tr class="stack-frame-note">
+                                                                <td colspan="4">{{ row.raw }}</td>
+                                                            </tr>
+                                                        {% endif %}
+                                                    {% endif %}
+                                                {% endfor %}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                    {% if stack.truncated %}
+                                        <p class="quiet">Showing the first 256 lines.</p>
+                                    {% endif %}
+                                    <details class="stack-original">
+                                        <summary>Original stack text</summary>
+                                        <pre>{{ field.value }}</pre>
+                                    </details>
+                                </div>

@@ -9,7 +9,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     application::{IssueProposal, propose_issue},
-    domain::{AttachmentId, IssueId, ReportId, ReportSearch, filter_expression},
+    domain::{
+        AttachmentId, IssueId, ParsedStackTrace, ReportId, ReportSearch, filter_expression,
+        parse_stack_trace, stack_fingerprint,
+    },
     error::{AppError, Result},
     infrastructure::database::ReportQuery,
 };
@@ -119,6 +122,7 @@ pub struct ReportTemplate {
     issue_proposal: IssueProposal,
     known_fields: Vec<FieldView>,
     unknown_fields: Vec<FieldView>,
+    similar_reports: Vec<SimilarReportView>,
     attachments: Vec<AttachmentView>,
     events: Vec<EventView>,
 }
@@ -153,9 +157,24 @@ pub struct FieldView {
     label: String,
     kind: String,
     value: String,
-    is_stack: bool,
     is_multiline: bool,
+    stack: Option<ParsedStackTrace>,
+    stack_signature: Option<StackSignatureView>,
     filter_url: Option<String>,
+}
+
+pub struct StackSignatureView {
+    short: String,
+    full: String,
+}
+
+pub struct SimilarReportView {
+    report_id: ReportId,
+    issue_id: Option<IssueId>,
+    issue_title: Option<String>,
+    client_version: String,
+    exact: bool,
+    matching_frames: usize,
 }
 
 pub struct AttachmentView {
@@ -306,7 +325,10 @@ pub async fn search_completions(
         ];
         let definitions = state.database.field_definitions().await?;
         for definition in &definitions {
-            if !matches!(definition.kind.as_str(), "multiline" | "attachment") {
+            if !matches!(
+                definition.kind.as_str(),
+                "multiline" | "stack_trace" | "attachment"
+            ) {
                 keys.push((&definition.key, &definition.label));
             }
         }
@@ -380,6 +402,25 @@ pub async fn show(
         .report_details(report_id)
         .await?
         .ok_or_else(|| not_found("Report not found"))?;
+    state.database.index_report_stack_traces(report_id).await?;
+    let similar_reports = if details.report.issue_id.is_none() {
+        state
+            .database
+            .similar_reports(report_id)
+            .await?
+            .into_iter()
+            .map(|candidate| SimilarReportView {
+                report_id: candidate.report_id,
+                issue_id: candidate.issue_id,
+                issue_title: candidate.issue_title,
+                client_version: candidate.client_version,
+                exact: candidate.exact,
+                matching_frames: candidate.matching_frames,
+            })
+            .collect()
+    } else {
+        Vec::new()
+    };
     let linked_issue = match details.report.issue_id {
         Some(issue_id) => state
             .database
@@ -462,6 +503,10 @@ pub async fn show(
     let mut known_fields = Vec::new();
     let mut unknown_fields = Vec::new();
 
+    let signal = field_string(&details.fields, "signal");
+    let process = field_string(&details.fields, "process");
+    let report_kind = details.report.kind.clone();
+
     for field in details.fields {
         let value = field
             .value
@@ -475,12 +520,35 @@ pub async fn show(
             continue;
         }
 
+        let is_stack = field.kind == "stack_trace"
+            || field.current_kind.as_deref() == Some("stack_trace")
+            || (key == "stack" && field.kind == "multiline");
+        let stack = is_stack.then(|| parse_stack_trace(&value));
+        let stack_signature = stack.as_ref().and_then(|parsed| {
+            stack_fingerprint(
+                &report_kind,
+                process.as_deref(),
+                signal.as_deref(),
+                &parsed.frame_keys,
+            )
+            .map(|full| StackSignatureView {
+                short: full[..12].to_owned(),
+                full,
+            })
+        });
+        let display_kind = if is_stack {
+            "stack_trace".to_owned()
+        } else {
+            field.kind.clone()
+        };
         let view = FieldView {
             label: field.current_label.clone().unwrap_or_else(|| key.clone()),
-            is_stack: key == "stack",
-            is_multiline: field.kind == "multiline",
-            filter_url: (field.kind != "multiline").then(|| field_filter_url(&key, &value)),
-            kind: field.kind,
+            is_multiline: matches!(field.kind.as_str(), "multiline" | "stack_trace"),
+            stack,
+            stack_signature,
+            filter_url: (!matches!(field.kind.as_str(), "multiline" | "stack_trace"))
+                .then(|| field_filter_url(&key, &value)),
+            kind: display_kind,
             key,
             value,
         };
@@ -522,6 +590,7 @@ pub async fn show(
         issue_proposal,
         known_fields,
         unknown_fields,
+        similar_reports,
         attachments,
         events,
     }))
