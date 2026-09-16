@@ -1401,6 +1401,23 @@ tbody tr:hover {
     font-size: 0.76rem;
 }
 
+.issue-link-field {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1rem;
+}
+
+.issue-link-field span {
+    color: var(--ink-soft);
+}
+
+.issue-link-field a {
+    min-width: 0;
+    overflow-wrap: anywhere;
+    font-weight: 650;
+}
+
 .action-card h2 {
     font-size: 1rem;
 }

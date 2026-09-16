@@ -15,6 +15,8 @@ pub struct RuntimeConfiguration {
     pub public_base_url: String,
     pub admin_base_url: String,
     pub github_repository: String,
+    #[serde(default)]
+    pub github_reports_issue_field_id: Option<i64>,
     pub trusted_proxies: Vec<IpNet>,
     pub limits: IngestionLimits,
     pub proof_of_work: ProofOfWorkConfiguration,
@@ -83,6 +85,7 @@ impl Default for RuntimeConfiguration {
             public_base_url: "https://reports.app.ladybird.org".into(),
             admin_base_url: "http://localhost:3000".into(),
             github_repository: "LadybirdBrowser/ladybird".into(),
+            github_reports_issue_field_id: None,
             trusted_proxies: Vec::new(),
             limits: IngestionLimits::default(),
             proof_of_work: ProofOfWorkConfiguration {
@@ -130,6 +133,13 @@ pub const SETTING_DEFINITIONS: &[SettingDefinition] = &[
         "GitHub repository",
         "The repository searched and updated when an internal issue is linked to GitHub.",
         "An owner and repository name, such as LadybirdBrowser/ladybird.",
+    ),
+    setting(
+        "github_reports_issue_field_id",
+        "github_reports_issue_field_id",
+        "GitHub Reports field",
+        "The organization-only GitHub issue text field that links back to a tracked issue.",
+        "A positive issue field ID, or null to disable the backlink.",
     ),
     setting(
         "trusted_proxies",
@@ -441,6 +451,9 @@ impl RuntimeConfiguration {
         self.validate_public_url()?;
         validate_origin(&self.admin_base_url, "Invalid admin URL")?;
         self.validate_github_repository()?;
+        if self.github_reports_issue_field_id.is_some_and(|id| id < 1) {
+            return Err(AppError::InvalidRequest("Invalid GitHub Reports field ID"));
+        }
         self.validate_rate_limits()?;
         self.validate_payload_limits()?;
         self.validate_operational_limits()?;

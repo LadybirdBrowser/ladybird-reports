@@ -16,6 +16,7 @@ its user authorization as follows:
 - Webhooks: active; subscribe to the `Issues` event
 - Repository permission `Issues`: read and write
 - Organization permission `Members`: read-only
+- Organization permission `Issue Fields`: read-only
 - Installation availability: only the account that owns the app
 
 Install the app on the organization and grant it access only to the repository used
@@ -38,6 +39,15 @@ GitHub, and provide it to the admin service as `GITHUB_WEBHOOK_SECRET`. The
 admin service verifies each webhook signature before processing it. Until this
 secret is configured, issue state is refreshed when a maintainer opens an
 issue, but GitHub changes will not appear immediately in the issue list.
+
+To show a backlink in the GitHub issue sidebar, create an organization issue
+field such as `Reports issue`. Use the **Text** type and **Organization only**
+visibility, then pin it to the issue types you use (including issues without a
+type). Put its numeric field ID in the runtime setting
+`github_reports_issue_field_id`. The admin service checks the field's type and
+visibility before writing an issue URL; it retries failed links when the issue
+is viewed. GitHub's organization-only visibility also includes repository
+collaborators, so it is broader than the Reports maintainer login policy.
 
 ## Database bootstrap
 

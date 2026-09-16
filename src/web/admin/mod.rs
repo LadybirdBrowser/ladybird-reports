@@ -65,10 +65,6 @@ pub fn router(state: AdminState) -> Router {
         .route("/issues/{id}", get(handlers::issues::show))
         .route("/issues/{id}", post(handlers::issues::update))
         .route(
-            "/issues/{id}/state",
-            post(handlers::issues::set_github_state),
-        )
-        .route(
             "/issues/{id}/github",
             post(handlers::issues::replace_github_link),
         )

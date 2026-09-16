@@ -33,6 +33,11 @@
             GitHub could not be reached. The status shown here is the last known status.
         </div>
     {% endif %}
+    {% if github_field_warning %}
+        <div class="notice-content">
+            The Reports link could not be added to the GitHub issue sidebar. Check the issue field and GitHub App permissions.
+        </div>
+    {% endif %}
 
     <div class="issue-layout">
         <div class="stack">
@@ -128,31 +133,15 @@
             </section>
         </div>
 
-        <aside class="stack sticky-stack" aria-label="Issue actions">
+        <aside class="stack sticky-stack" aria-label="Issue links and actions">
             <section class="card">
-                <div class="card-header">
-                    <h2>GitHub</h2>
-                </div>
                 <div class="card-body">
-                    {% if issue.github_title != issue.title %}
-                        <p class="quiet">GitHub title: {{ issue.github_title }}</p>
-                    {% endif %}
-                    <a class="button button-secondary" href="{{ issue.github_url }}">
-                        Open GitHub issue #{{ issue.github_number }}
-                    </a>
+                    <div class="issue-link-field">
+                        <span>GitHub</span>
+                        <a href="{{ issue.github_url }}">Issue #{{ issue.github_number }}</a>
+                    </div>
                     {% if issue.merged_into.is_none() %}
-                        {% if issue.github_state == "open" || issue.github_state == "closed" %}
-                            <form method="post" action="/issues/{{ issue.id }}/state">
-                                <input type="hidden" name="csrf" value="{{ navigation.as_ref().unwrap().csrf_token }}">
-                                {% if issue.is_resolved %}
-                                    <input type="hidden" name="state" value="open">
-                                    <button class="button-secondary" type="submit">Reopen GitHub issue</button>
-                                {% else %}
-                                    <input type="hidden" name="state" value="closed">
-                                    <button class="button-secondary" type="submit">Close GitHub issue</button>
-                                {% endif %}
-                            </form>
-                        {% else if issue.github_state == "missing" %}
+                        {% if issue.github_state == "missing" %}
                             <p class="form-note">The GitHub issue was deleted. Link a replacement to resume tracking.</p>
                         {% else if issue.github_state == "moved" %}
                             <p class="form-note">The GitHub issue moved out of the configured repository.</p>
@@ -198,8 +187,7 @@
                         value="{{ navigation.as_ref().unwrap().csrf_token }}"
                     >
                     <p class="form-note">
-                        Move every assigned report into another issue and close this GitHub issue
-                        as a duplicate when it is open.
+                        Move assigned reports into another issue. Update the source issue on GitHub separately.
                     </p>
                     <label>
                         Destination issue

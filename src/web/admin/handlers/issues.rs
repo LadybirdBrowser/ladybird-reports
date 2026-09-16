@@ -10,14 +10,13 @@ use serde::Deserialize;
 use crate::{
     domain::{IssueId, ReportId},
     error::{AppError, Result},
-    infrastructure::github::GithubIssueState,
 };
 
 use super::super::{
     AdminState, TemplateResponse, authentication::Navigation, session::Session,
     templates::not_found,
 };
-use super::github::{github_body, refresh_tracked_issue};
+use super::github::{ensure_github_reports_link, refresh_tracked_issue};
 
 #[derive(Deserialize)]
 pub struct IssueFilters {
@@ -51,6 +50,7 @@ pub struct IssueTemplate {
     merge_destinations: Vec<IssueOption>,
     events: Vec<EventView>,
     sync_warning: bool,
+    github_field_warning: bool,
 }
 
 pub struct IssueView {
@@ -60,7 +60,6 @@ pub struct IssueView {
     github_number: i64,
     github_url: String,
     is_resolved: bool,
-    github_title: String,
     github_state: String,
     merged_into: Option<IssueId>,
 }
@@ -136,7 +135,7 @@ pub async fn create_from_report(
             &access_token,
             &configuration.github_repository,
             form.title.trim(),
-            &github_body(&form.description),
+            &form.description,
         )
         .await?;
     let assignment = state
@@ -188,6 +187,14 @@ pub async fn show(
         Err(error) => return Err(error),
     };
 
+    let github_field_warning = match ensure_github_reports_link(&state, &session, issue_id).await {
+        Ok(()) => false,
+        Err(error) => {
+            tracing::warn!(event = "github.reports_link_sync_failed", %issue_id, ?error);
+            true
+        }
+    };
+
     let details = state
         .database
         .issue_details(issue_id)
@@ -219,7 +226,6 @@ pub async fn show(
         github_number: details.issue.github_number,
         github_url: details.issue.github_url,
         is_resolved: details.issue.resolved_at.is_some(),
-        github_title: details.issue.github_title,
         github_state: details.issue.github_state,
         merged_into: details.issue.merged_into,
     };
@@ -252,6 +258,7 @@ pub async fn show(
         merge_destinations: destinations,
         events,
         sync_warning,
+        github_field_warning,
     }))
 }
 
@@ -281,58 +288,6 @@ pub async fn update(
         actor = session.login,
     );
 
-    Ok(Redirect::to(&format!("/issues/{issue_id}")))
-}
-
-#[derive(Deserialize)]
-pub struct IssueStateForm {
-    csrf: String,
-    state: String,
-}
-
-pub async fn set_github_state(
-    State(state): State<AdminState>,
-    Extension(session): Extension<Session>,
-    Path(issue_id): Path<IssueId>,
-    Form(form): Form<IssueStateForm>,
-) -> Result<Redirect> {
-    session.verify_csrf(&form.csrf)?;
-    let desired_state = match form.state.as_str() {
-        "open" => GithubIssueState::Open,
-        "closed" => GithubIssueState::Closed,
-        _ => return Err(AppError::InvalidRequest("Invalid GitHub issue state")),
-    };
-
-    let current = refresh_tracked_issue(&state, &session, issue_id).await?;
-    if current.merged_into.is_some() || !matches!(current.github_state.as_str(), "open" | "closed")
-    {
-        return Err(AppError::Conflict("GitHub issue link needs attention"));
-    }
-    if current.github_state == desired_state.as_str() {
-        return Ok(Redirect::to(&format!("/issues/{issue_id}")));
-    }
-
-    let token = session.github_access_token(&state)?;
-    let updated = state
-        .github
-        .set_issue_state(
-            &token,
-            &current.github_repository,
-            current.github_number,
-            desired_state,
-        )
-        .await?;
-    state
-        .database
-        .sync_github_issue(
-            &current.github_repository,
-            &updated,
-            Some(session.github_id),
-            "maintainer",
-        )
-        .await?;
-
-    tracing::info!(event = "github.issue_state_changed", %issue_id, state = desired_state.as_str());
     Ok(Redirect::to(&format!("/issues/{issue_id}")))
 }
 
@@ -404,7 +359,7 @@ pub async fn create_replacement(
             &token,
             &configuration.github_repository,
             &details.issue.title,
-            &github_body(&details.issue.description),
+            &details.issue.description,
         )
         .await?;
     state
@@ -485,31 +440,6 @@ pub async fn merge(
     }
     if source.merged_into.is_some() {
         return Err(AppError::Conflict("Source issue was already merged"));
-    }
-
-    if source.github_state == "open" {
-        let destination_github_id = destination.github_issue_id.ok_or(AppError::Conflict(
-            "Destination GitHub identity is unverified",
-        ))?;
-        let token = session.github_access_token(&state)?;
-        let closed = state
-            .github
-            .close_as_duplicate(
-                &token,
-                &source.github_repository,
-                source.github_number,
-                destination_github_id,
-            )
-            .await?;
-        state
-            .database
-            .sync_github_issue(
-                &source.github_repository,
-                &closed,
-                Some(session.github_id),
-                "maintainer_merge",
-            )
-            .await?;
     }
 
     state

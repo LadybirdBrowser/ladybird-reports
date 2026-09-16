@@ -177,25 +177,62 @@ pub(super) async fn refresh_tracked_issue(
         .ok_or(AppError::NotFound("Issue not found"))
 }
 
-pub(super) fn github_body(description: &str) -> String {
-    let summary = if description.trim().is_empty() {
-        "Reports collected by the Ladybird reporting service.".to_owned()
-    } else {
-        description.to_owned()
+pub(super) async fn ensure_github_reports_link(
+    state: &AdminState,
+    session: &Session,
+    issue_id: IssueId,
+) -> Result<()> {
+    let configuration = state.database.configuration().await?;
+    let Some(field_id) = configuration.github_reports_issue_field_id else {
+        return Ok(());
     };
+    let issue = state
+        .database
+        .find_issue(issue_id)
+        .await?
+        .ok_or(AppError::NotFound("Issue not found"))?;
 
-    format!("{summary}\n\n---\nReport data is available in the reporting service.")
-}
-
-#[cfg(test)]
-mod tests {
-    use super::github_body;
-
-    #[test]
-    fn github_body_preserves_the_description_without_stale_counts() {
-        let body = github_body("A reproducible rendering problem.");
-
-        assert!(body.starts_with("A reproducible rendering problem."));
-        assert!(!body.contains("Linked reports:"));
+    if issue.merged_into.is_some()
+        || matches!(
+            issue.github_state.as_str(),
+            "missing" | "moved" | "unavailable"
+        )
+    {
+        return Ok(());
     }
+
+    let link = format!("{}/issues/{issue_id}", configuration.admin_base_url);
+    if issue.github_reports_field_id == Some(field_id)
+        && issue.github_reports_link_url.as_deref() == Some(link.as_str())
+    {
+        return Ok(());
+    }
+
+    let organization = configuration
+        .github_repository
+        .split_once('/')
+        .expect("validated GitHub repository")
+        .0;
+    let token = session.github_access_token(state)?;
+    state
+        .github
+        .verify_private_text_issue_field(&token, organization, field_id)
+        .await?;
+    state
+        .github
+        .add_issue_field_link(
+            &token,
+            &issue.github_repository,
+            issue.github_number,
+            field_id,
+            &link,
+        )
+        .await?;
+    state
+        .database
+        .record_github_reports_link(issue_id, issue.github_issue_id, field_id, &link)
+        .await?;
+
+    tracing::info!(event = "github.reports_link_updated", %issue_id, field_id);
+    Ok(())
 }

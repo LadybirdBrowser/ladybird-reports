@@ -81,6 +81,13 @@ struct GithubIssueSearch {
 }
 
 #[derive(Deserialize)]
+struct GithubIssueField {
+    id: i64,
+    data_type: String,
+    visibility: Option<String>,
+}
+
+#[derive(Deserialize)]
 struct TeamMembership {
     state: String,
 }
@@ -214,42 +221,55 @@ impl GithubClient {
             .await
     }
 
-    pub async fn set_issue_state(
+    pub async fn verify_private_text_issue_field(
         &self,
         token: &str,
-        repository: &str,
-        number: i64,
-        state: GithubIssueState,
-    ) -> Result<GithubIssue> {
-        let path = format!("/repos/{repository}/issues/{number}");
-        self.request_json(
-            Method::PATCH,
-            &path,
-            token,
-            Some(&serde_json::json!({ "state": state.as_str() })),
-        )
-        .await
+        organization: &str,
+        field_id: i64,
+    ) -> Result<()> {
+        let path = format!("/orgs/{organization}/issue-fields");
+        let url = self.api_url(&path)?;
+        let fields: Vec<GithubIssueField> = self
+            .request_json_url_version(Method::GET, url, token, Option::<&()>::None, "2026-03-10")
+            .await?;
+        let field = fields
+            .into_iter()
+            .find(|field| field.id == field_id)
+            .ok_or(AppError::Conflict("GitHub Reports field was not found"))?;
+
+        if field.data_type != "text"
+            || field.visibility.as_deref() != Some("organization_members_only")
+        {
+            return Err(AppError::Conflict(
+                "GitHub Reports field must be an organization-only text field",
+            ));
+        }
+
+        Ok(())
     }
 
-    pub async fn close_as_duplicate(
+    pub async fn add_issue_field_link(
         &self,
         token: &str,
         repository: &str,
-        number: i64,
-        canonical_github_id: i64,
-    ) -> Result<GithubIssue> {
-        let path = format!("/repos/{repository}/issues/{number}");
-        self.request_json(
-            Method::PATCH,
-            &path,
-            token,
-            Some(&serde_json::json!({
-                "state": "closed",
-                "state_reason": "duplicate",
-                "duplicate_issue_id": canonical_github_id,
-            })),
-        )
-        .await
+        issue_number: i64,
+        field_id: i64,
+        link: &str,
+    ) -> Result<()> {
+        let path = format!("/repos/{repository}/issues/{issue_number}/issue-field-values");
+        let url = self.api_url(&path)?;
+        let _: serde_json::Value = self
+            .request_json_url_version(
+                Method::POST,
+                url,
+                token,
+                Some(&serde_json::json!({
+                    "issue_field_values": [{ "field_id": field_id, "value": link }]
+                })),
+                "2026-03-10",
+            )
+            .await?;
+        Ok(())
     }
 
     async fn request_json<T, B>(
@@ -284,12 +304,28 @@ impl GithubClient {
         T: DeserializeOwned,
         B: Serialize + ?Sized,
     {
+        self.request_json_url_version(method, url, token, body, "2022-11-28")
+            .await
+    }
+
+    async fn request_json_url_version<T, B>(
+        &self,
+        method: Method,
+        url: reqwest::Url,
+        token: &str,
+        body: Option<&B>,
+        api_version: &str,
+    ) -> Result<T>
+    where
+        T: DeserializeOwned,
+        B: Serialize + ?Sized,
+    {
         let mut request = self
             .http
             .request(method, url)
             .bearer_auth(token)
             .header("accept", "application/vnd.github+json")
-            .header("x-github-api-version", "2022-11-28");
+            .header("x-github-api-version", api_version);
 
         if let Some(body) = body {
             request = request.json(body);

@@ -45,6 +45,17 @@ async fn main() -> Result<()> {
     .await?;
 
     sqlx::query(
+        "UPDATE runtime_configuration
+         SET value = value || jsonb_build_object(
+             'admin_base_url', 'http://127.0.0.1:3100',
+             'github_reports_issue_field_id', 98500
+         )
+         WHERE singleton = true",
+    )
+    .execute(&mut *transaction)
+    .await?;
+
+    sqlx::query(
         "INSERT INTO maintainers (github_id, login)
          VALUES (12345, 'browser-tester')
          ON CONFLICT (github_id) DO UPDATE SET login = excluded.login",

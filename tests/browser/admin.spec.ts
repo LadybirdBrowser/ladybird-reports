@@ -429,8 +429,20 @@ test.describe("authenticated management UI", () => {
       page.getByRole("heading", { name: "Renderer overlap on test page" }),
     ).toBeVisible();
     await expect(page.getByRole("link", { name: reportId })).toBeVisible();
-    await expect(page.getByRole("link", { name: "Open GitHub issue #7300" }))
+    await expect(page.getByRole("link", { name: "Issue #7300" }))
       .toBeVisible();
+    await expect(page.getByText("GitHub", { exact: true })).toBeVisible();
+    const createdIssueId = page.url().split("/").at(-1);
+    const issueField = await page.request.get(
+      "http://127.0.0.1:3101/test/issue-field/7300",
+    );
+    expect((await issueField.json()).value)
+      .toBe(`http://127.0.0.1:3100/issues/${createdIssueId}`);
+
+    const createdIssue = await page.request.get(
+      "http://127.0.0.1:3101/test/latest-created-issue",
+    );
+    expect((await createdIssue.json()).body).toBe("Created by the browser test.");
 
     await page.getByRole("link", { name: "Reports", exact: true }).click();
     await expect(page.locator(`a[href="/reports/${reportId}"]`)).toHaveCount(0);
@@ -442,7 +454,7 @@ test.describe("authenticated management UI", () => {
     await expect(page.locator(`a[href="/reports/${reportId}"]`)).toBeVisible();
   });
 
-  test("merges tracked issues and closes the source on GitHub", async ({ page }) => {
+  test("merges tracked issues without changing GitHub state", async ({ page }) => {
     await page.goto("/issues");
     await page.getByRole("link", { name: "Renderer overlap on test page" }).click();
     await page.locator('form[action$="/merge"] select[name="destination"]').selectOption({
@@ -457,7 +469,7 @@ test.describe("authenticated management UI", () => {
     const githubIssue = await page.request.get(
       "http://127.0.0.1:3101/repos/LadybirdBrowser/ladybird/issues/7300",
     );
-    expect((await githubIssue.json()).state).toBe("closed");
+    expect((await githubIssue.json()).state).toBe("open");
   });
 
   test("shows the audit log", async ({ page }) => {
@@ -482,9 +494,14 @@ test.describe("authenticated management UI", () => {
   test("keeps GitHub issue state and replacement links in sync", async ({ page }) => {
     await page.goto("/issues");
     await page.getByRole("link", { name: "Intermittent navigation timeout" }).click();
-
-    await page.getByRole("button", { name: "Close GitHub issue" }).click();
-    await expect(page.getByRole("button", { name: "Reopen GitHub issue" })).toBeVisible();
+    const trackedIssueId = page.url().split("/").at(-1);
+    const existingIssueField = await page.request.get(
+      "http://127.0.0.1:3101/test/issue-field/4812",
+    );
+    expect((await existingIssueField.json()).value)
+      .toBe(`http://127.0.0.1:3100/issues/${trackedIssueId}`);
+    await expect(page.getByRole("button", { name: /^(Close|Reopen) GitHub issue$/ }))
+      .toHaveCount(0);
 
     const issue = {
       id: 94812,
@@ -520,18 +537,44 @@ test.describe("authenticated management UI", () => {
     });
     expect(rejected.status()).toBe(403);
 
+    issue.state = "closed";
+    expect((await deliverWebhook("closed")).status()).toBe(204);
+    await page.goto("/issues?resolved=true");
+    await expect(page.getByText("Resolved", { exact: true })).toBeVisible();
+
+    issue.state = "open";
+    issue.updated_at = new Date(Date.now() + 40_000).toISOString();
     expect((await deliverWebhook("reopened")).status()).toBe(204);
-    await page.reload();
-    await expect(page.getByRole("button", { name: "Close GitHub issue" })).toBeVisible();
+    await page.goto("/issues");
+    await expect(page.getByText("Open", { exact: true })).toBeVisible();
 
     issue.state = "closed";
     expect((await deliverWebhook("deleted")).status()).toBe(204);
-    await page.reload();
+    await page.goto(`/issues/${trackedIssueId}`);
     await expect(page.getByText("Needs attention", { exact: true })).toBeVisible();
     await page.getByRole("textbox", { name: "Replacement GitHub issue URL" }).fill(
       "https://github.com/LadybirdBrowser/ladybird/issues/6200",
     );
+    await page.request.post("http://127.0.0.1:3101/test/field-visibility", {
+      data: { visibility: "all" },
+    });
     await page.getByRole("button", { name: "Link replacement issue" }).click();
-    await expect(page.getByRole("link", { name: "Open GitHub issue #6200" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Issue #6200" })).toBeVisible();
+    await expect(page.getByText("The Reports link could not be added"))
+      .toBeVisible();
+    const publicField = await page.request.get(
+      "http://127.0.0.1:3101/test/issue-field/6200",
+    );
+    expect((await publicField.json()).value).toBeNull();
+
+    await page.request.post("http://127.0.0.1:3101/test/field-visibility", {
+      data: { visibility: "organization_members_only" },
+    });
+    await page.reload();
+    const replacementIssueField = await page.request.get(
+      "http://127.0.0.1:3101/test/issue-field/6200",
+    );
+    expect((await replacementIssueField.json()).value)
+      .toBe(`http://127.0.0.1:3100/issues/${trackedIssueId}`);
   });
 });

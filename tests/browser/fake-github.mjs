@@ -2,6 +2,9 @@ import { createServer } from "node:http";
 
 const port = Number(process.env.GITHUB_TEST_PORT ?? "3101");
 const issueStates = new Map();
+let latestCreatedIssue;
+const issueFieldValues = new Map();
+let issueFieldVisibility = "organization_members_only";
 
 function sendJson(response, status, value) {
   response.writeHead(status, { "content-type": "application/json" });
@@ -14,6 +17,67 @@ const server = createServer((request, response) => {
 
   if (request.method === "GET" && url.pathname === "/health") {
     sendJson(response, 200, { status: "ok" });
+    return;
+  }
+
+  if (request.method === "GET" && url.pathname === "/test/latest-created-issue") {
+    sendJson(response, 200, latestCreatedIssue ?? {});
+    return;
+  }
+
+  if (request.method === "POST" && url.pathname === "/test/field-visibility") {
+    let body = "";
+    request.setEncoding("utf8");
+    request.on("data", (chunk) => {
+      body += chunk;
+    });
+    request.on("end", () => {
+      issueFieldVisibility = JSON.parse(body).visibility;
+      sendJson(response, 200, { visibility: issueFieldVisibility });
+    });
+    return;
+  }
+
+  const testIssueField = url.pathname.match(/^\/test\/issue-field\/(\d+)$/);
+  if (request.method === "GET" && testIssueField) {
+    sendJson(response, 200, {
+      value: issueFieldValues.get(Number(testIssueField[1])) ?? null,
+    });
+    return;
+  }
+
+  if (request.method === "GET" && url.pathname === "/orgs/LadybirdBrowser/issue-fields") {
+    sendJson(response, 200, [{
+      id: 98500,
+      name: "Ladybird Reports",
+      data_type: "text",
+      visibility: issueFieldVisibility,
+    }]);
+    return;
+  }
+
+  const issueFieldMatch = url.pathname.match(
+    /^\/repos\/[^/]+\/[^/]+\/issues\/(\d+)\/issue-field-values$/,
+  );
+  if (request.method === "POST" && issueFieldMatch) {
+    let body = "";
+    request.setEncoding("utf8");
+    request.on("data", (chunk) => {
+      body += chunk;
+    });
+    request.on("end", () => {
+      const field = JSON.parse(body).issue_field_values[0];
+      if (field.field_id !== 98500) {
+        sendJson(response, 422, { message: "Invalid field" });
+        return;
+      }
+      issueFieldValues.set(Number(issueFieldMatch[1]), field.value);
+      sendJson(response, 200, [{
+        issue_field_id: field.field_id,
+        data_type: "text",
+        value: field.value,
+      }]);
+    });
     return;
   }
 
@@ -57,35 +121,6 @@ const server = createServer((request, response) => {
     return;
   }
 
-  if (request.method === "PATCH" && issueMatch) {
-    let body = "";
-    request.setEncoding("utf8");
-    request.on("data", (chunk) => {
-      body += chunk;
-    });
-    request.on("end", () => {
-      const number = Number(issueMatch[1]);
-      const state = JSON.parse(body).state;
-      if (state !== "open" && state !== "closed") {
-        sendJson(response, 422, { message: "Invalid state" });
-        return;
-      }
-
-      issueStates.set(number, state);
-      sendJson(response, 200, {
-        id: number + 90000,
-        number,
-        title: number === 6200
-          ? "Investigate renderer overlap"
-          : "Fix overlapping navigation controls",
-        html_url: `https://github.com/LadybirdBrowser/ladybird/issues/${number}`,
-        state,
-        updated_at: new Date().toISOString(),
-      });
-    });
-    return;
-  }
-
   if (request.method === "POST" && /\/issues$/.test(url.pathname)) {
     let body = "";
     request.setEncoding("utf8");
@@ -94,6 +129,7 @@ const server = createServer((request, response) => {
     });
     request.on("end", () => {
       const issue = JSON.parse(body);
+      latestCreatedIssue = issue;
       issueStates.set(7300, "open");
       sendJson(response, 201, {
         id: 97300,

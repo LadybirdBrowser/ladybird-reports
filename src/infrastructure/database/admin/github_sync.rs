@@ -102,6 +102,8 @@ impl AdminDatabase {
                  github_state = $7,
                  github_checked_at = now(),
                  github_updated_at = $8,
+                 github_reports_field_id = NULL,
+                 github_reports_link_url = NULL,
                  resolved_at = CASE
                     WHEN $7 = 'closed' THEN COALESCE(resolved_at, now())
                     ELSE NULL
@@ -313,5 +315,33 @@ impl AdminDatabase {
 
         transaction.commit().await?;
         Ok(Some(issue_id))
+    }
+
+    pub async fn record_github_reports_link(
+        &self,
+        issue_id: IssueId,
+        github_issue_id: Option<i64>,
+        field_id: i64,
+        link: &str,
+    ) -> Result<()> {
+        let result = sqlx::query(
+            "UPDATE issues
+             SET github_reports_field_id = $3,
+                 github_reports_link_url = $4
+             WHERE id = $1 AND github_issue_id IS NOT DISTINCT FROM $2
+                 AND merged_into IS NULL",
+        )
+        .bind(issue_id)
+        .bind(github_issue_id)
+        .bind(field_id)
+        .bind(link)
+        .execute(&self.pool)
+        .await?;
+
+        if result.rows_affected() != 1 {
+            return Err(AppError::Conflict("GitHub issue link changed during sync"));
+        }
+
+        Ok(())
     }
 }

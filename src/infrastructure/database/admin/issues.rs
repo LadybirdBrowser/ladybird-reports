@@ -382,6 +382,8 @@ impl AdminDatabase {
                 issues.github_title,
                 issues.github_state,
                 issues.github_url,
+                issues.github_reports_field_id,
+                issues.github_reports_link_url,
                 issues.github_checked_at,
                 issues.created_at,
                 issues.updated_at
@@ -404,6 +406,8 @@ impl AdminDatabase {
             github_title: row.get("github_title"),
             github_state: row.get("github_state"),
             github_url: row.get("github_url"),
+            github_reports_field_id: row.get("github_reports_field_id"),
+            github_reports_link_url: row.get("github_reports_link_url"),
             github_checked_at: row.get("github_checked_at"),
             created_at: row.get("created_at"),
             updated_at: row.get("updated_at"),
