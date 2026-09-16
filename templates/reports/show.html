@@ -211,6 +211,18 @@
                 <h2 id="actions-title">Actions</h2>
             </div>
             <div class="card-body">
+                {% if let Some(linked_issue) = linked_issue %}
+                    <section class="action-group report-linked-issue" aria-labelledby="linked-issue-title">
+                        <h3 id="linked-issue-title">Linked issue</h3>
+                        <a class="primary-link" href="/issues/{{ linked_issue.id }}">
+                            {{ linked_issue.title }}
+                        </a>
+                        <div class="issue-link-field">
+                            <span>GitHub</span>
+                            <a href="{{ linked_issue.github_url }}">Issue #{{ linked_issue.github_number }}</a>
+                        </div>
+                    </section>
+                {% endif %}
                 <section class="action-group">
                     <button type="button" data-open-issue-dialog>
                         {% if report.is_assigned %}

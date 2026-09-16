@@ -306,7 +306,7 @@ impl AdminDatabase {
         let mut transaction = self.pool.begin().await?;
 
         // Human issue operations share one lock. This prevents an assignment from
-        // racing with an issue merge while keeping ingestion fully independent.
+        // racing with a merge or hide while keeping ingestion independent.
         sqlx::query("SELECT pg_advisory_xact_lock(891125)")
             .execute(&mut *transaction)
             .await?;
@@ -317,6 +317,7 @@ impl AdminDatabase {
                 FROM issues
                 WHERE id = $1
                     AND merged_into IS NULL
+                    AND hidden_at IS NULL
                     AND resolved_at IS NULL
                     AND github_state = 'open'
             )",

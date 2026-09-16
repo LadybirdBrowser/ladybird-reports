@@ -48,6 +48,10 @@ issue's title, description, and open or closed state. Signed GitHub webhooks
 update those cached values in Reports. Report assignments remain intact when
 an issue is closed, deleted, or transferred. A deleted or moved link is flagged for
 repair, and its previous GitHub identity stays associated with the issue.
+The report view links to its tracked issue. From the issue view, a maintainer
+can unlink individual reports. Deleting an issue hides its Reports record and
+unlinks all remaining reports, which return to triage or confirmed. Neither
+action changes the GitHub issue, and a hidden issue cannot receive reports.
 Merging two tracked issues moves the reports to the destination. Maintainers
 update the source GitHub issue separately.
 When `github_reports_issue_field_id` is configured, opening a tracked issue

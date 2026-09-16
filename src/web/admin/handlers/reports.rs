@@ -115,6 +115,7 @@ pub struct EntitySearchOption {
 pub struct ReportTemplate {
     navigation: Option<Navigation>,
     report: ReportView,
+    linked_issue: Option<LinkedIssueView>,
     issue_proposal: IssueProposal,
     known_fields: Vec<FieldView>,
     unknown_fields: Vec<FieldView>,
@@ -131,6 +132,13 @@ pub struct ReportView {
     is_triage: bool,
     has_submission_source: bool,
     submission_source_is_blocked: bool,
+}
+
+pub struct LinkedIssueView {
+    id: IssueId,
+    title: String,
+    github_number: i64,
+    github_url: String,
 }
 
 pub struct OverviewField {
@@ -372,6 +380,19 @@ pub async fn show(
         .report_details(report_id)
         .await?
         .ok_or_else(|| not_found("Report not found"))?;
+    let linked_issue = match details.report.issue_id {
+        Some(issue_id) => state
+            .database
+            .find_issue(issue_id)
+            .await?
+            .map(|issue| LinkedIssueView {
+                id: issue.id,
+                title: issue.title,
+                github_number: issue.github_number,
+                github_url: issue.github_url,
+            }),
+        None => None,
+    };
     let issue_proposal = propose_issue(&details);
     let platform = field_string(&details.fields, "platform").unwrap_or_else(|| "Unknown".into());
     let architecture =
@@ -497,6 +518,7 @@ pub async fn show(
     Ok(TemplateResponse(ReportTemplate {
         navigation: Some(Navigation::for_session(&state, &session)),
         report: report_view,
+        linked_issue,
         issue_proposal,
         known_fields,
         unknown_fields,

@@ -199,7 +199,9 @@ pub async fn operations(
                 } else {
                     format!("Report ·{suffix}")
                 };
-                let url = if is_issue {
+                let url = if event.action == "issue.update_visibility" {
+                    None
+                } else if is_issue {
                     Some(format!("/issues/{id}"))
                 } else if event.action == "report.update_visibility" {
                     None

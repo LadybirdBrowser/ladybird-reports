@@ -771,6 +771,74 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
             .all(|link| link.issue_id == issue_id)
     );
 
+    let linked_before_delete: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM reports WHERE issue_id = $1")
+            .bind(issue_id)
+            .fetch_one(&admin_pool)
+            .await
+            .expect("count reports linked to issue before deletion");
+    assert!(linked_before_delete > 1);
+
+    admin_database
+        .unlink_report_from_issue(issue_id, first_github_report, 999)
+        .await
+        .expect("unlink one report from its issue");
+    let unlinked_assignment: (Option<IssueId>, Option<chrono::DateTime<Utc>>) =
+        sqlx::query_as("SELECT issue_id, assigned_at FROM reports WHERE id = $1")
+            .bind(first_github_report)
+            .fetch_one(&admin_pool)
+            .await
+            .expect("check unlinked report");
+    assert_eq!(unlinked_assignment, (None, None));
+
+    let reports_unlinked = admin_database
+        .hide_issue(issue_id, 999)
+        .await
+        .expect("hide tracked issue and unlink its reports");
+    assert_eq!(reports_unlinked as i64, linked_before_delete - 1);
+    assert!(
+        admin_database
+            .find_issue(issue_id)
+            .await
+            .expect("look up hidden issue")
+            .is_none()
+    );
+    assert!(
+        admin_database
+            .find_issue(created_issue.issue_id)
+            .await
+            .expect("look up merged issue hidden with destination")
+            .is_none()
+    );
+    let remaining_assignments: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM reports WHERE issue_id = $1")
+            .bind(issue_id)
+            .fetch_one(&admin_pool)
+            .await
+            .expect("count assignments to hidden issue");
+    assert_eq!(remaining_assignments, 0);
+    let hide_audit: serde_json::Value = sqlx::query_scalar(
+        "SELECT details FROM audit_events
+         WHERE entity_id = $1 AND action = 'issue.update_visibility'",
+    )
+    .bind(issue_id)
+    .fetch_one(&admin_pool)
+    .await
+    .expect("read issue deletion audit");
+    assert_eq!(hide_audit["reports_unlinked"], reports_unlinked);
+
+    let retracked = admin_database
+        .assign_report_to_github_issue(
+            &github_issue(4812, "Re-tracked GitHub issue"),
+            first_github_report,
+            "LadybirdBrowser/ladybird",
+            999,
+        )
+        .await
+        .expect("track the same GitHub issue after hiding its old record");
+    assert!(retracked.created);
+    assert_ne!(retracked.issue_id, issue_id);
+
     sqlx::query("DELETE FROM discord_report_notifications")
         .execute(&admin_pool)
         .await

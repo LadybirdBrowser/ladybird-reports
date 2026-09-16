@@ -73,6 +73,7 @@
                                     <th>Report</th>
                                     <th>Version</th>
                                     <th>Received</th>
+                                    <th><span class="visually-hidden">Action</span></th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -88,6 +89,25 @@
                                         </td>
                                         <td>{{ report.client_version }}</td>
                                         <td class="quiet">{{ report.created_at }}</td>
+                                        <td>
+                                            <form
+                                                method="post"
+                                                action="/issues/{{ issue.id }}/reports/{{ report.id }}/unlink"
+                                            >
+                                                <input
+                                                    type="hidden"
+                                                    name="csrf"
+                                                    value="{{ navigation.as_ref().unwrap().csrf_token }}"
+                                                >
+                                                <button
+                                                    class="button-secondary table-action"
+                                                    type="submit"
+                                                    aria-label="Unlink report {{ report.id }}"
+                                                >
+                                                    Unlink
+                                                </button>
+                                            </form>
+                                        </td>
                                     </tr>
                                 {% endfor %}
                             </tbody>
@@ -242,6 +262,48 @@
                     </label>
                     <button class="button-secondary" type="submit">Merge this issue</button>
                 </form>
+            </section>
+
+            <section class="card">
+                <div class="card-header">
+                    <h2>Actions</h2>
+                </div>
+                <div class="card-body">
+                    <button class="button-danger" type="button" popovertarget="hide-issue-confirmation">
+                        Delete issue
+                    </button>
+                    <div
+                        class="confirmation-popover modal-overlay"
+                        id="hide-issue-confirmation"
+                        role="dialog"
+                        aria-labelledby="hide-issue-confirmation-title"
+                        popover
+                    >
+                        <form method="post" action="/issues/{{ issue.id }}/hide">
+                            <input
+                                type="hidden"
+                                name="csrf"
+                                value="{{ navigation.as_ref().unwrap().csrf_token }}"
+                            >
+                            <h3 id="hide-issue-confirmation-title">Delete this issue?</h3>
+                            <p>
+                                The issue will disappear from Reports, but its record stays stored.
+                                Linked reports return to triage or confirmed. GitHub is unchanged.
+                            </p>
+                            <div class="popover-actions">
+                                <button
+                                    class="button-secondary"
+                                    type="button"
+                                    popovertarget="hide-issue-confirmation"
+                                    popovertargetaction="hide"
+                                >
+                                    Cancel
+                                </button>
+                                <button class="button-danger" type="submit">Delete</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
             </section>
         </aside>
     </div>

@@ -31,6 +31,7 @@ impl AdminDatabase {
                 AND reports.hidden_at IS NULL
                 AND reports.storage_state = 'ready'
              WHERE issues.merged_into IS NULL
+                AND issues.hidden_at IS NULL
                 AND (
                     $1 OR issues.resolved_at IS NULL
                     OR issues.github_state IN (
@@ -76,6 +77,7 @@ impl AdminDatabase {
                 AND reports.hidden_at IS NULL
                 AND reports.storage_state = 'ready'
              WHERE issues.merged_into IS NULL
+                AND issues.hidden_at IS NULL
                 AND issues.resolved_at IS NULL
                 AND issues.github_state IN ('open', 'unknown')
                 AND (
@@ -126,6 +128,7 @@ impl AdminDatabase {
                 FROM issues
                 WHERE lower(github_repository) = lower($1)
                     AND github_number = ANY($2)
+                    AND hidden_at IS NULL
                 UNION ALL
                 SELECT aliases.issue_id, issues.merged_into,
                        aliases.github_number, 0 AS depth
@@ -133,18 +136,21 @@ impl AdminDatabase {
                 JOIN issues ON issues.id = aliases.issue_id
                 WHERE lower(aliases.github_repository) = lower($1)
                     AND aliases.github_number = ANY($2)
+                    AND issues.hidden_at IS NULL
                 UNION ALL
                 SELECT issues.id, issues.merged_into, linked.github_number,
                        linked.depth + 1
                 FROM linked
                 JOIN issues ON issues.id = linked.merged_into
                 WHERE linked.depth < 16
+                    AND issues.hidden_at IS NULL
              )
              SELECT linked.id, linked.github_number, issues.title,
                     issues.github_state
              FROM linked
              JOIN issues ON issues.id = linked.id
-             WHERE linked.merged_into IS NULL",
+             WHERE linked.merged_into IS NULL
+                AND issues.hidden_at IS NULL",
         )
         .bind(repository)
         .bind(github_numbers)
@@ -189,21 +195,24 @@ impl AdminDatabase {
             "WITH RECURSIVE chain AS (
                 SELECT id, merged_into, 0 AS depth
                 FROM issues
-                WHERE (lower(github_repository) = lower($1)
-                    AND github_number = $2)
-                    OR github_issue_id = $3
+                WHERE hidden_at IS NULL
+                    AND ((lower(github_repository) = lower($1)
+                        AND github_number = $2)
+                        OR github_issue_id = $3)
                 UNION ALL
                 SELECT aliases.issue_id, issues.merged_into, 0 AS depth
                 FROM issue_github_aliases AS aliases
                 JOIN issues ON issues.id = aliases.issue_id
-                WHERE (lower(aliases.github_repository) = lower($1)
-                    AND aliases.github_number = $2)
-                    OR aliases.github_issue_id = $3
+                WHERE issues.hidden_at IS NULL
+                    AND ((lower(aliases.github_repository) = lower($1)
+                        AND aliases.github_number = $2)
+                        OR aliases.github_issue_id = $3)
                 UNION ALL
                 SELECT issues.id, issues.merged_into, chain.depth + 1
                 FROM chain
                 JOIN issues ON issues.id = chain.merged_into
                 WHERE chain.depth < 16
+                    AND issues.hidden_at IS NULL
              )
              SELECT id FROM chain WHERE merged_into IS NULL
              ORDER BY depth DESC LIMIT 1",
@@ -217,7 +226,7 @@ impl AdminDatabase {
         let (issue_id, created) = if let Some(issue_id) = existing_issue_id {
             let active: bool = sqlx::query_scalar(
                 "SELECT resolved_at IS NULL AND github_state IN ('open', 'unknown')
-                 FROM issues WHERE id = $1",
+                 FROM issues WHERE id = $1 AND hidden_at IS NULL",
             )
             .bind(issue_id)
             .fetch_one(&mut *transaction)
@@ -385,7 +394,7 @@ impl AdminDatabase {
                 issues.created_at,
                 issues.updated_at
              FROM issues
-             WHERE issues.id = $1",
+             WHERE issues.id = $1 AND issues.hidden_at IS NULL",
         )
         .bind(issue_id)
         .fetch_optional(&self.pool)
@@ -410,6 +419,131 @@ impl AdminDatabase {
         }))
     }
 
+    pub async fn unlink_report_from_issue(
+        &self,
+        issue_id: IssueId,
+        report_id: ReportId,
+        actor: i64,
+    ) -> Result<()> {
+        let mut transaction = self.pool.begin().await?;
+        sqlx::query("SELECT pg_advisory_xact_lock(891125)")
+            .execute(&mut *transaction)
+            .await?;
+
+        let issue_visible: bool = sqlx::query_scalar(
+            "SELECT EXISTS (
+                SELECT 1 FROM issues WHERE id = $1 AND hidden_at IS NULL
+             )",
+        )
+        .bind(issue_id)
+        .fetch_one(&mut *transaction)
+        .await?;
+        if !issue_visible {
+            return Err(AppError::NotFound("Issue not found"));
+        }
+
+        let result = sqlx::query(
+            "UPDATE reports
+             SET issue_id = NULL, assigned_at = NULL, updated_at = now()
+             WHERE id = $1 AND issue_id = $2
+                AND hidden_at IS NULL AND deleted_at IS NULL",
+        )
+        .bind(report_id)
+        .bind(issue_id)
+        .execute(&mut *transaction)
+        .await?;
+        if result.rows_affected() != 1 {
+            return Err(AppError::NotFound("Assigned report not found"));
+        }
+
+        sqlx::query(
+            "INSERT INTO audit_events (actor, action, entity_id, details)
+             VALUES ($1, 'report.update_issue', $2,
+                jsonb_build_object('from', $3::uuid, 'to', NULL))",
+        )
+        .bind(actor)
+        .bind(report_id.0)
+        .bind(issue_id)
+        .execute(&mut *transaction)
+        .await?;
+
+        transaction.commit().await?;
+        Ok(())
+    }
+
+    pub async fn hide_issue(&self, issue_id: IssueId, actor: i64) -> Result<u64> {
+        let mut transaction = self.pool.begin().await?;
+        sqlx::query("SELECT pg_advisory_xact_lock(891125)")
+            .execute(&mut *transaction)
+            .await?;
+
+        let result = sqlx::query(
+            "UPDATE issues
+             SET hidden_at = now(), updated_at = now()
+             WHERE id = $1 AND hidden_at IS NULL",
+        )
+        .bind(issue_id)
+        .execute(&mut *transaction)
+        .await?;
+        if result.rows_affected() != 1 {
+            return Err(AppError::NotFound("Issue not found"));
+        }
+
+        // Merged source records point at this issue. Hide them too so their
+        // history pages never link to a hidden destination.
+        let merged_sources_hidden = sqlx::query(
+            "WITH RECURSIVE sources AS (
+                SELECT id FROM issues WHERE merged_into = $1
+                UNION ALL
+                SELECT issues.id FROM issues
+                JOIN sources ON issues.merged_into = sources.id
+             )
+             UPDATE issues
+             SET hidden_at = now(), updated_at = now()
+             WHERE id IN (SELECT id FROM sources) AND hidden_at IS NULL",
+        )
+        .bind(issue_id)
+        .execute(&mut *transaction)
+        .await?
+        .rows_affected();
+
+        let reports_unlinked = sqlx::query(
+            "WITH unlinked AS (
+                UPDATE reports
+                SET issue_id = NULL, assigned_at = NULL, updated_at = now()
+                WHERE issue_id = $1
+                RETURNING id
+             )
+             INSERT INTO audit_events (actor, action, entity_id, details)
+             SELECT $2, 'report.update_issue', unlinked.id,
+                    jsonb_build_object('from', $1::uuid, 'to', NULL)
+             FROM unlinked",
+        )
+        .bind(issue_id)
+        .bind(actor)
+        .execute(&mut *transaction)
+        .await?
+        .rows_affected();
+
+        sqlx::query(
+            "INSERT INTO audit_events (actor, action, entity_id, details)
+             VALUES ($1, 'issue.update_visibility', $2, $3)",
+        )
+        .bind(actor)
+        .bind(issue_id.0)
+        .bind(serde_json::json!({
+            "from": "visible",
+            "to": "hidden",
+            "reports_unlinked": reports_unlinked,
+            "merged_sources_hidden": merged_sources_hidden,
+        }))
+        .execute(&mut *transaction)
+        .await?;
+
+        transaction.commit().await?;
+        Ok(reports_unlinked)
+    }
+
     pub async fn merge_issue(
         &self,
         source: IssueId,
@@ -432,6 +566,7 @@ impl AdminDatabase {
             "SELECT EXISTS(
                 SELECT 1 FROM issues
                 WHERE id = $1 AND merged_into IS NULL
+                    AND hidden_at IS NULL
                     AND resolved_at IS NULL AND github_state = 'open'
             )",
         )
@@ -446,7 +581,8 @@ impl AdminDatabase {
         let source_update = sqlx::query(
             "UPDATE issues
              SET merged_into = $2, updated_at = now()
-             WHERE id = $1 AND merged_into IS NULL",
+             WHERE id = $1 AND merged_into IS NULL
+                AND hidden_at IS NULL",
         )
         .bind(source)
         .bind(destination)

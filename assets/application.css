@@ -1176,6 +1176,12 @@ button:active,
     color: var(--ink);
 }
 
+.table-action {
+    min-height: 2rem;
+    padding: 0.35rem 0.6rem;
+    font-size: 0.78rem;
+}
+
 .button-danger {
     border-color: var(--danger);
     background: var(--danger);
@@ -1412,6 +1418,22 @@ tbody tr:hover {
 
 .issue-description {
     white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.report-linked-issue {
+    padding-bottom: 1rem;
+    border-bottom: 1px solid var(--border);
+}
+
+.report-linked-issue h3 {
+    margin-bottom: 0.4rem;
+    font-size: 0.86rem;
+}
+
+.report-linked-issue > a {
+    display: block;
+    margin-bottom: 0.75rem;
     overflow-wrap: anywhere;
 }
 

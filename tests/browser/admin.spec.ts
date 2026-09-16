@@ -622,4 +622,44 @@ test.describe("authenticated management UI", () => {
     expect((await replacementIssueField.json()).value)
       .toBe(`http://127.0.0.1:3100/issues/${trackedIssueId}`);
   });
+
+  test("unlinks reports and hides an issue without changing GitHub", async ({ page }) => {
+    await page.goto(`/reports/${reportId}`);
+    const linkedIssue = page.locator(".report-linked-issue");
+    await expect(linkedIssue.getByRole("link", { name: "Investigate renderer overlap" }))
+      .toBeVisible();
+    await expect(linkedIssue.getByRole("link", { name: "Issue #6200" }))
+      .toBeVisible();
+
+    await linkedIssue.getByRole("link", { name: "Investigate renderer overlap" }).click();
+    const issueUrl = page.url();
+    await page.getByRole("button", { name: `Unlink report ${reportId}` }).click();
+    await expect(page.getByRole("link", { name: reportId })).toHaveCount(0);
+
+    await page.goto(`/reports/${reportId}`);
+    await expect(page.locator(".badge-triage")).toHaveText("Needs triage");
+    await expect(page.locator(".report-linked-issue")).toHaveCount(0);
+
+    await page.goto(issueUrl);
+    const remainingReport = await page.locator('a[href^="/reports/"]').first()
+      .getAttribute("href");
+    expect(remainingReport).not.toBeNull();
+    await page.getByRole("button", { name: "Delete issue" }).click();
+    const confirmation = page.getByRole("dialog", { name: "Delete this issue?" });
+    await expect(confirmation).toBeVisible();
+    await confirmation.getByRole("button", { name: "Cancel" }).click();
+    await expect(confirmation).toBeHidden();
+    await page.getByRole("button", { name: "Delete issue" }).click();
+    await confirmation.getByRole("button", { name: "Delete" }).click();
+    await expect(page).toHaveURL(/\/issues$/);
+    expect((await page.request.get(issueUrl)).status()).toBe(404);
+
+    await page.goto(remainingReport!);
+    await expect(page.locator(".badge-assigned")).toHaveCount(0);
+    await expect(page.locator(".report-linked-issue")).toHaveCount(0);
+    const githubIssue = await page.request.get(
+      "http://127.0.0.1:3101/repos/LadybirdBrowser/ladybird/issues/6200",
+    );
+    expect((await githubIssue.json()).state).toBe("open");
+  });
 });

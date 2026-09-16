@@ -63,6 +63,11 @@ pub fn router(state: AdminState) -> Router {
             post(handlers::issues::create_from_report),
         )
         .route("/issues/{id}", get(handlers::issues::show))
+        .route("/issues/{id}/hide", post(handlers::issues::hide))
+        .route(
+            "/issues/{id}/reports/{report_id}/unlink",
+            post(handlers::issues::unlink_report),
+        )
         .route(
             "/issues/{id}/github",
             post(handlers::issues::replace_github_link),

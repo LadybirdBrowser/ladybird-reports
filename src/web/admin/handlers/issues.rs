@@ -262,6 +262,50 @@ pub async fn show(
 }
 
 #[derive(Deserialize)]
+pub struct IssueActionForm {
+    csrf: String,
+}
+
+pub async fn unlink_report(
+    State(state): State<AdminState>,
+    Extension(session): Extension<Session>,
+    Path((issue_id, report_id)): Path<(IssueId, ReportId)>,
+    Form(form): Form<IssueActionForm>,
+) -> Result<Redirect> {
+    session.verify_csrf(&form.csrf)?;
+    state
+        .database
+        .unlink_report_from_issue(issue_id, report_id, session.github_id)
+        .await?;
+
+    tracing::info!(event = "report.update_issue", %report_id, from = %issue_id, to = "none", actor = session.login);
+    Ok(Redirect::to(&format!("/issues/{issue_id}")))
+}
+
+pub async fn hide(
+    State(state): State<AdminState>,
+    Extension(session): Extension<Session>,
+    Path(issue_id): Path<IssueId>,
+    Form(form): Form<IssueActionForm>,
+) -> Result<Redirect> {
+    session.verify_csrf(&form.csrf)?;
+    let reports_unlinked = state
+        .database
+        .hide_issue(issue_id, session.github_id)
+        .await?;
+
+    tracing::warn!(
+        event = "issue.update_visibility",
+        %issue_id,
+        from = "visible",
+        to = "hidden",
+        reports_unlinked,
+        actor = session.login,
+    );
+    Ok(Redirect::to("/issues"))
+}
+
+#[derive(Deserialize)]
 pub struct ReplaceGithubLinkForm {
     csrf: String,
     github_url: String,

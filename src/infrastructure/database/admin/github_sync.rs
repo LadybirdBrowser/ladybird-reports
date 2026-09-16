@@ -35,6 +35,7 @@ impl AdminDatabase {
                     github_url, github_state
              FROM issues
              WHERE id = $1 AND merged_into IS NULL
+                AND hidden_at IS NULL
              FOR UPDATE",
         )
         .bind(issue_id)
@@ -59,15 +60,18 @@ impl AdminDatabase {
         let already_linked: bool = sqlx::query_scalar(
             "SELECT EXISTS (
                 SELECT 1 FROM issues
-                WHERE id <> $1
+                WHERE id <> $1 AND hidden_at IS NULL
                     AND (
                         (lower(github_repository) = lower($2) AND github_number = $3)
                         OR github_issue_id = $4
                     )
                 UNION ALL
-                SELECT 1 FROM issue_github_aliases
-                WHERE (lower(github_repository) = lower($2) AND github_number = $3)
-                    OR github_issue_id = $4
+                SELECT 1 FROM issue_github_aliases AS aliases
+                JOIN issues ON issues.id = aliases.issue_id
+                WHERE issues.hidden_at IS NULL
+                    AND ((lower(aliases.github_repository) = lower($2)
+                        AND aliases.github_number = $3)
+                        OR aliases.github_issue_id = $4)
              )",
         )
         .bind(issue_id)
@@ -163,8 +167,9 @@ impl AdminDatabase {
             "SELECT id, github_issue_id, github_state, title, description,
                     github_repository, github_url, github_updated_at
              FROM issues
-             WHERE github_issue_id = $1
-                OR (lower(github_repository) = lower($2) AND github_number = $3)
+             WHERE hidden_at IS NULL
+                AND (github_issue_id = $1
+                    OR (lower(github_repository) = lower($2) AND github_number = $3))
              ORDER BY COALESCE(github_issue_id = $1, false) DESC
              LIMIT 1
              FOR UPDATE",
@@ -280,8 +285,9 @@ impl AdminDatabase {
         let row = sqlx::query(
             "SELECT id, github_state, github_issue_id
              FROM issues
-             WHERE github_issue_id = $1
-                OR (lower(github_repository) = lower($2) AND github_number = $3)
+             WHERE hidden_at IS NULL
+                AND (github_issue_id = $1
+                    OR (lower(github_repository) = lower($2) AND github_number = $3))
              ORDER BY COALESCE(github_issue_id = $1, false) DESC
              LIMIT 1
              FOR UPDATE",
@@ -346,7 +352,8 @@ impl AdminDatabase {
              SET github_reports_field_id = $3,
                  github_reports_link_url = $4
              WHERE id = $1 AND github_issue_id IS NOT DISTINCT FROM $2
-                 AND merged_into IS NULL",
+                 AND merged_into IS NULL
+                 AND hidden_at IS NULL",
         )
         .bind(issue_id)
         .bind(github_issue_id)
