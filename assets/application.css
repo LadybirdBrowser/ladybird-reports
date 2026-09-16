@@ -1950,6 +1950,40 @@ pre {
     gap: 0.45rem;
 }
 
+.stack-raw-control {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    margin-left: auto;
+    color: #d8dced;
+    cursor: pointer;
+}
+
+.stack-raw-control input {
+    accent-color: #a9a4ff;
+}
+
+.stack-raw-text {
+    display: none;
+    max-height: 38rem;
+    overflow: auto;
+    padding: 1rem;
+    margin: 0;
+    background: transparent;
+    color: #d8dced;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.stack-trace:has(.stack-raw-toggle:checked) .stack-frame-scroll,
+.stack-trace:has(.stack-raw-toggle:checked) .stack-truncated-note {
+    display: none;
+}
+
+.stack-trace:has(.stack-raw-toggle:checked) .stack-raw-text {
+    display: block;
+}
+
 .stack-frame-scroll {
     max-height: 38rem;
     overflow: auto;
@@ -2045,23 +2079,6 @@ pre {
 
 .stack-frame-mobile-meta {
     display: none;
-}
-
-.stack-original {
-    padding: 0.8rem 1rem;
-    border-top: 1px solid #34384c;
-}
-
-.stack-original summary {
-    color: #b7a6ff;
-    font-size: 0.8rem;
-}
-
-.stack-original pre {
-    max-height: 24rem;
-    padding: 0.8rem 0 0;
-    background: transparent;
-    color: #d8dced;
 }
 
 .similar-report-list {

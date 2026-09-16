@@ -258,7 +258,7 @@ fn stack_description(stack: &str, configuration: &DiscordConfiguration) -> Strin
         excerpt.push('…');
     }
 
-    format!("**Native stack (excerpt)**\n```text\n{excerpt}\n```")
+    format!("**Stack trace (excerpt)**\n```text\n{excerpt}\n```")
 }
 
 fn truncate_text(value: &str, maximum_characters: usize) -> String {

@@ -170,7 +170,7 @@ mod tests {
             "stack".to_owned(),
             FieldDefinition {
                 key: "stack".into(),
-                label: "Native stack".into(),
+                label: "Stack trace".into(),
                 kind: FieldKind::StackTrace,
                 position: 0,
             },

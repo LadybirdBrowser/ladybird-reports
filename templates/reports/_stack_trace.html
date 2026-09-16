@@ -1,11 +1,14 @@
                                 <div class="stack-trace stack-trace-view">
                                     <div class="stack-trace-heading">
-                                        <span>{{ stack.frame_count }} frames · {{ stack.rows.len() }} lines</span>
                                         {% if let Some(signature) = field.stack_signature %}
                                             <span class="stack-signature">
                                                 Signature <code title="{{ signature.full }}">{{ signature.short }}</code>
                                             </span>
                                         {% endif %}
+                                        <label class="stack-raw-control">
+                                            <input class="stack-raw-toggle" type="checkbox">
+                                            Show raw
+                                        </label>
                                     </div>
                                     <div class="stack-frame-scroll">
                                         <table class="stack-frame-table">
@@ -45,10 +48,7 @@
                                         </table>
                                     </div>
                                     {% if stack.truncated %}
-                                        <p class="quiet">Showing the first 256 lines.</p>
+                                        <p class="quiet stack-truncated-note">Showing the first 256 lines.</p>
                                     {% endif %}
-                                    <details class="stack-original">
-                                        <summary>Original stack text</summary>
-                                        <pre>{{ field.value }}</pre>
-                                    </details>
+                                    <pre class="stack-raw-text">{{ field.value }}</pre>
                                 </div>

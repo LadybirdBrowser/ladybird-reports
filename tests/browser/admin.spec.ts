@@ -48,7 +48,14 @@ test.describe("authenticated management UI", () => {
       .toContainText(/\d{2} [A-Z][a-z]{2} \d{4}, \d{2}:\d{2} UTC/);
 
     await reportLink.click();
-    await expect(page.getByRole("heading", { name: "Native stack" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Stack trace" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Git commit" })).toBeVisible();
+    await expect(page.getByText("654cf9b187384fa8855eac4fbafaa70e75497083"))
+      .toBeVisible();
+    await expect(page.getByRole("heading", { name: "Build configuration" })).toBeVisible();
+    await expect(page.getByText("AppleClang 21.0.0.21000101")).toBeVisible();
+    await expect(page.locator(".definition-list").getByText("Build", { exact: true }))
+      .toHaveCount(0);
     await page.setViewportSize({ width: 390, height: 800 });
     expect(await page.locator(".stack-frame-symbol").first().evaluate(
       (cell) => cell.getBoundingClientRect().width,
@@ -64,15 +71,18 @@ test.describe("authenticated management UI", () => {
     await expect(page.getByText("Exact signature")).toBeVisible();
     await expect(page.getByRole("button", { name: "Add to issue" })).toBeVisible();
     await expect(page.locator(".badge-triage")).toHaveText("Needs triage");
-    await page.getByText("Original stack text").click();
-    await expect(page.locator(".stack-original pre"))
+    await page.getByLabel("Show raw").check();
+    await expect(page.locator(".stack-raw-text"))
       .toContainText("Native stack (binary build ID, object address):");
+    await expect(page.locator(".stack-frame-table")).toBeHidden();
+    await page.getByLabel("Show raw").uncheck();
+    await expect(page.locator(".stack-frame-table")).toBeVisible();
     await expect(page.getByText("macOS", { exact: true }).first()).toBeVisible();
     await expect(page.getByText("arm64", { exact: true }).first()).toBeVisible();
     await expect(page.getByText("127.0.0.1", { exact: true })).toBeVisible();
     await expect(page.getByText("Unknown field", { exact: true })).toBeVisible();
     await expect(page.locator(".report-field-value").filter({ hasText: "<script>" })).toBeVisible();
-    await expect(page.getByRole("link", { name: "Filter reports by Native stack" })).toHaveCount(0);
+    await expect(page.getByRole("link", { name: "Filter reports by Stack trace" })).toHaveCount(0);
     await expect(page.getByRole("heading", { name: "Attachments" }).locator(".."))
       .toContainText("0 files");
     await expect(page.getByText("No attachments")).toHaveCount(0);
@@ -404,7 +414,7 @@ test.describe("authenticated management UI", () => {
     await expect(orderedRows.nth(1)).toContainText("stack");
 
     await expect(page.getByRole("button", { name: "Save field order" })).toHaveCount(0);
-    await expect(page.getByText("Native stack is now at position 2.")).toBeVisible();
+    await expect(page.getByText("Stack trace is now at position 2.")).toBeVisible();
     await page.reload();
     await expect(orderedRows.nth(0)).toContainText("signal");
     await expect(orderedRows.nth(1)).toContainText("stack");

@@ -101,7 +101,7 @@ async fn main() -> Result<()> {
             repeat('a', 64),
             'web_compat',
             '0.1.0-browser-test',
-            'Debug ARM64',
+            'debug',
             'ready',
             $3,
             repeat('b', 64),
@@ -136,7 +136,10 @@ async fn main() -> Result<()> {
             ($1, 'platform', 'text', $3, true),
             ($1, 'architecture', 'text', $4, true),
             ($1, 'signal', 'text', $5, true),
-            ($1, 'future-field', 'text', $6, false)
+            ($1, 'future-field', 'text', $6, false),
+            ($1, 'git_commit', 'text', $7, true),
+            ($1, 'build_configuration', 'text', $8, true),
+            ($1, 'cpp_compiler', 'text', $9, true)
          ON CONFLICT (report_id, key) DO NOTHING",
     )
     .bind(REPORT_ID.parse::<ReportId>().expect("valid fixture UUIDv7"))
@@ -147,6 +150,11 @@ async fn main() -> Result<()> {
     .bind(serde_json::json!(
         "<script>window.fixtureWasExecuted = true</script>"
     ))
+    .bind(serde_json::json!(
+        "654cf9b187384fa8855eac4fbafaa70e75497083"
+    ))
+    .bind(serde_json::json!("debug"))
+    .bind(serde_json::json!("AppleClang 21.0.0.21000101"))
     .execute(&mut *transaction)
     .await?;
 

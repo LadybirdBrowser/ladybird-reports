@@ -444,7 +444,7 @@ pub async fn show(
         .source_ip
         .clone()
         .unwrap_or_else(|| "Unavailable".into());
-    let overview = vec![
+    let mut overview = vec![
         OverviewField::searchable(
             "Report type",
             report_kind_label(&details.report.kind),
@@ -459,12 +459,24 @@ pub async fn show(
         ),
         OverviewField::searchable("Platform", &platform, "platform", &platform),
         OverviewField::searchable("Architecture", &architecture, "architecture", &architecture),
-        OverviewField::searchable(
+    ];
+
+    // Older clients only supplied the combined build envelope. Newer clients
+    // expose its parts as regular fields below, so avoid repeating them here.
+    if !details
+        .fields
+        .iter()
+        .any(|field| field.key == "build_configuration")
+    {
+        overview.push(OverviewField::searchable(
             "Build",
             &details.report.build,
             "build",
             &details.report.build,
-        ),
+        ));
+    }
+
+    overview.extend([
         OverviewField {
             label: "Submitted",
             value: details
@@ -487,7 +499,7 @@ pub async fn show(
                 .map(|address| field_filter_url("ip", address)),
             monospace: true,
         },
-    ];
+    ]);
 
     let report_view = ReportView {
         id: details.report.id,

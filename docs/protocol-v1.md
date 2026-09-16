@@ -15,7 +15,7 @@ named with the client attachment UUID from the manifest.
   "submission_id": "01a0a536-01dc-736d-9dc2-595afcfc09dd",
   "kind": "web_compat",
   "client_version": "0.1.0",
-  "build": "full client build description",
+  "build": "release",
   "fields": [
     {
       "key": "description",
@@ -43,6 +43,9 @@ The initial client uses these conventional diagnostic fields:
 | `process` | `text` | Optional executable or process name. |
 | `platform` | `text` | Operating system or platform name. |
 | `architecture` | `text` | Process architecture such as `arm64` or `x86_64`. |
+| `git_commit` | `text` | Git commit used for the build. |
+| `build_configuration` | `text` | Build configuration, such as `release`. |
+| `cpp_compiler` | `text` | C++ compiler name. |
 | `description` | `multiline` | User-provided problem description. |
 | `hostname` | `text` | Optional website hostname. |
 | `url` | `text` | Optional complete page URL. |
@@ -50,6 +53,13 @@ The initial client uses these conventional diagnostic fields:
 The registry can grow independently of the protocol. A newer client may submit
 other valid keys, which remain visible as unknown fields until maintainers add a
 definition.
+The `build` envelope member remains for protocol compatibility. Clients can put a
+short build identifier there and submit its detailed components as diagnostic
+fields; Ladybird uses the build configuration.
+
+Ladybird crash clients also attach the complete saved diagnostic text as
+`crash-diagnostics.txt` with media type `text/plain`. The separate `stack`
+field remains available for display and manual matching.
 
 All identifiers are UUIDv7. A client generates a fresh `submission_id` when it first
 creates a report and reuses that value when retrying the same submission. Each
