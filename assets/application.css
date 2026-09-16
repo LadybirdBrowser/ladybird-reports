@@ -251,7 +251,8 @@ nav a:hover {
     width: 1.15rem;
     height: 1.15rem;
     flex: 0 0 auto;
-    fill: currentColor;
+    background-color: currentColor;
+    mask: url("/assets/github-icon.svg") center / contain no-repeat;
 }
 
 .account-popover {
@@ -314,10 +315,22 @@ nav a:hover {
 .site-footer {
     display: flex;
     padding: 1.4rem 0 2rem;
+    align-items: center;
     justify-content: space-between;
     border-top: 1px solid var(--border);
     color: var(--ink-faint);
     font-size: 0.78rem;
+}
+
+.footer-repository-link {
+    display: inline-flex;
+    padding: 0.25rem;
+    color: var(--ink-faint);
+}
+
+.footer-repository-link:hover,
+.footer-repository-link:focus-visible {
+    color: var(--brand);
 }
 
 .setup-banner {

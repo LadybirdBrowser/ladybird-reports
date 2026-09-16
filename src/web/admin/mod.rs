@@ -88,6 +88,10 @@ pub fn router(state: AdminState) -> Router {
             get(handlers::assets::reports_javascript),
         )
         .route(
+            "/assets/github-icon.svg",
+            get(handlers::assets::github_icon),
+        )
+        .route(
             "/assets/ladybird-mark.png",
             get(handlers::assets::ladybird_mark),
         )
