@@ -35,12 +35,13 @@ Blocking a submission source rejects its future public API requests. The
 confirmation also offers to hide every report from that source that is still
 in triage; confirmed and assigned reports remain available.
 
-The issue workflow opens from a report. It can search active internal issues and
-add the report to one, or create an internal issue for the report. A new internal
-issue may remain local, link to an existing GitHub issue, or create a GitHub
-issue. GitHub search results identify issues already tracked internally so the
-existing internal issue is reused. The resolved-issue filter applies as soon as
-it changes.
+The issue workflow opens from a report. Its combined search shows active issues
+already tracked in the service and matching issues from the configured GitHub
+repository. A GitHub issue already tracked in the service appears only once.
+Selecting an untracked GitHub issue creates the corresponding issue record and
+adds the report. Creating an issue publishes it to GitHub and records it in the
+service as one operation. Every issue in the service therefore has a GitHub
+issue. The resolved-issue filter applies as soon as it changes.
 
 ## Runtime settings
 

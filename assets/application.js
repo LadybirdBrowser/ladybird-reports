@@ -207,7 +207,14 @@ class EntitySelector {
             this.entityPlural,
         );
 
+        let previousGroup = null;
         for (const [index, option] of this.options.entries()) {
+            if (option.group && option.group !== previousGroup) {
+                this.results.append(
+                    createElement("div", "entity-selector-group", option.group),
+                );
+                previousGroup = option.group;
+            }
             this.results.append(this.createOption(option, index, query));
         }
 
@@ -421,6 +428,7 @@ function normalizeEntityOption(option) {
         badge: String(option.badge ?? ""),
         badgeTone: String(option.badge_tone ?? "neutral"),
         footnote: String(option.footnote ?? ""),
+        group: option.group ? String(option.group) : "",
     };
 }
 
@@ -739,42 +747,6 @@ function initializeSettingsHelp() {
     }
 }
 
-function initializeGithubChoices() {
-    for (const form of document.querySelectorAll("[data-create-issue-form]")) {
-        const choices = Array.from(form.querySelectorAll('input[name="github_action"]'));
-        const panels = Array.from(form.querySelectorAll("[data-github-panel]"));
-        const internalTitle = form.querySelector('input[name="title"]');
-        const internalDescription = form.querySelector('textarea[name="description"]');
-        const githubTitle = form.querySelector('input[name="github_title"]');
-        const githubBody = form.querySelector('textarea[name="github_body"]');
-
-        const update = () => {
-            const action = choices.find((choice) => choice.checked)?.value ?? "none";
-            for (const panel of panels) {
-                const active = panel.dataset.githubPanel === action;
-                panel.hidden = !active;
-                for (const input of panel.querySelectorAll("[data-github-required]")) {
-                    input.required = active;
-                }
-            }
-
-            if (action === "create") {
-                if (!githubTitle.value) {
-                    githubTitle.value = internalTitle.value;
-                }
-                if (!githubBody.value) {
-                    githubBody.value = internalDescription.value;
-                }
-            }
-        };
-
-        for (const choice of choices) {
-            choice.addEventListener("change", update);
-        }
-        update();
-    }
-}
-
 function initializeAutoFilters() {
     for (const form of document.querySelectorAll("[data-auto-filter]")) {
         let submitTimer = null;
@@ -800,5 +772,4 @@ initializeEntitySelectors();
 initializeSelectControls();
 initializeFieldOrdering();
 initializeSettingsHelp();
-initializeGithubChoices();
 initializeAutoFilters();

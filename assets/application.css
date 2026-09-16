@@ -786,6 +786,15 @@ textarea:focus {
     overflow-y: auto;
 }
 
+.entity-selector-group {
+    padding: 0.65rem 0.9rem 0.35rem;
+    color: var(--ink-soft);
+    font-size: 0.72rem;
+    font-weight: 750;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
 .entity-selector-option {
     display: grid;
     width: 100%;

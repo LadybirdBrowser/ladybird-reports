@@ -96,8 +96,13 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
 
     assert!(
         sqlx::query(
-            "INSERT INTO issues (id, title)
-             VALUES ('550e8400-e29b-41d4-a716-446655440000', 'invalid identifier')",
+            "INSERT INTO issues (id, title, github_number, github_url)
+             VALUES (
+                '550e8400-e29b-41d4-a716-446655440000',
+                'invalid identifier',
+                9000,
+                'https://github.com/LadybirdBrowser/ladybird/issues/9000'
+             )",
         )
         .execute(&admin_pool)
         .await
@@ -373,11 +378,19 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
     );
 
     let issue_id = IssueId::new();
-    sqlx::query("INSERT INTO issues (id, title) VALUES ($1, 'Assigned integration report')")
-        .bind(issue_id)
-        .execute(&admin_pool)
-        .await
-        .expect("create issue for source block test");
+    sqlx::query(
+        "INSERT INTO issues (id, title, github_number, github_url)
+         VALUES (
+            $1,
+            'Assigned integration report',
+            4812,
+            'https://github.com/LadybirdBrowser/ladybird/issues/4812'
+         )",
+    )
+    .bind(issue_id)
+    .execute(&admin_pool)
+    .await
+    .expect("create issue for source block test");
 
     let first_triage_report = ReportId::new();
     let second_triage_report = ReportId::new();
@@ -486,18 +499,6 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
     .await
     .expect("check assigned report after source block");
     assert!(assigned_report_is_visible);
-
-    sqlx::query(
-        "UPDATE issues
-         SET
-            github_number = 4812,
-            github_url = 'https://github.com/LadybirdBrowser/ladybird/issues/4812'
-         WHERE id = $1",
-    )
-    .bind(issue_id)
-    .execute(&admin_pool)
-    .await
-    .expect("link existing integration issue to GitHub");
 
     let first_github_report = ReportId::new();
     let second_github_report = ReportId::new();

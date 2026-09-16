@@ -6,6 +6,7 @@ mod notifications;
 mod reports;
 mod settings;
 
+pub(crate) use issues::validate_issue_text;
 pub use models::*;
 
 use sqlx::PgPool;

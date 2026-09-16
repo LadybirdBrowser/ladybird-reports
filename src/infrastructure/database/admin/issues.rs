@@ -1,7 +1,7 @@
 use sqlx::Row;
 
 use crate::{
-    domain::{GithubPublishAttemptId, IssueId, ReportId},
+    domain::{IssueId, ReportId},
     error::{AppError, Result},
     infrastructure::database::AdminDatabase,
 };
@@ -11,153 +11,6 @@ use super::{
 };
 
 impl AdminDatabase {
-    pub async fn begin_github_publish(
-        &self,
-        issue_id: IssueId,
-        actor: i64,
-    ) -> Result<GithubPublishAttemptId> {
-        let attempt_id = GithubPublishAttemptId::new();
-        let result = sqlx::query(
-            "INSERT INTO github_publish_attempts (id, issue_id, actor, state)
-             SELECT $1, id, $3, 'pending'
-             FROM issues
-             WHERE id = $2
-                AND merged_into IS NULL
-                AND github_number IS NULL
-             ON CONFLICT DO NOTHING",
-        )
-        .bind(attempt_id)
-        .bind(issue_id)
-        .bind(actor)
-        .execute(&self.pool)
-        .await?;
-
-        if result.rows_affected() != 1 {
-            return Err(AppError::InvalidRequest(
-                "Issue is already linked or has an unfinished GitHub publish",
-            ));
-        }
-
-        Ok(attempt_id)
-    }
-
-    pub async fn mark_github_publish_uncertain(
-        &self,
-        attempt_id: GithubPublishAttemptId,
-    ) -> Result<()> {
-        sqlx::query(
-            "UPDATE github_publish_attempts
-             SET state = 'uncertain'
-             WHERE id = $1 AND state = 'pending'",
-        )
-        .bind(attempt_id)
-        .execute(&self.pool)
-        .await?;
-
-        Ok(())
-    }
-
-    pub async fn mark_github_publish_failed(
-        &self,
-        attempt_id: GithubPublishAttemptId,
-    ) -> Result<()> {
-        sqlx::query(
-            "UPDATE github_publish_attempts
-             SET state = 'failed'
-             WHERE id = $1 AND state = 'pending'",
-        )
-        .bind(attempt_id)
-        .execute(&self.pool)
-        .await?;
-
-        Ok(())
-    }
-
-    pub async fn clear_uncertain_github_publish(
-        &self,
-        issue_id: IssueId,
-        actor: i64,
-    ) -> Result<()> {
-        let mut transaction = self.pool.begin().await?;
-        let result = sqlx::query(
-            "UPDATE github_publish_attempts
-             SET state = 'failed'
-             WHERE issue_id = $1 AND state = 'uncertain'",
-        )
-        .bind(issue_id)
-        .execute(&mut *transaction)
-        .await?;
-
-        if result.rows_affected() != 1 {
-            return Err(AppError::InvalidRequest(
-                "Issue does not have an uncertain GitHub publish",
-            ));
-        }
-
-        sqlx::query(
-            "INSERT INTO audit_events (actor, action, entity_id)
-             VALUES ($1, 'issue.github_publish_cleared', $2)",
-        )
-        .bind(actor)
-        .bind(issue_id.0)
-        .execute(&mut *transaction)
-        .await?;
-
-        transaction.commit().await?;
-        Ok(())
-    }
-
-    pub async fn finish_github_publish(
-        &self,
-        attempt_id: GithubPublishAttemptId,
-        issue_id: IssueId,
-        github_number: i64,
-        github_url: &str,
-        actor: i64,
-    ) -> Result<()> {
-        let mut transaction = self.pool.begin().await?;
-        let updated = sqlx::query(
-            "UPDATE issues
-             SET github_number = $2, github_url = $3, updated_at = now()
-             WHERE id = $1 AND github_number IS NULL AND merged_into IS NULL",
-        )
-        .bind(issue_id)
-        .bind(github_number)
-        .bind(github_url)
-        .execute(&mut *transaction)
-        .await?;
-
-        if updated.rows_affected() != 1 {
-            return Err(AppError::InvalidRequest("Issue can no longer be linked"));
-        }
-
-        sqlx::query(
-            "UPDATE github_publish_attempts
-             SET state = 'succeeded'
-             WHERE id = $1 AND issue_id = $2 AND state = 'pending'",
-        )
-        .bind(attempt_id)
-        .bind(issue_id)
-        .execute(&mut *transaction)
-        .await?;
-
-        sqlx::query(
-            "INSERT INTO audit_events (actor, action, entity_id, details)
-             VALUES ($1, 'issue.github_published', $2, $3)",
-        )
-        .bind(actor)
-        .bind(issue_id.0)
-        .bind(serde_json::json!({
-            "number": github_number,
-            "url": github_url,
-        }))
-        .execute(&mut *transaction)
-        .await?;
-
-        transaction.commit().await?;
-        Ok(())
-    }
-
     pub async fn list_issues(&self, include_resolved: bool) -> Result<Vec<IssueSummary>> {
         let rows = sqlx::query(
             "SELECT
@@ -271,69 +124,6 @@ impl AdminDatabase {
                 title: row.get("title"),
             })
             .collect())
-    }
-
-    pub async fn create_issue(
-        &self,
-        title: &str,
-        description: &str,
-        report_id: ReportId,
-        actor: i64,
-    ) -> Result<IssueId> {
-        validate_issue_text(title, description)?;
-
-        let issue_id = IssueId::new();
-        let mut transaction = self.pool.begin().await?;
-
-        sqlx::query("SELECT pg_advisory_xact_lock(891125)")
-            .execute(&mut *transaction)
-            .await?;
-
-        sqlx::query("INSERT INTO issues (id, title, description) VALUES ($1, $2, $3)")
-            .bind(issue_id)
-            .bind(title.trim())
-            .bind(description)
-            .execute(&mut *transaction)
-            .await?;
-
-        sqlx::query(
-            "INSERT INTO audit_events (actor, action, entity_id)
-             VALUES ($1, 'issue.created', $2)",
-        )
-        .bind(actor)
-        .bind(issue_id.0)
-        .execute(&mut *transaction)
-        .await?;
-
-        let updated = sqlx::query(
-            "UPDATE reports
-             SET issue_id = $2, assigned_at = now(), updated_at = now()
-             WHERE id = $1
-                AND deleted_at IS NULL
-                AND hidden_at IS NULL
-                AND storage_state = 'ready'",
-        )
-        .bind(report_id)
-        .bind(issue_id)
-        .execute(&mut *transaction)
-        .await?;
-
-        if updated.rows_affected() != 1 {
-            return Err(AppError::NotFound("Report not found"));
-        }
-
-        sqlx::query(
-            "INSERT INTO audit_events (actor, action, entity_id, details)
-             VALUES ($1, 'report.assignment', $2, $3)",
-        )
-        .bind(actor)
-        .bind(report_id.0)
-        .bind(serde_json::json!({ "to": issue_id }))
-        .execute(&mut *transaction)
-        .await?;
-
-        transaction.commit().await?;
-        Ok(issue_id)
     }
 
     pub async fn assign_report_to_github_issue(
@@ -486,15 +276,7 @@ impl AdminDatabase {
                 issues.github_number,
                 issues.github_url,
                 issues.created_at,
-                issues.updated_at,
-                (
-                    SELECT state
-                    FROM github_publish_attempts
-                    WHERE issue_id = issues.id
-                        AND state IN ('pending', 'uncertain')
-                    ORDER BY created_at DESC
-                    LIMIT 1
-                ) AS github_publish_state
+                issues.updated_at
              FROM issues
              WHERE issues.id = $1",
         )
@@ -510,7 +292,6 @@ impl AdminDatabase {
             merged_into: row.get("merged_into"),
             github_number: row.get("github_number"),
             github_url: row.get("github_url"),
-            github_publish_state: row.get("github_publish_state"),
             created_at: row.get("created_at"),
             updated_at: row.get("updated_at"),
         }))
@@ -628,55 +409,6 @@ impl AdminDatabase {
         Ok(())
     }
 
-    pub async fn link_github_issue(
-        &self,
-        issue_id: IssueId,
-        github_number: i64,
-        github_url: &str,
-        actor: i64,
-    ) -> Result<()> {
-        let mut transaction = self.pool.begin().await?;
-        let result = sqlx::query(
-            "UPDATE issues
-             SET github_number = $2, github_url = $3, updated_at = now()
-             WHERE id = $1 AND merged_into IS NULL",
-        )
-        .bind(issue_id)
-        .bind(github_number)
-        .bind(github_url)
-        .execute(&mut *transaction)
-        .await?;
-
-        if result.rows_affected() != 1 {
-            return Err(AppError::NotFound("Issue not found"));
-        }
-
-        sqlx::query(
-            "UPDATE github_publish_attempts
-             SET state = 'succeeded'
-             WHERE issue_id = $1 AND state IN ('pending', 'uncertain')",
-        )
-        .bind(issue_id)
-        .execute(&mut *transaction)
-        .await?;
-
-        sqlx::query(
-            "INSERT INTO audit_events (actor, action, entity_id, details)
-             VALUES ($1, 'issue.github_linked', $2, $3)",
-        )
-        .bind(actor)
-        .bind(issue_id.0)
-        .bind(serde_json::json!({
-            "number": github_number,
-            "url": github_url,
-        }))
-        .execute(&mut *transaction)
-        .await?;
-
-        transaction.commit().await?;
-        Ok(())
-    }
-
     async fn insert_audit_event(
         &self,
         actor: i64,
@@ -699,7 +431,7 @@ impl AdminDatabase {
     }
 }
 
-fn validate_issue_text(title: &str, description: &str) -> Result<()> {
+pub(crate) fn validate_issue_text(title: &str, description: &str) -> Result<()> {
     if title.trim().is_empty() || title.len() > 256 {
         return Err(AppError::InvalidRequest(
             "Issue title must be 1 to 256 bytes",

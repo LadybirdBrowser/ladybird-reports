@@ -56,11 +56,9 @@
                                     </td>
                                     <td>{{ issue.report_count }}</td>
                                     <td>
-                                        {% if let Some(number) = issue.github_number %}
-                                            <span class="badge badge-neutral">#{{ number }}</span>
-                                        {% else %}
-                                            <span class="quiet">Not linked</span>
-                                        {% endif %}
+                                        <span class="badge badge-neutral">
+                                            #{{ issue.github_number }}
+                                        </span>
                                     </td>
                                     <td>
                                         {% if issue.is_resolved %}

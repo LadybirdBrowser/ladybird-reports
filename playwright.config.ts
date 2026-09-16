@@ -14,10 +14,11 @@ export default defineConfig({
     trace: "retain-on-failure",
   },
   webServer: {
-    command: "cargo run --quiet --bin admin",
+    command: "./scripts/run-browser-test-server.sh",
     env: {
       ...process.env,
       ADMIN_LISTEN_ADDRESS: `127.0.0.1:${port}`,
+      GITHUB_API_BASE_URL: "http://127.0.0.1:3101",
     },
     url: `${baseURL}/health/ready`,
     reuseExistingServer: false,

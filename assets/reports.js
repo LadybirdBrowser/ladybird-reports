@@ -21,7 +21,7 @@ function initializeIssueDialogs() {
 
         openButton?.addEventListener("click", () => {
             dialog.showModal();
-            selectMode("create");
+            selectMode("existing");
         });
         for (const button of closeButtons) {
             button.addEventListener("click", () => dialog.close());

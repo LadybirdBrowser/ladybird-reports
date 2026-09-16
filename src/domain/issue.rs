@@ -9,8 +9,8 @@ pub struct Issue {
     pub description: String,
     pub resolved_at: Option<DateTime<Utc>>,
     pub merged_into: Option<IssueId>,
-    pub github_number: Option<i64>,
-    pub github_url: Option<String>,
+    pub github_number: i64,
+    pub github_url: String,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }

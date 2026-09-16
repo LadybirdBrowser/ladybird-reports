@@ -8,6 +8,7 @@ pub struct GithubClient {
     http: Client,
     client_id: String,
     client_secret: String,
+    api_base_url: reqwest::Url,
 }
 
 #[derive(Debug, Deserialize)]
@@ -52,10 +53,16 @@ impl GithubClient {
             .build()
             .map_err(|error| AppError::Internal(error.into()))?;
 
+        let api_base_url = std::env::var("GITHUB_API_BASE_URL")
+            .unwrap_or_else(|_| "https://api.github.com".into());
+        let api_base_url =
+            reqwest::Url::parse(&api_base_url).map_err(|error| AppError::Internal(error.into()))?;
+
         Ok(Self {
             http,
             client_id,
             client_secret,
+            api_base_url,
         })
     }
 
@@ -137,8 +144,7 @@ impl GithubClient {
         repository: &str,
         query: &str,
     ) -> Result<Vec<GithubIssue>> {
-        let mut url = reqwest::Url::parse("https://api.github.com/search/issues")
-            .expect("static GitHub URL is valid");
+        let mut url = self.api_url("/search/issues")?;
         url.query_pairs_mut()
             .append_pair("q", &format!("repo:{repository} is:issue {query}"))
             .append_pair("per_page", "20");
@@ -172,9 +178,14 @@ impl GithubClient {
         T: DeserializeOwned,
         B: Serialize + ?Sized,
     {
-        let url = reqwest::Url::parse(&format!("https://api.github.com{path}"))
-            .expect("GitHub API path is valid");
+        let url = self.api_url(path)?;
         self.request_json_url(method, url, token, body).await
+    }
+
+    fn api_url(&self, path: &str) -> Result<reqwest::Url> {
+        self.api_base_url
+            .join(path)
+            .map_err(|error| AppError::Internal(error.into()))
     }
 
     async fn request_json_url<T, B>(

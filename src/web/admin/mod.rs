@@ -38,11 +38,7 @@ pub fn router(state: AdminState) -> Router {
             "/api/report-search-completions",
             get(handlers::reports::search_completions),
         )
-        .route("/api/issue-options", get(handlers::reports::issue_options))
-        .route(
-            "/api/github-issue-options",
-            get(handlers::github::search_options),
-        )
+        .route("/api/issue-options", get(handlers::github::issue_options))
         .route("/reports/{id}/block-ip", post(handlers::reports::block_ip))
         .route(
             "/reports/{id}/unblock-ip",
@@ -66,19 +62,6 @@ pub fn router(state: AdminState) -> Router {
         .route("/issues/{id}", get(handlers::issues::show))
         .route("/issues/{id}", post(handlers::issues::update))
         .route("/issues/{id}/merge", post(handlers::issues::merge))
-        .route("/issues/{id}/github/link", post(handlers::github::link))
-        .route(
-            "/issues/{id}/github/preview",
-            get(handlers::github::preview),
-        )
-        .route(
-            "/issues/{id}/github/publish",
-            post(handlers::github::publish),
-        )
-        .route(
-            "/issues/{id}/github/clear-uncertain",
-            post(handlers::github::clear_uncertain),
-        )
         .route("/settings", get(handlers::settings::show))
         .route("/settings", post(handlers::settings::update))
         .route("/settings/fields", post(handlers::settings::update_field))

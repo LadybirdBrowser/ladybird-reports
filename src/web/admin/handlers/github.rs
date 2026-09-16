@@ -1,40 +1,34 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
-use askama::Template;
 use axum::{
-    Extension, Form, Json,
-    extract::{Path, Query, State},
-    response::Redirect,
-};
-use serde::Deserialize;
-
-use crate::{
-    domain::IssueId,
-    error::{AppError, Result},
+    Extension, Json,
+    extract::{Query, State},
 };
 
-use super::super::{
-    AdminState, TemplateResponse, authentication::Navigation, session::Session,
-    templates::not_found,
-};
+use crate::error::{AppError, Result};
+
+use super::super::{AdminState, session::Session};
 use super::reports::{EntitySearchOption, EntitySearchResponse, ReportSearchQuery};
 
-pub async fn search_options(
+pub async fn issue_options(
     State(state): State<AdminState>,
     Extension(session): Extension<Session>,
     Query(parameters): Query<ReportSearchQuery>,
 ) -> Result<Json<EntitySearchResponse>> {
     let query = parameters.query.trim();
     if query.len() > 128 {
-        return Err(AppError::InvalidRequest("GitHub issue search is too long"));
+        return Err(AppError::InvalidRequest("Issue search is too long"));
     }
 
     let configuration = state.database.configuration().await?;
     let token = session.github_access_token(&state)?;
-    let github_issues = state
-        .github
-        .search_issues(&token, &configuration.github_repository, query)
-        .await?;
+    let (tracked_issues, github_issues) = tokio::try_join!(
+        state.database.search_issues(query),
+        state
+            .github
+            .search_issues(&token, &configuration.github_repository, query),
+    )?;
+
     let github_numbers = github_issues
         .iter()
         .map(|issue| issue.number)
@@ -47,234 +41,58 @@ pub async fn search_options(
         .map(|link| (link.github_number, link))
         .collect::<HashMap<_, _>>();
 
-    let results = github_issues
-        .into_iter()
-        .map(|issue| {
-            let linked_issue = linked_issues.get(&issue.number);
-            let (badge, badge_tone, footnote) = match linked_issue {
-                Some(link) => (
-                    "Linked in Reports".into(),
-                    "assigned",
-                    format!("Already tracked as {}", link.title),
-                ),
-                None => (
-                    "GitHub".into(),
-                    "neutral",
-                    "Not yet linked in Reports".into(),
-                ),
-            };
+    let mut included_issue_ids = HashSet::new();
+    let mut results = Vec::new();
 
-            EntitySearchOption {
-                value: issue.number.to_string(),
-                label: issue.title,
-                description: issue.html_url,
-                identifier: format!("#{}", issue.number),
-                badge,
-                badge_tone,
-                footnote,
+    for issue in tracked_issues {
+        included_issue_ids.insert(issue.id);
+        results.push(EntitySearchOption {
+            value: format!("issue:{}", issue.id),
+            label: issue.title,
+            description: format!("GitHub issue #{}", issue.github_number),
+            identifier: format!("#{}", issue.github_number),
+            badge: format!("{} reports", issue.report_count),
+            badge_tone: "assigned",
+            footnote: format!("Tracked since {}", issue.created_at.format("%d %b %Y")),
+            group: Some("Tracked issues"),
+        });
+    }
+
+    for github_issue in github_issues {
+        if let Some(linked_issue) = linked_issues.get(&github_issue.number) {
+            if included_issue_ids.insert(linked_issue.issue_id) {
+                results.push(EntitySearchOption {
+                    value: format!("issue:{}", linked_issue.issue_id),
+                    label: linked_issue.title.clone(),
+                    description: github_issue.title,
+                    identifier: format!("#{}", github_issue.number),
+                    badge: "Tracked".into(),
+                    badge_tone: "assigned",
+                    footnote: "Already tracked in Reports".into(),
+                    group: Some("Tracked issues"),
+                });
             }
-        })
-        .collect();
+            continue;
+        }
+
+        results.push(EntitySearchOption {
+            value: format!("github:{}", github_issue.number),
+            label: github_issue.title,
+            description: github_issue.html_url,
+            identifier: format!("#{}", github_issue.number),
+            badge: "GitHub".into(),
+            badge_tone: "neutral",
+            footnote: "Not yet tracked in Reports".into(),
+            group: Some("GitHub issues"),
+        });
+    }
+
+    results.sort_by_key(|option| option.group != Some("Tracked issues"));
 
     Ok(Json(EntitySearchResponse { results }))
 }
 
-#[derive(Template)]
-#[template(path = "issues/github-preview.html")]
-pub struct GithubPreviewTemplate {
-    navigation: Option<Navigation>,
-    issue_id: IssueId,
-    title: String,
-    body: String,
-}
-
-#[derive(Deserialize)]
-pub struct LinkForm {
-    csrf: String,
-    number: i64,
-}
-
-pub async fn link(
-    State(state): State<AdminState>,
-    Extension(session): Extension<Session>,
-    Path(issue_id): Path<IssueId>,
-    Form(form): Form<LinkForm>,
-) -> Result<Redirect> {
-    session.verify_csrf(&form.csrf)?;
-
-    if form.number < 1 {
-        return Err(AppError::InvalidRequest("Invalid GitHub issue number"));
-    }
-
-    let configuration = state.database.configuration().await?;
-    let access_token = session.github_access_token(&state)?;
-    let github_issue = state
-        .github
-        .issue(&access_token, &configuration.github_repository, form.number)
-        .await?;
-
-    state
-        .database
-        .link_github_issue(
-            issue_id,
-            github_issue.number,
-            &github_issue.html_url,
-            session.github_id,
-        )
-        .await?;
-
-    tracing::info!(
-        event = "github.issue_linked",
-        %issue_id,
-        github_number = github_issue.number,
-        actor = session.login,
-    );
-
-    Ok(Redirect::to(&format!("/issues/{issue_id}")))
-}
-
-pub async fn preview(
-    State(state): State<AdminState>,
-    Extension(session): Extension<Session>,
-    Path(issue_id): Path<IssueId>,
-) -> Result<TemplateResponse<GithubPreviewTemplate>> {
-    let details = state
-        .database
-        .issue_details(issue_id)
-        .await?
-        .ok_or_else(|| not_found("Issue not found"))?;
-
-    if details.issue.github_number.is_some() {
-        return Err(AppError::InvalidRequest(
-            "Issue is already linked to GitHub",
-        ));
-    }
-
-    Ok(TemplateResponse(GithubPreviewTemplate {
-        navigation: Some(Navigation::for_session(&state, &session)),
-        issue_id,
-        title: details.issue.title,
-        body: github_body(&details.issue.description, details.reports.len()),
-    }))
-}
-
-#[derive(Deserialize)]
-pub struct PublishForm {
-    csrf: String,
-    title: String,
-    body: String,
-}
-
-pub async fn publish(
-    State(state): State<AdminState>,
-    Extension(session): Extension<Session>,
-    Path(issue_id): Path<IssueId>,
-    Form(form): Form<PublishForm>,
-) -> Result<Redirect> {
-    session.verify_csrf(&form.csrf)?;
-
-    if form.title.trim().is_empty() || form.title.len() > 256 {
-        return Err(AppError::InvalidRequest("Invalid GitHub issue title"));
-    }
-
-    if form.body.len() > 256 * 1024 {
-        return Err(AppError::InvalidRequest("GitHub issue body is too large"));
-    }
-
-    let configuration = state.database.configuration().await?;
-    let access_token = session.github_access_token(&state)?;
-    let attempt_id = state
-        .database
-        .begin_github_publish(issue_id, session.github_id)
-        .await?;
-
-    let github_issue = match state
-        .github
-        .create_issue(
-            &access_token,
-            &configuration.github_repository,
-            form.title.trim(),
-            &form.body,
-        )
-        .await
-    {
-        Ok(issue) => issue,
-        Err(error) => {
-            let outcome_is_uncertain =
-                matches!(error, AppError::Internal(_) | AppError::Unavailable);
-
-            if outcome_is_uncertain {
-                // A network failure can happen after GitHub accepted the request.
-                // Keep the attempt visible so an operator can reconcile it instead
-                // of allowing an automatic retry that might create a duplicate.
-                state
-                    .database
-                    .mark_github_publish_uncertain(attempt_id)
-                    .await?;
-                tracing::warn!(
-                    event = "github.issue_create_uncertain",
-                    %issue_id,
-                    actor = session.login,
-                );
-            } else {
-                state
-                    .database
-                    .mark_github_publish_failed(attempt_id)
-                    .await?;
-            }
-
-            return Err(error);
-        }
-    };
-
-    state
-        .database
-        .finish_github_publish(
-            attempt_id,
-            issue_id,
-            github_issue.number,
-            &github_issue.html_url,
-            session.github_id,
-        )
-        .await?;
-
-    tracing::info!(
-        event = "github.issue_created",
-        %issue_id,
-        github_number = github_issue.number,
-        actor = session.login,
-    );
-
-    Ok(Redirect::to(&format!("/issues/{issue_id}")))
-}
-
-#[derive(Deserialize)]
-pub struct ClearUncertainForm {
-    csrf: String,
-}
-
-pub async fn clear_uncertain(
-    State(state): State<AdminState>,
-    Extension(session): Extension<Session>,
-    Path(issue_id): Path<IssueId>,
-    Form(form): Form<ClearUncertainForm>,
-) -> Result<Redirect> {
-    session.verify_csrf(&form.csrf)?;
-    state
-        .database
-        .clear_uncertain_github_publish(issue_id, session.github_id)
-        .await?;
-
-    tracing::warn!(
-        event = "github.issue_create_uncertain_cleared",
-        %issue_id,
-        actor = session.login,
-    );
-
-    Ok(Redirect::to(&format!("/issues/{issue_id}/github/preview")))
-}
-
-fn github_body(description: &str, report_count: usize) -> String {
+pub(super) fn github_body(description: &str, report_count: usize) -> String {
     let summary = if description.trim().is_empty() {
         "Reports collected by the Ladybird reporting service.".to_owned()
     } else {

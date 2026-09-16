@@ -1,7 +1,7 @@
 use ladybird_reports::{
     domain::{IssueId, ReportId, SubmissionId, UploadId},
     error::Result,
-    infrastructure::{hash_secret, random_token},
+    infrastructure::{SecretCipher, hash_secret, random_token, read_secret},
     runtime::required_environment,
 };
 use sqlx::postgres::PgPoolOptions;
@@ -22,6 +22,8 @@ async fn main() -> Result<()> {
         .connect(&required_environment("ADMIN_DATABASE_URL")?)
         .await?;
     let session_token = random_token();
+    let encrypted_access_token =
+        SecretCipher::new(read_secret("SESSION_ENCRYPTION_KEY")?).encrypt("browser-test-token")?;
 
     let mut transaction = pool.begin().await?;
 
@@ -30,7 +32,6 @@ async fn main() -> Result<()> {
     // populated it earlier in the same local or CI test job.
     sqlx::query(
         "TRUNCATE
-            github_publish_attempts,
             audit_events,
             attachments,
             report_fields,
@@ -60,10 +61,11 @@ async fn main() -> Result<()> {
             membership_verified_at,
             expires_at
          )
-         VALUES ($1, 12345, 'unused-in-browser-tests', 'browser-test-csrf', now(), now() + interval '1 hour')
+         VALUES ($1, 12345, $2, 'browser-test-csrf', now(), now() + interval '1 hour')
          ON CONFLICT (token_hash) DO NOTHING",
     )
     .bind(hash_secret(&session_token))
+    .bind(encrypted_access_token)
     .execute(&mut *transaction)
     .await?;
 

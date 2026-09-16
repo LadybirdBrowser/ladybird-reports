@@ -123,55 +123,9 @@
                     <h2>GitHub</h2>
                 </div>
                 <div class="card-body">
-                    {% if let Some(url) = issue.github_url %}
-                        <p class="form-note">This issue is linked to Ladybird on GitHub.</p>
-                        <a class="button button-secondary" href="{{ url }}">
-                            Open GitHub issue #{{ issue.github_number.unwrap() }}
-                        </a>
-                    {% else %}
-                        {% if issue.github_publish_state.as_deref() == Some("uncertain") %}
-                            <div class="warning-panel">
-                                <strong>GitHub creation needs review</strong>
-                                <p>
-                                    Check the repository before retrying. The previous request may
-                                    have reached GitHub even though its response was lost.
-                                </p>
-                                <form
-                                    method="post"
-                                    action="/issues/{{ issue.id }}/github/clear-uncertain"
-                                >
-                                    <input
-                                        type="hidden"
-                                        name="csrf"
-                                        value="{{ navigation.as_ref().unwrap().csrf_token }}"
-                                    >
-                                    <button class="button-secondary" type="submit">
-                                        Confirm no issue was created
-                                    </button>
-                                </form>
-                            </div>
-                        {% endif %}
-
-                        <form method="post" action="/issues/{{ issue.id }}/github/link">
-                            <input
-                                type="hidden"
-                                name="csrf"
-                                value="{{ navigation.as_ref().unwrap().csrf_token }}"
-                            >
-                            <label>
-                                Existing issue number
-                                <input type="number" min="1" name="number" required>
-                            </label>
-                            <button class="button-secondary" type="submit">Link issue</button>
-                        </form>
-
-                        {% if issue.github_publish_state.is_none() %}
-                            <hr class="section-divider">
-                            <a class="button" href="/issues/{{ issue.id }}/github/preview">
-                                Create a GitHub issue
-                            </a>
-                        {% endif %}
-                    {% endif %}
+                    <a class="button button-secondary" href="{{ issue.github_url }}">
+                        Open GitHub issue #{{ issue.github_number }}
+                    </a>
                 </div>
             </section>
 

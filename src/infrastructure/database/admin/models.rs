@@ -129,7 +129,7 @@ pub struct IssueSummary {
     pub id: IssueId,
     pub title: String,
     pub resolved_at: Option<DateTime<Utc>>,
-    pub github_number: Option<i64>,
+    pub github_number: i64,
     pub report_count: i64,
     pub created_at: DateTime<Utc>,
 }
@@ -141,9 +141,8 @@ pub struct IssueRecord {
     pub description: String,
     pub resolved_at: Option<DateTime<Utc>>,
     pub merged_into: Option<IssueId>,
-    pub github_number: Option<i64>,
-    pub github_url: Option<String>,
-    pub github_publish_state: Option<String>,
+    pub github_number: i64,
+    pub github_url: String,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }

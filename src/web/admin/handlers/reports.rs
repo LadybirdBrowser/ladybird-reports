@@ -106,6 +106,7 @@ pub struct EntitySearchOption {
     pub(super) badge: String,
     pub(super) badge_tone: &'static str,
     pub(super) footnote: String,
+    pub(super) group: Option<&'static str>,
 }
 
 #[derive(Template)]
@@ -266,6 +267,7 @@ pub async fn search_options(
                     "Received {}",
                     report.created_at.format("%d %b %Y, %H:%M UTC")
                 ),
+                group: None,
             }
         })
         .collect();
@@ -348,37 +350,6 @@ pub async fn search_completions(
         .collect();
 
     Ok(Json(ReportCompletionResponse { results }))
-}
-
-pub async fn issue_options(
-    State(state): State<AdminState>,
-    Query(parameters): Query<ReportSearchQuery>,
-) -> Result<Json<EntitySearchResponse>> {
-    let search = parameters.query.trim();
-    if search.len() > 128 {
-        return Err(AppError::InvalidRequest("Issue search is too long"));
-    }
-
-    let results = state
-        .database
-        .search_issues(search)
-        .await?
-        .into_iter()
-        .map(|issue| EntitySearchOption {
-            value: issue.id.to_string(),
-            label: issue.title,
-            description: match issue.github_number {
-                Some(number) => format!("Linked to GitHub issue #{number}"),
-                None => "Internal issue".into(),
-            },
-            identifier: issue.id.to_string(),
-            badge: format!("{} reports", issue.report_count),
-            badge_tone: "neutral",
-            footnote: format!("Created {}", issue.created_at.format("%d %b %Y")),
-        })
-        .collect();
-
-    Ok(Json(EntitySearchResponse { results }))
 }
 
 fn report_kind_label(kind: &str) -> &str {
@@ -544,7 +515,7 @@ impl OverviewField {
 #[derive(Deserialize)]
 pub struct IssueAssignmentForm {
     csrf: String,
-    issue_id: IssueId,
+    issue_selection: String,
 }
 
 pub async fn assign_to_issue(
@@ -554,19 +525,58 @@ pub async fn assign_to_issue(
     Form(form): Form<IssueAssignmentForm>,
 ) -> Result<Redirect> {
     session.verify_csrf(&form.csrf)?;
-    state
-        .database
-        .assign_report_to_issue(report_id, form.issue_id, session.github_id)
-        .await?;
+
+    let issue_id = if let Some(value) = form.issue_selection.strip_prefix("issue:") {
+        let issue_id = value
+            .parse::<IssueId>()
+            .map_err(|_| AppError::InvalidRequest("Select an issue"))?;
+        state
+            .database
+            .assign_report_to_issue(report_id, issue_id, session.github_id)
+            .await?;
+        issue_id
+    } else if let Some(value) = form.issue_selection.strip_prefix("github:") {
+        let github_number = value
+            .parse::<i64>()
+            .map_err(|_| AppError::InvalidRequest("Select an issue"))?;
+        if github_number < 1 {
+            return Err(AppError::InvalidRequest("Select an issue"));
+        }
+
+        let configuration = state.database.configuration().await?;
+        let access_token = session.github_access_token(&state)?;
+        let github_issue = state
+            .github
+            .issue(
+                &access_token,
+                &configuration.github_repository,
+                github_number,
+            )
+            .await?;
+        state
+            .database
+            .assign_report_to_github_issue(
+                &github_issue.title,
+                "",
+                report_id,
+                github_issue.number,
+                &github_issue.html_url,
+                session.github_id,
+            )
+            .await?
+            .issue_id
+    } else {
+        return Err(AppError::InvalidRequest("Select an issue"));
+    };
 
     tracing::info!(
         event = "report.assigned",
         %report_id,
-        issue_id = %form.issue_id,
+        %issue_id,
         actor = session.login,
     );
 
-    Ok(Redirect::to(&format!("/issues/{}", form.issue_id)))
+    Ok(Redirect::to(&format!("/issues/{issue_id}")))
 }
 
 #[derive(Deserialize)]
