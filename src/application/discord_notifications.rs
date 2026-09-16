@@ -214,11 +214,16 @@ fn report_message(
         ("platform", "Platform"),
         ("architecture", "Architecture"),
         ("signal", "Signal"),
+        ("signal_number", "Signal number"),
     ] {
-        if let Some(value) = fields.get(key).and_then(Value::as_str) {
+        if let Some(value) = fields.get(key) {
+            let value = value
+                .as_str()
+                .map(str::to_owned)
+                .unwrap_or_else(|| value.to_string());
             embed_fields.push(DiscordEmbedField {
                 name: label.into(),
-                value: truncate_text(value, 256),
+                value: truncate_text(&value, 256),
                 inline: true,
             });
         }
@@ -313,6 +318,7 @@ mod tests {
                 "platform": "macOS",
                 "architecture": "arm64",
                 "signal": "SIGABRT",
+                "signal_number": 6,
                 "stack": "frame one\nframe `two`\nframe three"
             }),
             created_at: Utc::now(),
@@ -332,6 +338,12 @@ mod tests {
             embed.fields.iter().any(|field| {
                 field.name == "Platform" && field.value == "macOS" && field.inline
             })
+        );
+        assert!(
+            embed
+                .fields
+                .iter()
+                .any(|field| field.name == "Signal number" && field.value == "6")
         );
         assert!(message.allowed_mentions.parse.is_empty());
     }

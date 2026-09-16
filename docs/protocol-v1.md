@@ -38,7 +38,8 @@ The initial client uses these conventional diagnostic fields:
 | Key | Type | Meaning |
 | --- | --- | --- |
 | `stack` | `stack_trace` | Client-symbolicated native stack trace, one frame per line. Legacy clients may keep using `multiline`. |
-| `signal` | `text` | Terminating signal or equivalent exception name. |
+| `signal` | `text` | Terminating signal name or equivalent exception name, such as `SIGSEGV`. |
+| `signal_number` | `number` | Numeric termination signal, such as `11`. Omitted when unavailable. |
 | `process` | `text` | Optional executable or process name. |
 | `platform` | `text` | Operating system or platform name. |
 | `architecture` | `text` | Process architecture such as `arm64` or `x86_64`. |

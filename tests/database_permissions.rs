@@ -69,6 +69,13 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
         .expect("reporting role reads field definitions");
     assert!(configured);
 
+    let signal_number_kind: String =
+        sqlx::query_scalar("SELECT kind FROM field_definitions WHERE key = 'signal_number'")
+            .fetch_one(&reporting_pool)
+            .await
+            .expect("reporting role reads the numeric signal definition");
+    assert_eq!(signal_number_kind, "number");
+
     assert!(
         sqlx::query("SELECT * FROM report_stack_signatures LIMIT 1")
             .execute(&reporting_pool)
