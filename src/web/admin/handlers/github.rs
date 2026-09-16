@@ -5,7 +5,11 @@ use axum::{
     extract::{Query, State},
 };
 
-use crate::error::{AppError, Result};
+use crate::{
+    domain::IssueId,
+    error::{AppError, Result},
+    infrastructure::{database::IssueRecord, github::GithubIssueState},
+};
 
 use super::super::{AdminState, session::Session};
 use super::reports::{EntitySearchOption, EntitySearchResponse, ReportSearchQuery};
@@ -22,12 +26,27 @@ pub async fn issue_options(
 
     let configuration = state.database.configuration().await?;
     let token = session.github_access_token(&state)?;
-    let (tracked_issues, github_issues) = tokio::try_join!(
+    let (tracked_issues, github_issues) = tokio::join!(
         state.database.search_issues(query),
-        state
-            .github
-            .search_issues(&token, &configuration.github_repository, query),
-    )?;
+        tokio::time::timeout(
+            std::time::Duration::from_secs(3),
+            state
+                .github
+                .search_issues(&token, &configuration.github_repository, query),
+        ),
+    );
+    let tracked_issues = tracked_issues?;
+    let github_issues = match github_issues {
+        Ok(Ok(issues)) => issues,
+        Ok(Err(error)) => {
+            tracing::warn!(event = "github.issue_search_failed", ?error);
+            Vec::new()
+        }
+        Err(_) => {
+            tracing::warn!(event = "github.issue_search_timed_out");
+            Vec::new()
+        }
+    };
 
     let github_numbers = github_issues
         .iter()
@@ -35,7 +54,7 @@ pub async fn issue_options(
         .collect::<Vec<_>>();
     let linked_issues = state
         .database
-        .issues_linked_to_github_numbers(&github_numbers)
+        .issues_linked_to_github_numbers(&configuration.github_repository, &github_numbers)
         .await?
         .into_iter()
         .map(|link| (link.github_number, link))
@@ -59,7 +78,14 @@ pub async fn issue_options(
     }
 
     for github_issue in github_issues {
+        if github_issue.state != GithubIssueState::Open {
+            continue;
+        }
+
         if let Some(linked_issue) = linked_issues.get(&github_issue.number) {
+            if linked_issue.github_state != "open" && linked_issue.github_state != "unknown" {
+                continue;
+            }
             if included_issue_ids.insert(linked_issue.issue_id) {
                 results.push(EntitySearchOption {
                     value: format!("issue:{}", linked_issue.issue_id),
@@ -92,17 +118,73 @@ pub async fn issue_options(
     Ok(Json(EntitySearchResponse { results }))
 }
 
-pub(super) fn github_body(description: &str, report_count: usize) -> String {
+pub(super) async fn refresh_tracked_issue(
+    state: &AdminState,
+    session: &Session,
+    issue_id: IssueId,
+) -> Result<IssueRecord> {
+    let current = state
+        .database
+        .find_issue(issue_id)
+        .await?
+        .ok_or(AppError::NotFound("Issue not found"))?;
+
+    if current.github_state != "missing" && current.github_state != "moved" {
+        let token = session.github_access_token(state)?;
+        match state
+            .github
+            .issue(&token, &current.github_repository, current.github_number)
+            .await
+        {
+            Ok(issue) => {
+                state
+                    .database
+                    .sync_github_issue(&current.github_repository, &issue, None, "refresh")
+                    .await?;
+            }
+            Err(AppError::Gone(_)) => {
+                state
+                    .database
+                    .mark_github_issue_unavailable(
+                        &current.github_repository,
+                        current.github_number,
+                        current.github_issue_id,
+                        "missing",
+                        "refresh",
+                    )
+                    .await?;
+            }
+            Err(AppError::NotFound(_)) => {
+                state
+                    .database
+                    .mark_github_issue_unavailable(
+                        &current.github_repository,
+                        current.github_number,
+                        current.github_issue_id,
+                        "unavailable",
+                        "refresh",
+                    )
+                    .await?;
+            }
+            Err(error) => return Err(error),
+        }
+    }
+
+    state
+        .database
+        .find_issue(issue_id)
+        .await?
+        .ok_or(AppError::NotFound("Issue not found"))
+}
+
+pub(super) fn github_body(description: &str) -> String {
     let summary = if description.trim().is_empty() {
         "Reports collected by the Ladybird reporting service.".to_owned()
     } else {
         description.to_owned()
     };
 
-    format!(
-        "{summary}\n\n---\nLinked reports: {report_count}\n\n\
-         Report data is available in the reporting service."
-    )
+    format!("{summary}\n\n---\nReport data is available in the reporting service.")
 }
 
 #[cfg(test)]
@@ -110,10 +192,10 @@ mod tests {
     use super::github_body;
 
     #[test]
-    fn github_body_preserves_the_description_and_counts_reports() {
-        let body = github_body("A reproducible rendering problem.", 3);
+    fn github_body_preserves_the_description_without_stale_counts() {
+        let body = github_body("A reproducible rendering problem.");
 
         assert!(body.starts_with("A reproducible rendering problem."));
-        assert!(body.contains("Linked reports: 3"));
+        assert!(!body.contains("Linked reports:"));
     }
 }

@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { createHmac } from "node:crypto";
 
 const reportId = "01a0a536-01cd-7ac7-a3cf-ae6a2d5030e5";
 
@@ -441,6 +442,24 @@ test.describe("authenticated management UI", () => {
     await expect(page.locator(`a[href="/reports/${reportId}"]`)).toBeVisible();
   });
 
+  test("merges tracked issues and closes the source on GitHub", async ({ page }) => {
+    await page.goto("/issues");
+    await page.getByRole("link", { name: "Renderer overlap on test page" }).click();
+    await page.locator('form[action$="/merge"] select[name="destination"]').selectOption({
+      label: "Intermittent navigation timeout",
+    });
+    await page.getByRole("button", { name: "Merge this issue" }).click();
+
+    await expect(page.getByRole("heading", { name: "Intermittent navigation timeout" }))
+      .toBeVisible();
+    await expect(page.getByRole("link", { name: reportId })).toBeVisible();
+
+    const githubIssue = await page.request.get(
+      "http://127.0.0.1:3101/repos/LadybirdBrowser/ladybird/issues/7300",
+    );
+    expect((await githubIssue.json()).state).toBe("closed");
+  });
+
   test("shows the audit log", async ({ page }) => {
     await page.goto("/operations");
 
@@ -458,5 +477,61 @@ test.describe("authenticated management UI", () => {
     await expect(page.getByText("issue.create", { exact: true })).toBeVisible();
     await expect(page.getByText("report.submitted", { exact: true }).first()).toBeVisible();
     await expect(page.getByText("session.signed_in", { exact: true })).toBeVisible();
+  });
+
+  test("keeps GitHub issue state and replacement links in sync", async ({ page }) => {
+    await page.goto("/issues");
+    await page.getByRole("link", { name: "Intermittent navigation timeout" }).click();
+
+    await page.getByRole("button", { name: "Close GitHub issue" }).click();
+    await expect(page.getByRole("button", { name: "Reopen GitHub issue" })).toBeVisible();
+
+    const issue = {
+      id: 94812,
+      number: 4812,
+      title: "Fix overlapping navigation controls",
+      html_url: "https://github.com/LadybirdBrowser/ladybird/issues/4812",
+      state: "open",
+      updated_at: new Date(Date.now() + 30_000).toISOString(),
+    };
+    async function deliverWebhook(action: string) {
+      const body = JSON.stringify({
+        action,
+        issue,
+        repository: { full_name: "LadybirdBrowser/ladybird" },
+      });
+      const signature = createHmac(
+        "sha256",
+        "browser-test-github-webhook-secret-2026",
+      ).update(body).digest("hex");
+      return page.request.post("/webhooks/github", {
+        data: body,
+        headers: {
+          "content-type": "application/json",
+          "x-github-event": "issues",
+          "x-hub-signature-256": `sha256=${signature}`,
+        },
+      });
+    }
+
+    const rejected = await page.request.post("/webhooks/github", {
+      data: "{}",
+      headers: { "x-github-event": "issues" },
+    });
+    expect(rejected.status()).toBe(403);
+
+    expect((await deliverWebhook("reopened")).status()).toBe(204);
+    await page.reload();
+    await expect(page.getByRole("button", { name: "Close GitHub issue" })).toBeVisible();
+
+    issue.state = "closed";
+    expect((await deliverWebhook("deleted")).status()).toBe(204);
+    await page.reload();
+    await expect(page.getByText("Needs attention", { exact: true })).toBeVisible();
+    await page.getByRole("textbox", { name: "Replacement GitHub issue URL" }).fill(
+      "https://github.com/LadybirdBrowser/ladybird/issues/6200",
+    );
+    await page.getByRole("button", { name: "Link replacement issue" }).click();
+    await expect(page.getByRole("link", { name: "Open GitHub issue #6200" })).toBeVisible();
   });
 });

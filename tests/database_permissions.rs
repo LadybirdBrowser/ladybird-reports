@@ -5,7 +5,7 @@ use axum::{
     extract::ConnectInfo,
     http::{Request, StatusCode, header::CONTENT_TYPE},
 };
-use chrono::Duration;
+use chrono::{Duration, Utc};
 use ladybird_reports::{
     application::ReportIngestionService,
     domain::{
@@ -16,6 +16,7 @@ use ladybird_reports::{
         SecretCipher,
         attachments::FileAttachmentStore,
         database::{AdminDatabase, IngestDatabase, initialize_database},
+        github::{GithubIssue, GithubIssueState},
     },
     web::public::{PublicState, router},
 };
@@ -96,12 +97,17 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
 
     assert!(
         sqlx::query(
-            "INSERT INTO issues (id, title, github_number, github_url)
+            "INSERT INTO issues (
+                id, title, github_number, github_url,
+                github_repository, github_title
+             )
              VALUES (
                 '550e8400-e29b-41d4-a716-446655440000',
                 'invalid identifier',
                 9000,
-                'https://github.com/LadybirdBrowser/ladybird/issues/9000'
+                'https://github.com/LadybirdBrowser/ladybird/issues/9000',
+                'LadybirdBrowser/ladybird',
+                'invalid identifier'
              )",
         )
         .execute(&admin_pool)
@@ -379,12 +385,17 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
 
     let issue_id = IssueId::new();
     sqlx::query(
-        "INSERT INTO issues (id, title, github_number, github_url)
+        "INSERT INTO issues (
+            id, title, github_number, github_url,
+            github_repository, github_title
+         )
          VALUES (
             $1,
             'Assigned integration report',
             4812,
-            'https://github.com/LadybirdBrowser/ladybird/issues/4812'
+            'https://github.com/LadybirdBrowser/ladybird/issues/4812',
+            'LadybirdBrowser/ladybird',
+            'Assigned integration report'
          )",
     )
     .bind(issue_id)
@@ -539,11 +550,10 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
 
     let reused_issue = admin_database
         .assign_report_to_github_issue(
-            "Unused replacement title",
+            &github_issue(4812, "Unused replacement title"),
             "Unused replacement description",
             first_github_report,
-            4812,
-            "https://github.com/LadybirdBrowser/ladybird/issues/4812",
+            "LadybirdBrowser/ladybird",
             999,
         )
         .await
@@ -553,11 +563,10 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
 
     let created_issue = admin_database
         .assign_report_to_github_issue(
-            "New linked issue",
+            &github_issue(4813, "New linked issue"),
             "Created while assigning a report.",
             second_github_report,
-            4813,
-            "https://github.com/LadybirdBrowser/ladybird/issues/4813",
+            "LadybirdBrowser/ladybird",
             999,
         )
         .await
@@ -566,11 +575,10 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
 
     let reused_created_issue = admin_database
         .assign_report_to_github_issue(
-            "Another unused title",
+            &github_issue(4813, "Another unused title"),
             "Another unused description",
             third_github_report,
-            4813,
-            "https://github.com/LadybirdBrowser/ladybird/issues/4813",
+            "LadybirdBrowser/ladybird",
             999,
         )
         .await
@@ -579,7 +587,7 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
     assert!(!reused_created_issue.created);
 
     let linked_issues = admin_database
-        .issues_linked_to_github_numbers(&[4812, 4813, 9999])
+        .issues_linked_to_github_numbers("LadybirdBrowser/ladybird", &[4812, 4813, 9999])
         .await
         .expect("load internal issues for GitHub search results");
     assert_eq!(linked_issues.len(), 2);
@@ -620,7 +628,6 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
             created_issue.issue_id,
             "New linked issue, verified",
             "Created while assigning a report.",
-            true,
             999,
         )
         .await
@@ -634,12 +641,95 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
     .fetch_one(&admin_pool)
     .await
     .expect("read issue update audit");
-    assert_eq!(
-        issue_update_audit["fields"],
-        serde_json::json!(["title", "resolved"])
+    assert_eq!(issue_update_audit["fields"], serde_json::json!(["title"]));
+
+    let mut closed_github_issue = github_issue(4813, "New linked issue");
+    closed_github_issue.state = GithubIssueState::Closed;
+    admin_database
+        .sync_github_issue(
+            "LadybirdBrowser/ladybird",
+            &closed_github_issue,
+            None,
+            "test",
+        )
+        .await
+        .expect("synchronize GitHub closure");
+    let resolved_at: Option<chrono::DateTime<Utc>> =
+        sqlx::query_scalar("SELECT resolved_at FROM issues WHERE id = $1")
+            .bind(created_issue.issue_id)
+            .fetch_one(&admin_pool)
+            .await
+            .expect("check synchronized issue state");
+    assert!(resolved_at.is_some());
+    assert!(
+        admin_database
+            .assign_report_to_issue(first_github_report, created_issue.issue_id, 999)
+            .await
+            .is_err(),
+        "reports cannot be added to a closed GitHub issue"
     );
-    assert_eq!(issue_update_audit["resolved"]["from"], false);
-    assert_eq!(issue_update_audit["resolved"]["to"], true);
+
+    let mut transferred_issue = github_issue(8888, "Transferred GitHub issue");
+    transferred_issue.id = 94813;
+    transferred_issue.html_url = "https://github.com/LadybirdBrowser/other/issues/8888".into();
+    admin_database
+        .sync_github_issue("LadybirdBrowser/other", &transferred_issue, None, "test")
+        .await
+        .expect("detect issue transfer by stable GitHub identity");
+    assert!(
+        admin_database
+            .assign_report_to_github_issue(
+                &transferred_issue,
+                "",
+                first_github_report,
+                "LadybirdBrowser/other",
+                999,
+            )
+            .await
+            .is_err(),
+        "transferred GitHub issue must not create a second Reports issue"
+    );
+
+    admin_database
+        .mark_github_issue_unavailable(
+            "LadybirdBrowser/ladybird",
+            4813,
+            Some(94813),
+            "missing",
+            "test",
+        )
+        .await
+        .expect("mark deleted GitHub issue");
+    admin_database
+        .sync_github_issue(
+            "LadybirdBrowser/ladybird",
+            &github_issue(4813, "Stale webhook title"),
+            None,
+            "webhook",
+        )
+        .await
+        .expect("ignore a late update after deletion");
+    let github_state: String = sqlx::query_scalar("SELECT github_state FROM issues WHERE id = $1")
+        .bind(created_issue.issue_id)
+        .fetch_one(&admin_pool)
+        .await
+        .expect("check GitHub state after stale webhook");
+    assert_eq!(github_state, "missing");
+    admin_database
+        .replace_github_issue(
+            created_issue.issue_id,
+            "LadybirdBrowser/ladybird",
+            &github_issue(4814, "Replacement GitHub issue"),
+            999,
+        )
+        .await
+        .expect("replace deleted GitHub link");
+    let old_github_link = admin_database
+        .issues_linked_to_github_numbers("LadybirdBrowser/ladybird", &[4813])
+        .await
+        .expect("resolve historical GitHub link");
+    assert_eq!(old_github_link.len(), 1);
+    assert_eq!(old_github_link[0].issue_id, created_issue.issue_id);
 
     admin_database
         .merge_issue(created_issue.issue_id, issue_id, 999)
@@ -672,6 +762,17 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
     .expect("read issue merge audit");
     assert_eq!(merge_audit["into"], issue_id.to_string());
     assert_eq!(merge_audit["reports_moved"], 2);
+
+    let merged_github_link = admin_database
+        .issues_linked_to_github_numbers("LadybirdBrowser/ladybird", &[4813, 4814])
+        .await
+        .expect("resolve both historical links after merge");
+    assert_eq!(merged_github_link.len(), 2);
+    assert!(
+        merged_github_link
+            .iter()
+            .all(|link| link.issue_id == issue_id)
+    );
 
     sqlx::query("DELETE FROM discord_report_notifications")
         .execute(&admin_pool)
@@ -817,4 +918,15 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
             .expect("check drained Discord queue")
             .is_none()
     );
+}
+
+fn github_issue(number: i64, title: &str) -> GithubIssue {
+    GithubIssue {
+        id: number + 90_000,
+        number,
+        title: title.into(),
+        html_url: format!("https://github.com/LadybirdBrowser/ladybird/issues/{number}"),
+        state: GithubIssueState::Open,
+        updated_at: Utc::now(),
+    }
 }

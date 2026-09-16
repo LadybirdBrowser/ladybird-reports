@@ -20,6 +20,9 @@ pub enum AppError {
     #[error("resource not found: {0}")]
     NotFound(&'static str),
 
+    #[error("resource gone: {0}")]
+    Gone(&'static str),
+
     #[error("request conflicts with existing state: {0}")]
     Conflict(&'static str),
 
@@ -52,6 +55,7 @@ impl AppError {
             Self::AuthenticationRequired => StatusCode::UNAUTHORIZED,
             Self::PermissionDenied(_) => StatusCode::FORBIDDEN,
             Self::NotFound(_) => StatusCode::NOT_FOUND,
+            Self::Gone(_) => StatusCode::GONE,
             Self::Conflict(_) => StatusCode::CONFLICT,
             Self::RateLimited => StatusCode::TOO_MANY_REQUESTS,
             Self::PayloadTooLarge => StatusCode::PAYLOAD_TOO_LARGE,
@@ -67,6 +71,7 @@ impl AppError {
             Self::InvalidRequest(message)
             | Self::PermissionDenied(message)
             | Self::NotFound(message)
+            | Self::Gone(message)
             | Self::Conflict(message) => message,
             Self::AuthenticationRequired => "Authentication required",
             Self::RateLimited => "Rate limit exceeded",

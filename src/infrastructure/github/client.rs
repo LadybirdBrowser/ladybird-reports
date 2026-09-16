@@ -1,5 +1,7 @@
+use chrono::{DateTime, Utc};
 use reqwest::{Client, Method, StatusCode};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
+use std::time::Duration;
 
 use crate::error::{AppError, Result};
 
@@ -23,11 +25,54 @@ pub struct GithubUser {
     pub login: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 pub struct GithubIssue {
+    pub id: i64,
     pub number: i64,
     pub title: String,
     pub html_url: String,
+    pub state: GithubIssueState,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum GithubIssueState {
+    Open,
+    Closed,
+}
+
+impl GithubIssueState {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Open => "open",
+            Self::Closed => "closed",
+        }
+    }
+}
+
+impl GithubIssue {
+    pub fn repository(&self) -> Option<String> {
+        let url = reqwest::Url::parse(&self.html_url).ok()?;
+        if url.scheme() != "https" || url.host_str() != Some("github.com") {
+            return None;
+        }
+
+        let segments = url.path_segments()?.collect::<Vec<_>>();
+        if segments.len() != 4 || segments[2] != "issues" {
+            return None;
+        }
+        if segments[3].parse::<i64>().ok()? != self.number {
+            return None;
+        }
+
+        Some(format!("{}/{}", segments[0], segments[1]))
+    }
+
+    pub fn belongs_to_repository(&self, repository: &str) -> bool {
+        self.repository()
+            .is_some_and(|value| value.eq_ignore_ascii_case(repository))
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -50,6 +95,8 @@ impl GithubClient {
     pub fn new(client_id: String, client_secret: String) -> Result<Self> {
         let http = Client::builder()
             .user_agent("Ladybird-Reports/0.1")
+            .connect_timeout(Duration::from_secs(5))
+            .timeout(Duration::from_secs(15))
             .build()
             .map_err(|error| AppError::Internal(error.into()))?;
 
@@ -167,6 +214,44 @@ impl GithubClient {
             .await
     }
 
+    pub async fn set_issue_state(
+        &self,
+        token: &str,
+        repository: &str,
+        number: i64,
+        state: GithubIssueState,
+    ) -> Result<GithubIssue> {
+        let path = format!("/repos/{repository}/issues/{number}");
+        self.request_json(
+            Method::PATCH,
+            &path,
+            token,
+            Some(&serde_json::json!({ "state": state.as_str() })),
+        )
+        .await
+    }
+
+    pub async fn close_as_duplicate(
+        &self,
+        token: &str,
+        repository: &str,
+        number: i64,
+        canonical_github_id: i64,
+    ) -> Result<GithubIssue> {
+        let path = format!("/repos/{repository}/issues/{number}");
+        self.request_json(
+            Method::PATCH,
+            &path,
+            token,
+            Some(&serde_json::json!({
+                "state": "closed",
+                "state_reason": "duplicate",
+                "duplicate_issue_id": canonical_github_id,
+            })),
+        )
+        .await
+    }
+
     async fn request_json<T, B>(
         &self,
         method: Method,
@@ -226,6 +311,7 @@ async fn decode_github_response<T: DeserializeOwned>(response: reqwest::Response
             .await
             .map_err(|error| AppError::Internal(error.into())),
         StatusCode::NOT_FOUND => Err(AppError::NotFound("GitHub resource not found")),
+        StatusCode::GONE => Err(AppError::Gone("GitHub issue was deleted")),
         StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => {
             Err(AppError::PermissionDenied("GitHub denied the request"))
         }

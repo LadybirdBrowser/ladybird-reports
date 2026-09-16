@@ -530,6 +530,10 @@ pub async fn assign_to_issue(
         let issue_id = value
             .parse::<IssueId>()
             .map_err(|_| AppError::InvalidRequest("Select an issue"))?;
+        let issue = super::github::refresh_tracked_issue(&state, &session, issue_id).await?;
+        if issue.github_state != "open" || issue.merged_into.is_some() {
+            return Err(AppError::Conflict("GitHub issue is not open"));
+        }
         state
             .database
             .assign_report_to_issue(report_id, issue_id, session.github_id)
@@ -556,11 +560,10 @@ pub async fn assign_to_issue(
         state
             .database
             .assign_report_to_github_issue(
-                &github_issue.title,
+                &github_issue,
                 "",
                 report_id,
-                github_issue.number,
-                &github_issue.html_url,
+                &configuration.github_repository,
                 session.github_id,
             )
             .await?

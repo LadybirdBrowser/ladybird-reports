@@ -9,12 +9,30 @@
             <h1>{{ issue.title }}</h1>
             <p class="page-summary monospace report-id">{{ issue.id }}</p>
         </div>
-        {% if issue.is_resolved %}
+        {% if issue.merged_into.is_some() %}
+            <span class="badge badge-neutral">Merged</span>
+        {% else if issue.github_state == "unknown" %}
+            <span class="badge badge-neutral">Unverified</span>
+        {% else if issue.github_state == "missing" || issue.github_state == "moved" || issue.github_state == "unavailable" %}
+            <span class="badge badge-warning">Needs attention</span>
+        {% else if issue.is_resolved %}
             <span class="badge badge-success">Resolved</span>
         {% else %}
             <span class="badge badge-triage">Open</span>
         {% endif %}
     </header>
+
+    {% if let Some(destination) = issue.merged_into %}
+        <div class="notice-content">
+            This issue was merged into <a href="/issues/{{ destination }}">another tracked issue</a>.
+            Its GitHub link remains part of the history.
+        </div>
+    {% endif %}
+    {% if sync_warning %}
+        <div class="notice-content">
+            GitHub could not be reached. The status shown here is the last known status.
+        </div>
+    {% endif %}
 
     <div class="issue-layout">
         <div class="stack">
@@ -37,16 +55,9 @@
                         Description
                         <textarea name="description" rows="10">{{ issue.description }}</textarea>
                     </label>
-                    <label class="checkbox-label">
-                        <input
-                            type="checkbox"
-                            name="resolved"
-                            value="true"
-                            {% if issue.is_resolved %}checked{% endif %}
-                        >
-                        Mark this issue as resolved
-                    </label>
-                    <button type="submit">Save issue</button>
+                    {% if issue.merged_into.is_none() %}
+                        <button type="submit">Save issue</button>
+                    {% endif %}
                 </form>
             </section>
 
@@ -123,9 +134,56 @@
                     <h2>GitHub</h2>
                 </div>
                 <div class="card-body">
+                    {% if issue.github_title != issue.title %}
+                        <p class="quiet">GitHub title: {{ issue.github_title }}</p>
+                    {% endif %}
                     <a class="button button-secondary" href="{{ issue.github_url }}">
                         Open GitHub issue #{{ issue.github_number }}
                     </a>
+                    {% if issue.merged_into.is_none() %}
+                        {% if issue.github_state == "open" || issue.github_state == "closed" %}
+                            <form method="post" action="/issues/{{ issue.id }}/state">
+                                <input type="hidden" name="csrf" value="{{ navigation.as_ref().unwrap().csrf_token }}">
+                                {% if issue.is_resolved %}
+                                    <input type="hidden" name="state" value="open">
+                                    <button class="button-secondary" type="submit">Reopen GitHub issue</button>
+                                {% else %}
+                                    <input type="hidden" name="state" value="closed">
+                                    <button class="button-secondary" type="submit">Close GitHub issue</button>
+                                {% endif %}
+                            </form>
+                        {% else if issue.github_state == "missing" %}
+                            <p class="form-note">The GitHub issue was deleted. Link a replacement to resume tracking.</p>
+                        {% else if issue.github_state == "moved" %}
+                            <p class="form-note">The GitHub issue moved out of the configured repository.</p>
+                        {% else if issue.github_state == "unavailable" %}
+                            <p class="form-note">GitHub could not verify this issue. Check access before changing its link.</p>
+                        {% else if issue.github_state == "unknown" %}
+                            <p class="form-note">GitHub has not confirmed the current status yet.</p>
+                        {% endif %}
+
+                        {% if issue.github_state == "missing" || issue.github_state == "moved" || issue.github_state == "unavailable" %}
+                            <form method="post" action="/issues/{{ issue.id }}/github">
+                                <input type="hidden" name="csrf" value="{{ navigation.as_ref().unwrap().csrf_token }}">
+                                <label>
+                                    Replacement GitHub issue URL
+                                    <input
+                                        name="github_url"
+                                        type="url"
+                                        placeholder="https://github.com/LadybirdBrowser/ladybird/issues/…"
+                                        required
+                                    >
+                                </label>
+                                <button class="button-secondary" type="submit">Link replacement issue</button>
+                            </form>
+                            {% if issue.github_state == "missing" %}
+                                <form method="post" action="/issues/{{ issue.id }}/github/new">
+                                    <input type="hidden" name="csrf" value="{{ navigation.as_ref().unwrap().csrf_token }}">
+                                    <button class="button-secondary" type="submit">Create replacement GitHub issue</button>
+                                </form>
+                            {% endif %}
+                        {% endif %}
+                    {% endif %}
                 </div>
             </section>
 
@@ -140,7 +198,8 @@
                         value="{{ navigation.as_ref().unwrap().csrf_token }}"
                     >
                     <p class="form-note">
-                        Move every assigned report into another issue and close this group.
+                        Move every assigned report into another issue and close this GitHub issue
+                        as a duplicate when it is open.
                     </p>
                     <label>
                         Destination issue

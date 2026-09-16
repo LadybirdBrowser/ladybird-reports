@@ -6,7 +6,9 @@ mod templates;
 use std::sync::Arc;
 
 use axum::{
-    Router, middleware,
+    Router,
+    extract::DefaultBodyLimit,
+    middleware,
     routing::{get, post},
 };
 
@@ -21,6 +23,7 @@ pub struct AdminState {
     pub database: AdminDatabase,
     pub attachments: FileAttachmentStore,
     pub github: GithubClient,
+    pub github_webhook_secret: Option<Arc<str>>,
     pub secret_cipher: SecretCipher,
     pub bootstrap_reporting_database_url: Option<Arc<str>>,
 }
@@ -61,6 +64,18 @@ pub fn router(state: AdminState) -> Router {
         )
         .route("/issues/{id}", get(handlers::issues::show))
         .route("/issues/{id}", post(handlers::issues::update))
+        .route(
+            "/issues/{id}/state",
+            post(handlers::issues::set_github_state),
+        )
+        .route(
+            "/issues/{id}/github",
+            post(handlers::issues::replace_github_link),
+        )
+        .route(
+            "/issues/{id}/github/new",
+            post(handlers::issues::create_replacement),
+        )
         .route("/issues/{id}/merge", post(handlers::issues::merge))
         .route("/settings", get(handlers::settings::show))
         .route("/settings", post(handlers::settings::update))
@@ -81,6 +96,10 @@ pub fn router(state: AdminState) -> Router {
         .route("/login", get(authentication::login))
         .route("/auth/github", get(authentication::start_github_login))
         .route("/auth/callback", get(authentication::github_callback))
+        .route(
+            "/webhooks/github",
+            post(handlers::github_webhook::receive).layer(DefaultBodyLimit::max(256 * 1024)),
+        )
         .route("/assets/application.css", get(handlers::assets::stylesheet))
         .route("/assets/application.js", get(handlers::assets::javascript))
         .route(

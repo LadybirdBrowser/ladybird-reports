@@ -159,14 +159,18 @@ async fn main() -> Result<()> {
             title,
             description,
             github_number,
-            github_url
+            github_url,
+            github_repository,
+            github_title
          )
          VALUES (
             $1,
             'Intermittent navigation timeout',
             'Reports collected while investigating navigation stalls.',
             4812,
-            'https://github.com/LadybirdBrowser/ladybird/issues/4812'
+            'https://github.com/LadybirdBrowser/ladybird/issues/4812',
+            'LadybirdBrowser/ladybird',
+            'Intermittent navigation timeout'
          )",
     )
     .bind(existing_issue_id)

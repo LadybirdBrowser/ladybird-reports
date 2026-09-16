@@ -61,7 +61,11 @@
                                         </span>
                                     </td>
                                     <td>
-                                        {% if issue.is_resolved %}
+                                        {% if issue.github_state == "unknown" %}
+                                            <span class="badge badge-neutral">Unverified</span>
+                                        {% else if issue.github_state == "missing" || issue.github_state == "moved" || issue.github_state == "unavailable" %}
+                                            <span class="badge badge-warning">Needs attention</span>
+                                        {% else if issue.is_resolved %}
                                             <span class="badge badge-success">Resolved</span>
                                         {% else %}
                                             <span class="badge badge-triage">Open</span>

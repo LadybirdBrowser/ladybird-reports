@@ -318,6 +318,7 @@ impl AdminDatabase {
                 WHERE id = $1
                     AND merged_into IS NULL
                     AND resolved_at IS NULL
+                    AND github_state = 'open'
             )",
         )
         .bind(issue_id)

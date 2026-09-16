@@ -13,7 +13,7 @@ its user authorization as follows:
 - Callback URL: `https://<admin-host>/auth/callback`
 - Request user authorization during installation: disabled
 - Device flow: disabled
-- Webhooks: inactive
+- Webhooks: active; subscribe to the `Issues` event
 - Repository permission `Issues`: read and write
 - Organization permission `Members`: read-only
 - Installation availability: only the account that owns the app
@@ -31,6 +31,13 @@ https://reports.app.ladybird.org/auth/callback
 
 Copy the GitHub App client ID and generate a client secret. Provide both to the
 admin service.
+
+Set the GitHub App webhook URL to `https://<admin-host>/webhooks/github`.
+Generate a random webhook secret of at least 32 characters, configure it in
+GitHub, and provide it to the admin service as `GITHUB_WEBHOOK_SECRET`. The
+admin service verifies each webhook signature before processing it. Until this
+secret is configured, issue state is refreshed when a maintainer opens an
+issue, but GitHub changes will not appear immediately in the issue list.
 
 ## Database bootstrap
 
@@ -99,6 +106,7 @@ the UTC build date and the first eight characters of the Git commit identifier.
 | `SESSION_ENCRYPTION_KEY` | admin | Base64-encoded 32-byte key for GitHub tokens and pending setup credentials. |
 | `GITHUB_CLIENT_ID` | admin | GitHub App client ID. |
 | `GITHUB_CLIENT_SECRET` | admin | GitHub App client secret used for the user authorization flow. |
+| `GITHUB_WEBHOOK_SECRET` | admin | Secret for verifying signed GitHub issue events. Set the same value in the GitHub App. |
 | `POW_HMAC_KEY` | public API | Base64-encoded 32-byte challenge-signing key. |
 | `CLIENT_ADDRESS_HMAC_KEY` | public API | Base64-encoded 32-byte key for pseudonymous rate limits and source blocks. Keep it stable so existing blocks continue to match. |
 | `ATTACHMENT_ROOT` | both | Shared persistent directory; defaults to `./data/attachments` locally and `/data/attachments` in the image. |

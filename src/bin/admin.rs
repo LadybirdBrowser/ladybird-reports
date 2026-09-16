@@ -52,6 +52,17 @@ async fn run() -> Result<()> {
         required_environment("GITHUB_CLIENT_ID")?,
         required_environment("GITHUB_CLIENT_SECRET")?,
     )?;
+    let github_webhook_secret = std::env::var("GITHUB_WEBHOOK_SECRET")
+        .ok()
+        .map(|secret| {
+            if secret.len() < 32 {
+                return Err(ladybird_reports::error::AppError::InvalidRequest(
+                    "GITHUB_WEBHOOK_SECRET must be at least 32 characters",
+                ));
+            }
+            Ok(Arc::<str>::from(secret))
+        })
+        .transpose()?;
     let database = AdminDatabase::from_pool(pool);
     let discord_notifications =
         DiscordNotificationService::new(database.clone(), DiscordClient::new()?);
@@ -59,6 +70,7 @@ async fn run() -> Result<()> {
         database,
         attachments,
         github,
+        github_webhook_secret,
         secret_cipher,
         bootstrap_reporting_database_url: bootstrap.generated_reporting_database_url.map(Arc::from),
     };

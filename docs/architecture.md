@@ -28,6 +28,13 @@ GitHub API action is therefore limited by both the app's permissions and the sig
 user's permissions. The login flow separately verifies active membership in the
 configured authorization team.
 
+GitHub is authoritative for an issue's open or closed state. The admin service
+accepts signed GitHub App issue webhooks and refreshes an issue from GitHub when
+it is opened in the management UI. Reports owns assignment and visibility:
+closing or deleting a GitHub issue never removes its linked reports. A missing
+or moved GitHub issue stays visible as needing attention until a maintainer
+links a replacement. Old GitHub links remain searchable through aliases.
+
 The web layer translates requests into application calls. Public handlers return
 JSON. Admin handlers construct typed view models rendered by Askama templates.
 

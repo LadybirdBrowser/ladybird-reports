@@ -42,6 +42,7 @@ pub struct GithubIssueLink {
     pub issue_id: IssueId,
     pub github_number: i64,
     pub title: String,
+    pub github_state: String,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -130,6 +131,7 @@ pub struct IssueSummary {
     pub title: String,
     pub resolved_at: Option<DateTime<Utc>>,
     pub github_number: i64,
+    pub github_state: String,
     pub report_count: i64,
     pub created_at: DateTime<Utc>,
 }
@@ -142,7 +144,12 @@ pub struct IssueRecord {
     pub resolved_at: Option<DateTime<Utc>>,
     pub merged_into: Option<IssueId>,
     pub github_number: i64,
+    pub github_repository: String,
+    pub github_issue_id: Option<i64>,
+    pub github_title: String,
+    pub github_state: String,
     pub github_url: String,
+    pub github_checked_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
