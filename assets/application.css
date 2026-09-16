@@ -2155,13 +2155,14 @@ pre {
 .history li::before {
     position: absolute;
     top: 0.35rem;
-    left: -0.3rem;
+    left: 0;
     width: 0.55rem;
     height: 0.55rem;
     border: 2px solid var(--surface);
     border-radius: 50%;
     background: var(--brand);
     content: "";
+    transform: translateX(-50%);
 }
 
 .history li:last-child {
