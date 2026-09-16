@@ -5,8 +5,8 @@
             New reports that match this search will appear here.
         </div>
     {% else %}
-        <div class="table-scroll">
-            <table>
+        <div class="table-scroll report-table-scroll">
+            <table class="report-table">
             <thead>
                 <tr>
                     <th>Report type</th>
@@ -18,7 +18,7 @@
             <tbody data-report-rows>
                 {% for report in reports %}
                     <tr>
-                        <td>
+                        <td class="report-table-type">
                             <a
                                 class="primary-link report-type-link"
                                 href="/reports/{{ report.id }}"
@@ -26,16 +26,20 @@
                                 {{ report.kind_label }}
                             </a>
                         </td>
-                        <td>
-                            <strong>{{ report.client_version }}</strong><br>
+                        <td class="report-table-version">
+                            <span class="report-mobile-label">Version and build</span>
+                            <strong>{{ report.client_version }}</strong>
                             <span class="quiet">{{ report.build }}</span>
                         </td>
-                        <td>
+                        <td class="report-table-state">
                             <span class="badge badge-{{ report.state_tone }}">
                                 {{ report.state_label }}
                             </span>
                         </td>
-                        <td class="quiet report-received-at">{{ report.received_at }}</td>
+                        <td class="quiet report-received-at report-table-received">
+                            <span class="report-mobile-label">Received</span>
+                            {{ report.received_at }}
+                        </td>
                     </tr>
                 {% endfor %}
             </tbody>

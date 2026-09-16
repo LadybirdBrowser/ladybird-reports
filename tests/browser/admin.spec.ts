@@ -74,6 +74,34 @@ test.describe("authenticated management UI", () => {
     expect(await page.evaluate(() => (window as any).fixtureWasExecuted)).toBeUndefined();
   });
 
+  test("keeps report rows readable on desktop and mobile", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto("/");
+    const row = page.locator(".report-table tbody tr").first();
+    const desktopType = await row.locator(".report-table-type").boundingBox();
+    const desktopVersion = await row.locator(".report-table-version").boundingBox();
+    expect(desktopType).not.toBeNull();
+    expect(desktopVersion).not.toBeNull();
+    expect(Math.abs(desktopType!.y - desktopVersion!.y)).toBeLessThan(2);
+    await expect(row.locator(".report-mobile-label").first()).toBeHidden();
+
+    for (const width of [390, 320]) {
+      await page.setViewportSize({ width, height: 800 });
+      const type = await row.locator(".report-table-type").boundingBox();
+      const version = await row.locator(".report-table-version").boundingBox();
+      const state = await row.locator(".report-table-state").boundingBox();
+      expect(type).not.toBeNull();
+      expect(version).not.toBeNull();
+      expect(state).not.toBeNull();
+      expect(version!.y).toBeGreaterThan(type!.y + type!.height);
+      expect(version!.width).toBeGreaterThan(220);
+      expect(state!.x).toBeGreaterThan(type!.x);
+      await expect(row.getByText("Version and build")).toBeVisible();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth))
+        .toBeLessThanOrEqual(width);
+    }
+  });
+
   test("sets security headers and revalidates static assets", async ({ page, request }) => {
     const pageResponse = await page.goto("/settings");
     const pageHeaders = pageResponse?.headers() ?? {};

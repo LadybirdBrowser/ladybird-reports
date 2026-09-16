@@ -1258,6 +1258,19 @@ button:active,
     font-weight: 700;
 }
 
+.report-table-version {
+    overflow-wrap: anywhere;
+}
+
+.report-table-version strong,
+.report-table-version .quiet {
+    display: block;
+}
+
+.report-mobile-label {
+    display: none;
+}
+
 .report-received-at {
     white-space: nowrap;
 }
@@ -2255,6 +2268,87 @@ pre {
 }
 
 /* Responsive layout */
+
+@media (max-width: 760px) {
+    .report-table-scroll {
+        overflow-x: visible;
+    }
+
+    .report-table,
+    .report-table tbody {
+        display: block;
+    }
+
+    .report-table thead {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip-path: inset(50%);
+        white-space: nowrap;
+    }
+
+    .report-table tr {
+        display: grid;
+        padding: 1rem 1.15rem;
+        grid-template-areas:
+            "type state"
+            "version version"
+            "received received";
+        grid-template-columns: minmax(0, 1fr) auto;
+        column-gap: 0.75rem;
+        row-gap: 0.45rem;
+        border-bottom: 1px solid var(--border);
+    }
+
+    .report-table tr:last-child {
+        border-bottom: 0;
+    }
+
+    .report-table td {
+        min-width: 0;
+        padding: 0;
+        border: 0;
+    }
+
+    .report-table-type {
+        grid-area: type;
+        align-self: center;
+        overflow-wrap: anywhere;
+    }
+
+    .report-table-state {
+        grid-area: state;
+        align-self: center;
+    }
+
+    .report-table-version {
+        grid-area: version;
+    }
+
+    .report-table-received {
+        grid-area: received;
+        white-space: normal;
+    }
+
+    .report-table-version .quiet {
+        font-size: 0.8rem;
+    }
+
+    .report-mobile-label {
+        display: block;
+        color: var(--ink-faint);
+        font-size: 0.69rem;
+        font-weight: 750;
+        letter-spacing: 0.07em;
+        text-transform: uppercase;
+    }
+
+    .report-table-received .report-mobile-label {
+        display: inline;
+        margin-right: 0.45rem;
+    }
+}
 
 @media (max-width: 920px) {
     .header-inner {
