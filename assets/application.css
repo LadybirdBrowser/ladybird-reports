@@ -33,6 +33,7 @@
     --radius-sm: 0.45rem;
     --radius-md: 0.75rem;
     --radius-lg: 1rem;
+    --button-height: 2.55rem;
 }
 
 [hidden] {
@@ -1136,7 +1137,7 @@ input[type="checkbox"] {
 button,
 .button {
     display: inline-flex;
-    min-height: 2.45rem;
+    min-height: var(--button-height);
     padding: 0.55rem 0.9rem;
     align-items: center;
     justify-content: center;
@@ -1657,6 +1658,7 @@ tbody tr:hover {
     display: flex;
     margin-top: 1rem;
     justify-content: flex-end;
+    flex-wrap: wrap;
     gap: 0.55rem;
 }
 
@@ -1786,7 +1788,13 @@ tbody tr:hover {
     display: flex;
     margin-top: 1.25rem;
     justify-content: flex-end;
+    flex-wrap: wrap;
     gap: 0.55rem;
+}
+
+:is(.dialog-actions, .popover-actions) > button {
+    height: var(--button-height);
+    white-space: nowrap;
 }
 
 details {

@@ -425,6 +425,12 @@ test.describe("authenticated management UI", () => {
     await page.goto(`/reports/${reportId}`);
     await page.getByRole("button", { name: "Add report to issue" }).click();
     await page.getByRole("button", { name: "Create new" }).click();
+    const issueDialog = page.getByRole("dialog", { name: "Add report to an issue" });
+    const cancelHeight = await issueDialog.getByRole("button", { name: "Cancel" })
+      .evaluate((button) => button.getBoundingClientRect().height);
+    const createHeight = await issueDialog.getByRole("button", { name: "Create GitHub issue" })
+      .evaluate((button) => button.getBoundingClientRect().height);
+    expect(createHeight).toBe(cancelHeight);
     await page.getByLabel("Title", { exact: true }).fill("Renderer overlap on test page");
     await page.getByLabel("Description", { exact: true }).fill("Created by the browser test.");
     await page.getByRole("button", { name: "Create GitHub issue" }).click();
