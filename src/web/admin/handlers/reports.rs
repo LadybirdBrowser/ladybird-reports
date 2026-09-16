@@ -8,6 +8,7 @@ use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    application::{IssueProposal, propose_issue},
     domain::{AttachmentId, IssueId, ReportId, ReportSearch, filter_expression},
     error::{AppError, Result},
     infrastructure::database::ReportQuery,
@@ -114,6 +115,7 @@ pub struct EntitySearchOption {
 pub struct ReportTemplate {
     navigation: Option<Navigation>,
     report: ReportView,
+    issue_proposal: IssueProposal,
     known_fields: Vec<FieldView>,
     unknown_fields: Vec<FieldView>,
     attachments: Vec<AttachmentView>,
@@ -370,6 +372,7 @@ pub async fn show(
         .report_details(report_id)
         .await?
         .ok_or_else(|| not_found("Report not found"))?;
+    let issue_proposal = propose_issue(&details);
     let platform = field_string(&details.fields, "platform").unwrap_or_else(|| "Unknown".into());
     let architecture =
         field_string(&details.fields, "architecture").unwrap_or_else(|| "Unknown".into());
@@ -494,6 +497,7 @@ pub async fn show(
     Ok(TemplateResponse(ReportTemplate {
         navigation: Some(Navigation::for_session(&state, &session)),
         report: report_view,
+        issue_proposal,
         known_fields,
         unknown_fields,
         attachments,
@@ -561,7 +565,6 @@ pub async fn assign_to_issue(
             .database
             .assign_report_to_github_issue(
                 &github_issue,
-                "",
                 report_id,
                 &configuration.github_repository,
                 session.github_id,

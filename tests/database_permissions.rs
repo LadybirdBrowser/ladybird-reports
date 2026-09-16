@@ -99,15 +99,14 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
         sqlx::query(
             "INSERT INTO issues (
                 id, title, github_number, github_url,
-                github_repository, github_title
+                github_repository
              )
              VALUES (
                 '550e8400-e29b-41d4-a716-446655440000',
                 'invalid identifier',
                 9000,
                 'https://github.com/LadybirdBrowser/ladybird/issues/9000',
-                'LadybirdBrowser/ladybird',
-                'invalid identifier'
+                'LadybirdBrowser/ladybird'
              )",
         )
         .execute(&admin_pool)
@@ -387,15 +386,14 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
     sqlx::query(
         "INSERT INTO issues (
             id, title, github_number, github_url,
-            github_repository, github_title
+            github_repository
          )
          VALUES (
             $1,
             'Assigned integration report',
             4812,
             'https://github.com/LadybirdBrowser/ladybird/issues/4812',
-            'LadybirdBrowser/ladybird',
-            'Assigned integration report'
+            'LadybirdBrowser/ladybird'
          )",
     )
     .bind(issue_id)
@@ -550,8 +548,7 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
 
     let reused_issue = admin_database
         .assign_report_to_github_issue(
-            &github_issue(4812, "Unused replacement title"),
-            "Unused replacement description",
+            &github_issue(4812, "Assigned integration report"),
             first_github_report,
             "LadybirdBrowser/ladybird",
             999,
@@ -564,7 +561,6 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
     let created_issue = admin_database
         .assign_report_to_github_issue(
             &github_issue(4813, "New linked issue"),
-            "Created while assigning a report.",
             second_github_report,
             "LadybirdBrowser/ladybird",
             999,
@@ -573,10 +569,11 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
         .expect("create issue for an unlinked GitHub issue");
     assert!(created_issue.created);
 
+    let mut edited_github_issue = github_issue(4813, "Renamed on GitHub");
+    edited_github_issue.body = Some("Description edited on GitHub.".into());
     let reused_created_issue = admin_database
         .assign_report_to_github_issue(
-            &github_issue(4813, "Another unused title"),
-            "Another unused description",
+            &edited_github_issue,
             third_github_report,
             "LadybirdBrowser/ladybird",
             999,
@@ -585,6 +582,27 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
         .expect("reuse issue created for the same GitHub issue");
     assert_eq!(reused_created_issue.issue_id, created_issue.issue_id);
     assert!(!reused_created_issue.created);
+    let synchronized_issue = admin_database
+        .find_issue(created_issue.issue_id)
+        .await
+        .expect("load synchronized issue")
+        .expect("tracked issue exists");
+    assert_eq!(synchronized_issue.title, "Renamed on GitHub");
+    assert_eq!(
+        synchronized_issue.description,
+        "Description edited on GitHub."
+    );
+    let sync_audit: serde_json::Value = sqlx::query_scalar(
+        "SELECT details FROM audit_events
+         WHERE entity_id = $1 AND action = 'issue.sync_github'
+         ORDER BY created_at DESC LIMIT 1",
+    )
+    .bind(created_issue.issue_id)
+    .fetch_one(&admin_pool)
+    .await
+    .expect("read GitHub issue sync audit");
+    assert_eq!(sync_audit["title_changed"], true);
+    assert_eq!(sync_audit["description_changed"], true);
 
     let linked_issues = admin_database
         .issues_linked_to_github_numbers("LadybirdBrowser/ladybird", &[4812, 4813, 9999])
@@ -623,26 +641,6 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
         second_github_report.to_string()
     );
 
-    admin_database
-        .update_issue(
-            created_issue.issue_id,
-            "New linked issue, verified",
-            "Created while assigning a report.",
-            999,
-        )
-        .await
-        .expect("update issue with an audit event");
-    let issue_update_audit: serde_json::Value = sqlx::query_scalar(
-        "SELECT details
-         FROM audit_events
-         WHERE entity_id = $1 AND action = 'issue.update'",
-    )
-    .bind(created_issue.issue_id)
-    .fetch_one(&admin_pool)
-    .await
-    .expect("read issue update audit");
-    assert_eq!(issue_update_audit["fields"], serde_json::json!(["title"]));
-
     let mut closed_github_issue = github_issue(4813, "New linked issue");
     closed_github_issue.state = GithubIssueState::Closed;
     admin_database
@@ -680,7 +678,6 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
         admin_database
             .assign_report_to_github_issue(
                 &transferred_issue,
-                "",
                 first_github_report,
                 "LadybirdBrowser/other",
                 999,
@@ -925,6 +922,7 @@ fn github_issue(number: i64, title: &str) -> GithubIssue {
         id: number + 90_000,
         number,
         title: title.into(),
+        body: Some("Created while assigning a report.".into()),
         html_url: format!("https://github.com/LadybirdBrowser/ladybird/issues/{number}"),
         state: GithubIssueState::Open,
         updated_at: Utc::now(),

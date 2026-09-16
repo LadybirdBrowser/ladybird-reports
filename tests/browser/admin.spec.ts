@@ -186,9 +186,14 @@ test.describe("authenticated management UI", () => {
     await expect(page.locator('input[name="issue_selection"]')).toHaveValue("github:6200");
 
     await page.getByRole("button", { name: "Create new" }).click();
-    await expect(page.getByLabel("Title", { exact: true })).toBeVisible();
-    await expect(page.getByLabel("Description", { exact: true })).toBeVisible();
-    await expect(page.getByText("This creates a GitHub issue")).toBeVisible();
+    await expect(page.getByLabel("Title", { exact: true }))
+      .toHaveValue("Web compatibility issue on macOS");
+    await expect(page.getByLabel("Description", { exact: true }))
+      .toHaveValue(/- Platform: macOS/);
+    await expect(page.getByLabel("Description", { exact: true }))
+      .not.toHaveValue(/Core::ThreadEventQueue::process\(\)/);
+    await expect(page.getByText("Review this public GitHub issue"))
+      .toBeVisible();
   });
 
   test("searches existing internal issues in the issue workflow", async ({ page }) => {
@@ -432,6 +437,19 @@ test.describe("authenticated management UI", () => {
     await expect(page.getByRole("link", { name: "Issue #7300" }))
       .toBeVisible();
     await expect(page.getByText("GitHub", { exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Save issue" })).toHaveCount(0);
+    await expect(page.locator('form[action^="/issues/"][action$="/issues/"]'))
+      .toHaveCount(0);
+    await expect(page.locator(".issue-description"))
+      .toContainText("Created by the browser test.");
+    const editFromReports = await page.request.post(page.url(), {
+      form: {
+        csrf: "browser-test-csrf",
+        title: "Edited outside GitHub",
+        description: "This must not be saved.",
+      },
+    });
+    expect(editFromReports.status()).toBe(405);
     const createdIssueId = page.url().split("/").at(-1);
     const issueField = await page.request.get(
       "http://127.0.0.1:3101/test/issue-field/7300",
@@ -506,10 +524,11 @@ test.describe("authenticated management UI", () => {
     const issue = {
       id: 94812,
       number: 4812,
-      title: "Fix overlapping navigation controls",
+      title: "Navigation stops after redirect",
+      body: "Updated on GitHub with more reproduction details.",
       html_url: "https://github.com/LadybirdBrowser/ladybird/issues/4812",
       state: "open",
-      updated_at: new Date(Date.now() + 30_000).toISOString(),
+      updated_at: new Date(Date.now() + 10_000).toISOString(),
     };
     async function deliverWebhook(action: string) {
       const body = JSON.stringify({
@@ -537,7 +556,14 @@ test.describe("authenticated management UI", () => {
     });
     expect(rejected.status()).toBe(403);
 
+    expect((await deliverWebhook("edited")).status()).toBe(204);
+    await page.reload();
+    await expect(page.getByRole("heading", { name: issue.title })).toBeVisible();
+    await expect(page.locator(".issue-description")).toContainText(issue.body);
+    await expect(page.getByRole("button", { name: "Save issue" })).toHaveCount(0);
+
     issue.state = "closed";
+    issue.updated_at = new Date(Date.now() + 20_000).toISOString();
     expect((await deliverWebhook("closed")).status()).toBe(204);
     await page.goto("/issues?resolved=true");
     await expect(page.getByText("Resolved", { exact: true })).toBeVisible();

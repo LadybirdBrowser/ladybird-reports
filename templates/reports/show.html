@@ -471,14 +471,17 @@
                 >
                 <label>
                     Title
-                    <input name="title" maxlength="256" required>
+                    <input name="title" value="{{ issue_proposal.title }}" maxlength="256" required>
                 </label>
-                <label>
-                    Description
-                    <textarea name="description" rows="6"></textarea>
-                </label>
+                <label for="new-issue-description">Description</label>
+                <textarea
+                    id="new-issue-description"
+                    name="description"
+                    rows="12"
+                >{{ issue_proposal.description }}</textarea>
                 <p class="form-note">
-                    This creates a GitHub issue and adds the report to it.
+                    Review this public GitHub issue before creating it. The draft omits
+                    URLs, stack traces, attachments, and unknown fields.
                 </p>
                 <div class="dialog-actions">
                     <button class="button-secondary" type="button" data-close-issue-dialog>

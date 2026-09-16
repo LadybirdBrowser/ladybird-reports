@@ -1410,6 +1410,11 @@ tbody tr:hover {
     gap: 1rem;
 }
 
+.issue-description {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
 .issue-link-field span {
     color: var(--ink-soft);
     font-size: 0.84rem;

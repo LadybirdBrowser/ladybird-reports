@@ -142,7 +142,6 @@ pub async fn create_from_report(
         .database
         .assign_report_to_github_issue(
             &github_issue,
-            &form.description,
             report_id,
             &configuration.github_repository,
             session.github_id,
@@ -260,35 +259,6 @@ pub async fn show(
         sync_warning,
         github_field_warning,
     }))
-}
-
-#[derive(Deserialize)]
-pub struct UpdateIssueForm {
-    csrf: String,
-    title: String,
-    description: String,
-}
-
-pub async fn update(
-    State(state): State<AdminState>,
-    Extension(session): Extension<Session>,
-    Path(issue_id): Path<IssueId>,
-    Form(form): Form<UpdateIssueForm>,
-) -> Result<Redirect> {
-    session.verify_csrf(&form.csrf)?;
-
-    state
-        .database
-        .update_issue(issue_id, &form.title, &form.description, session.github_id)
-        .await?;
-
-    tracing::info!(
-        event = "issue.update",
-        %issue_id,
-        actor = session.login,
-    );
-
-    Ok(Redirect::to(&format!("/issues/{issue_id}")))
 }
 
 #[derive(Deserialize)]

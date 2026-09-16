@@ -30,6 +30,7 @@ pub struct GithubIssue {
     pub id: i64,
     pub number: i64,
     pub title: String,
+    pub body: Option<String>,
     pub html_url: String,
     pub state: GithubIssueState,
     pub updated_at: DateTime<Utc>,

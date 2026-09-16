@@ -40,11 +40,13 @@ already tracked in the service and matching issues from the configured GitHub
 repository. A GitHub issue already tracked in the service appears only once.
 Selecting an untracked GitHub issue creates the corresponding issue record and
 adds the report. Creating an issue publishes it to GitHub and records it in the
-service as one operation. Every issue in the service therefore has a GitHub
-issue at creation. The resolved-issue filter applies as soon as it changes.
-GitHub controls whether that issue is open or closed. Signed GitHub webhooks
-update Reports when the state changes. Report assignments remain intact when an issue
-is closed, deleted, or transferred. A deleted or moved link is flagged for
+service as one operation. The editable draft uses the report type and selected
+environment fields, while omitting URLs, stack traces, attachments, and unknown
+fields. Every issue in the service therefore has a GitHub issue at creation.
+The resolved-issue filter applies as soon as it changes. GitHub controls the
+issue's title, description, and open or closed state. Signed GitHub webhooks
+update those cached values in Reports. Report assignments remain intact when
+an issue is closed, deleted, or transferred. A deleted or moved link is flagged for
 repair, and its previous GitHub identity stays associated with the issue.
 Merging two tracked issues moves the reports to the destination. Maintainers
 update the source GitHub issue separately.

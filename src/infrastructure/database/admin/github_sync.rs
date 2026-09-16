@@ -7,6 +7,8 @@ use crate::{
     infrastructure::{database::AdminDatabase, github::GithubIssue},
 };
 
+use super::issues::validate_issue_text;
+
 impl AdminDatabase {
     pub async fn replace_github_issue(
         &self,
@@ -20,6 +22,8 @@ impl AdminDatabase {
                 "Replacement issue must be in the configured repository",
             ));
         }
+        let description = replacement.body.as_deref().unwrap_or_default();
+        validate_issue_text(&replacement.title, description)?;
 
         let mut transaction = self.pool.begin().await?;
         sqlx::query("SELECT pg_advisory_xact_lock(891125)")
@@ -98,14 +102,15 @@ impl AdminDatabase {
                  github_number = $3,
                  github_issue_id = $4,
                  github_url = $5,
-                 github_title = $6,
-                 github_state = $7,
+                 title = $6,
+                 description = $7,
+                 github_state = $8,
                  github_checked_at = now(),
-                 github_updated_at = $8,
+                 github_updated_at = $9,
                  github_reports_field_id = NULL,
                  github_reports_link_url = NULL,
                  resolved_at = CASE
-                    WHEN $7 = 'closed' THEN COALESCE(resolved_at, now())
+                    WHEN $8 = 'closed' THEN COALESCE(resolved_at, now())
                     ELSE NULL
                  END,
                  updated_at = now()
@@ -117,6 +122,7 @@ impl AdminDatabase {
         .bind(replacement.id)
         .bind(&replacement.html_url)
         .bind(&replacement.title)
+        .bind(description)
         .bind(replacement.state.as_str())
         .bind(replacement.updated_at)
         .execute(&mut *transaction)
@@ -147,12 +153,14 @@ impl AdminDatabase {
         actor: Option<i64>,
         source: &str,
     ) -> Result<Option<IssueId>> {
+        let description = issue.body.as_deref().unwrap_or_default();
+        validate_issue_text(&issue.title, description)?;
         let current_repository = issue.repository().ok_or(AppError::InvalidRequest(
             "GitHub returned an invalid issue URL",
         ))?;
         let mut transaction = self.pool.begin().await?;
         let row = sqlx::query(
-            "SELECT id, github_issue_id, github_state, github_title,
+            "SELECT id, github_issue_id, github_state, title, description,
                     github_repository, github_url, github_updated_at
              FROM issues
              WHERE github_issue_id = $1
@@ -193,23 +201,29 @@ impl AdminDatabase {
             transaction.commit().await?;
             return Ok(Some(issue_id));
         }
-        let previous_title: String = row.get("github_title");
+        let previous_title: String = row.get("title");
+        let previous_description: String = row.get("description");
         let previous_url: String = row.get("github_url");
         sqlx::query(
             "UPDATE issues
              SET github_issue_id = $2,
-                 github_title = $3,
-                 github_url = $4,
-                 github_state = $5,
+                 title = $3,
+                 description = $4,
+                 github_url = $5,
+                 github_state = $6,
                  github_checked_at = now(),
-                 github_updated_at = $6,
+                 github_updated_at = $7,
                  resolved_at = CASE
-                    WHEN $5 = 'open' THEN NULL
-                    WHEN $5 = 'closed' THEN COALESCE(resolved_at, now())
+                    WHEN $6 = 'open' THEN NULL
+                    WHEN $6 = 'closed' THEN COALESCE(resolved_at, now())
                     ELSE resolved_at
                  END,
                  updated_at = CASE
-                    WHEN github_state IS DISTINCT FROM $5 THEN now()
+                    WHEN github_state IS DISTINCT FROM $6
+                        OR title IS DISTINCT FROM $3
+                        OR description IS DISTINCT FROM $4
+                        OR github_url IS DISTINCT FROM $5
+                    THEN now()
                     ELSE updated_at
                  END
              WHERE id = $1",
@@ -217,6 +231,7 @@ impl AdminDatabase {
         .bind(issue_id)
         .bind(issue.id)
         .bind(&issue.title)
+        .bind(description)
         .bind(&issue.html_url)
         .bind(state)
         .bind(issue.updated_at)
@@ -225,6 +240,7 @@ impl AdminDatabase {
 
         if previous_state != state
             || previous_title != issue.title
+            || previous_description != description
             || previous_url != issue.html_url
         {
             sqlx::query(
@@ -237,6 +253,7 @@ impl AdminDatabase {
                 "source": source,
                 "state": { "from": previous_state, "to": state },
                 "title_changed": previous_title != issue.title,
+                "description_changed": previous_description != description,
                 "url_changed": previous_url != issue.html_url,
             }))
             .execute(&mut *transaction)

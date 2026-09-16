@@ -165,11 +165,11 @@ impl AdminDatabase {
     pub async fn assign_report_to_github_issue(
         &self,
         issue: &GithubIssue,
-        description: &str,
         report_id: ReportId,
         repository: &str,
         actor: i64,
     ) -> Result<GithubIssueAssignment> {
+        let description = issue.body.as_deref().unwrap_or_default();
         validate_issue_text(&issue.title, description)?;
         if issue.state != GithubIssueState::Open || !issue.belongs_to_repository(repository) {
             return Err(AppError::Conflict(
@@ -237,11 +237,10 @@ impl AdminDatabase {
                     github_url,
                     github_repository,
                     github_issue_id,
-                    github_title,
                     github_state,
                     github_checked_at,
                     github_updated_at
-                 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'open', now(), $9)",
+                 ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'open', now(), $8)",
             )
             .bind(issue_id)
             .bind(issue.title.trim())
@@ -250,7 +249,6 @@ impl AdminDatabase {
             .bind(&issue.html_url)
             .bind(repository)
             .bind(issue.id)
-            .bind(&issue.title)
             .bind(issue.updated_at)
             .execute(&mut *transaction)
             .await?;
@@ -379,7 +377,6 @@ impl AdminDatabase {
                 issues.github_number,
                 issues.github_repository,
                 issues.github_issue_id,
-                issues.github_title,
                 issues.github_state,
                 issues.github_url,
                 issues.github_reports_field_id,
@@ -403,7 +400,6 @@ impl AdminDatabase {
             github_number: row.get("github_number"),
             github_repository: row.get("github_repository"),
             github_issue_id: row.get("github_issue_id"),
-            github_title: row.get("github_title"),
             github_state: row.get("github_state"),
             github_url: row.get("github_url"),
             github_reports_field_id: row.get("github_reports_field_id"),
@@ -412,73 +408,6 @@ impl AdminDatabase {
             created_at: row.get("created_at"),
             updated_at: row.get("updated_at"),
         }))
-    }
-
-    pub async fn update_issue(
-        &self,
-        issue_id: IssueId,
-        title: &str,
-        description: &str,
-        actor: i64,
-    ) -> Result<()> {
-        validate_issue_text(title, description)?;
-
-        let mut transaction = self.pool.begin().await?;
-        let current = sqlx::query(
-            "SELECT title, description
-             FROM issues
-             WHERE id = $1 AND merged_into IS NULL
-             FOR UPDATE",
-        )
-        .bind(issue_id)
-        .fetch_optional(&mut *transaction)
-        .await?
-        .ok_or(AppError::NotFound("Issue not found"))?;
-
-        let old_title: String = current.get("title");
-        let old_description: String = current.get("description");
-        let mut changed_fields = Vec::new();
-
-        if old_title != title.trim() {
-            changed_fields.push("title");
-        }
-        if old_description != description {
-            changed_fields.push("description");
-        }
-
-        if changed_fields.is_empty() {
-            transaction.commit().await?;
-            return Ok(());
-        }
-
-        sqlx::query(
-            "UPDATE issues
-             SET
-                title = $2,
-                description = $3,
-                updated_at = now()
-             WHERE id = $1 AND merged_into IS NULL",
-        )
-        .bind(issue_id)
-        .bind(title.trim())
-        .bind(description)
-        .execute(&mut *transaction)
-        .await?;
-
-        let details = serde_json::json!({ "fields": changed_fields });
-
-        sqlx::query(
-            "INSERT INTO audit_events (actor, action, entity_id, details)
-             VALUES ($1, 'issue.update', $2, $3)",
-        )
-        .bind(actor)
-        .bind(issue_id.0)
-        .bind(details)
-        .execute(&mut *transaction)
-        .await?;
-
-        transaction.commit().await?;
-        Ok(())
     }
 
     pub async fn merge_issue(
@@ -569,15 +498,26 @@ impl AdminDatabase {
 }
 
 pub(crate) fn validate_issue_text(title: &str, description: &str) -> Result<()> {
-    if title.trim().is_empty() || title.len() > 256 {
+    if title.trim().is_empty() || title.chars().count() > 256 {
         return Err(AppError::InvalidRequest(
-            "Issue title must be 1 to 256 bytes",
+            "Issue title must be 1 to 256 characters",
         ));
     }
 
-    if description.len() > 256 * 1024 {
+    if description.chars().count() > 256 * 1024 {
         return Err(AppError::InvalidRequest("Issue description is too large"));
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::validate_issue_text;
+
+    #[test]
+    fn github_issue_text_limits_count_characters() {
+        assert!(validate_issue_text(&"界".repeat(256), "").is_ok());
+        assert!(validate_issue_text(&"界".repeat(257), "").is_err());
+    }
 }

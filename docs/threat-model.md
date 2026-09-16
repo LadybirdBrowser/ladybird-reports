@@ -25,7 +25,9 @@ Management access requires GitHub authentication and an authorized account. The
 GitHub App uses a user access token with read-only organization membership and
 read-write issue permissions; it has no source-code write permission. State-changing
 forms require a CSRF token. GitHub issue creation publishes the entered title and
-description, plus a short note that report data remains in the reporting service.
+description. The initial proposal includes selected report context and omits
+URLs, stack traces, attachments, and unknown fields. Maintainers review the
+public draft before creating the issue.
 
 Reports and attachments expire after the configured long retention period. Maintenance
 deletes expired database content and attachment files. Short-lived unauthenticated and

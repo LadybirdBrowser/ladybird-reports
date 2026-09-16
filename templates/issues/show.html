@@ -41,29 +41,18 @@
 
     <div class="issue-layout">
         <div class="stack">
-            <section class="card" aria-labelledby="issue-details-title">
+            <section class="card" aria-labelledby="issue-description-title">
                 <div class="card-header">
-                    <h2 id="issue-details-title">Issue details</h2>
-                    <p>Internal triage record</p>
+                    <h2 id="issue-description-title">Description</h2>
+                    <a href="{{ issue.github_url }}">Edit on GitHub</a>
                 </div>
-                <form class="card-body" method="post" action="/issues/{{ issue.id }}">
-                    <input
-                        type="hidden"
-                        name="csrf"
-                        value="{{ navigation.as_ref().unwrap().csrf_token }}"
-                    >
-                    <label>
-                        Title
-                        <input name="title" value="{{ issue.title }}" maxlength="256" required>
-                    </label>
-                    <label>
-                        Description
-                        <textarea name="description" rows="10">{{ issue.description }}</textarea>
-                    </label>
-                    {% if issue.merged_into.is_none() %}
-                        <button type="submit">Save issue</button>
+                <div class="card-body issue-description">
+                    {% if issue.description.is_empty() %}
+                        <span class="quiet">No description on GitHub.</span>
+                    {% else %}
+                        {{ issue.description }}
                     {% endif %}
-                </form>
+                </div>
             </section>
 
             <section class="card" aria-labelledby="assigned-reports-title">

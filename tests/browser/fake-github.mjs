@@ -87,7 +87,8 @@ const server = createServer((request, response) => {
         {
           id: 94812,
           number: 4812,
-          title: "Fix overlapping navigation controls",
+          title: "Intermittent navigation timeout",
+          body: "Reports collected while investigating navigation stalls.",
           html_url: "https://github.com/LadybirdBrowser/ladybird/issues/4812",
           state: issueStates.get(4812) ?? "open",
           updated_at: "2026-09-15T12:00:00Z",
@@ -96,6 +97,7 @@ const server = createServer((request, response) => {
           id: 96200,
           number: 6200,
           title: "Investigate renderer overlap",
+          body: "Renderer overlap reproduced in the current build.",
           html_url: "https://github.com/LadybirdBrowser/ladybird/issues/6200",
           state: issueStates.get(6200) ?? "open",
           updated_at: "2026-09-15T12:00:00Z",
@@ -113,7 +115,14 @@ const server = createServer((request, response) => {
       number,
       title: number === 6200
         ? "Investigate renderer overlap"
-        : "Fix overlapping navigation controls",
+        : number === 4812
+          ? "Intermittent navigation timeout"
+          : latestCreatedIssue?.title ?? "GitHub issue",
+      body: number === 6200
+        ? "Renderer overlap reproduced in the current build."
+        : number === 4812
+          ? "Reports collected while investigating navigation stalls."
+          : latestCreatedIssue?.body ?? "",
       html_url: `https://github.com/LadybirdBrowser/ladybird/issues/${number}`,
       state: issueStates.get(number) ?? "open",
       updated_at: new Date().toISOString(),
@@ -135,6 +144,7 @@ const server = createServer((request, response) => {
         id: 97300,
         number: 7300,
         title: issue.title,
+        body: issue.body,
         html_url: "https://github.com/LadybirdBrowser/ladybird/issues/7300",
         state: "open",
         updated_at: "2026-09-15T12:00:00Z",

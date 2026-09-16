@@ -146,7 +146,6 @@ pub struct IssueRecord {
     pub github_number: i64,
     pub github_repository: String,
     pub github_issue_id: Option<i64>,
-    pub github_title: String,
     pub github_state: String,
     pub github_url: String,
     pub github_reports_field_id: Option<i64>,
