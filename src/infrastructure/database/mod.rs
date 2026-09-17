@@ -1,8 +1,10 @@
 mod admin;
+mod configuration_cache;
 mod ingest;
 mod permissions;
 
 pub use admin::*;
+pub use configuration_cache::*;
 pub use ingest::*;
 pub use permissions::*;
 

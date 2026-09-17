@@ -13,11 +13,12 @@ use crate::{
     error::{AppError, Result},
 };
 
-use super::connect_pool;
+use super::{ConfigurationCache, connect_pool};
 
 #[derive(Clone)]
 pub struct IngestDatabase {
     pool: PgPool,
+    configuration_cache: ConfigurationCache,
 }
 
 #[derive(Clone, Debug)]
@@ -74,10 +75,21 @@ impl IngestDatabase {
     pub async fn connect(database_url: &str) -> Result<Self> {
         Ok(Self {
             pool: connect_pool(database_url, 16).await?,
+            configuration_cache: ConfigurationCache::default(),
         })
     }
 
+    pub async fn start_configuration_cache(&self) -> Result<tokio::task::JoinHandle<()>> {
+        self.configuration_cache
+            .start(&self.pool, "SELECT reporting_runtime_configuration()")
+            .await
+    }
+
     pub async fn configuration(&self) -> Result<RuntimeConfiguration> {
+        if let Some(configuration) = self.configuration_cache.get() {
+            return Ok(configuration);
+        }
+
         let value: Value = sqlx::query_scalar("SELECT reporting_runtime_configuration()")
             .fetch_one(&self.pool)
             .await?;

@@ -21,6 +21,7 @@ async fn main() {
 async fn run() -> Result<()> {
     let database =
         IngestDatabase::connect(&required_environment("REPORTING_DATABASE_URL")?).await?;
+    let configuration_listener = database.start_configuration_cache().await?;
     let attachments = FileAttachmentStore::open(
         std::env::var("ATTACHMENT_ROOT").unwrap_or_else(|_| "./data/attachments".into()),
     )
@@ -49,6 +50,8 @@ async fn run() -> Result<()> {
 
     maintenance.abort();
     let _ = maintenance.await;
+    configuration_listener.abort();
+    let _ = configuration_listener.await;
 
     tracing::info!(event = "shutdown.complete", service = "public_api");
     Ok(())

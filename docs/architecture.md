@@ -32,6 +32,12 @@ configuration, using an `organization/team-slug` value. Its initial value is
 `LadybirdBrowser/maintainers`. Updating the team revokes current sessions; users
 must sign in again and pass the new team's membership check.
 
+Each process keeps a validated runtime configuration in memory. The admin
+process updates the database and emits a PostgreSQL notification in the same
+transaction; both services reload after receiving it. They also reload once a
+minute and after reconnecting, because notifications are not durable. The
+admin process updates its own cache immediately after a successful save.
+
 GitHub is authoritative for an issue's title, description, and open or closed
 state. The admin service accepts signed GitHub App issue webhooks and refreshes
 an issue from GitHub when

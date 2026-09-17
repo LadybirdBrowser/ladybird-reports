@@ -346,6 +346,14 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
         .configuration()
         .await
         .expect("load runtime configuration");
+    let admin_listener = admin_database
+        .start_configuration_cache()
+        .await
+        .expect("start admin configuration listener");
+    let reporting_listener = ingest_database
+        .start_configuration_cache()
+        .await
+        .expect("start reporting configuration listener");
     configuration.github_authorization_team = "ExampleOrg/reports-reviewers".into();
     admin_database
         .update_configuration(&configuration, 999)
@@ -367,6 +375,22 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
             .github_authorization_team,
         "ExampleOrg/reports-reviewers"
     );
+    tokio::time::timeout(std::time::Duration::from_secs(3), async {
+        loop {
+            if ingest_database
+                .configuration()
+                .await
+                .expect("read cached reporting configuration")
+                .github_authorization_team
+                == "ExampleOrg/reports-reviewers"
+            {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("reporting process received configuration notification");
     assert!(
         admin_database
             .create_session(NewSession {
@@ -387,6 +411,8 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
         .update_configuration(&configuration, 999)
         .await
         .expect("restore access team for browser tests");
+    admin_listener.abort();
+    reporting_listener.abort();
 
     attachments
         .remove_report(report_id)

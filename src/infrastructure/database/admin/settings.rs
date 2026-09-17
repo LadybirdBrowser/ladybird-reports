@@ -13,6 +13,10 @@ use super::{ConfigurationRecord, FieldDefinitionRecord};
 
 impl AdminDatabase {
     pub async fn configuration(&self) -> Result<RuntimeConfiguration> {
+        if let Some(configuration) = self.configuration_cache.get() {
+            return Ok(configuration);
+        }
+
         let record = self.configuration_record().await?;
         let configuration: RuntimeConfiguration = serde_json::from_value(record.value)
             .map_err(|error| AppError::Internal(error.into()))?;
@@ -88,6 +92,7 @@ impl AdminDatabase {
         .await?;
 
         transaction.commit().await?;
+        self.configuration_cache.set(configuration.clone());
         Ok(())
     }
 

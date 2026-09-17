@@ -64,6 +64,7 @@ async fn run() -> Result<()> {
         })
         .transpose()?;
     let database = AdminDatabase::from_pool(pool);
+    let configuration_listener = database.start_configuration_cache().await?;
     let discord_notifications =
         DiscordNotificationService::new(database.clone(), DiscordClient::new()?);
     let state = AdminState {
@@ -92,6 +93,8 @@ async fn run() -> Result<()> {
     let _ = discord_notifications.await;
     stack_indexer.abort();
     let _ = stack_indexer.await;
+    configuration_listener.abort();
+    let _ = configuration_listener.await;
 
     tracing::info!(event = "shutdown.complete", service = "admin");
     Ok(())
