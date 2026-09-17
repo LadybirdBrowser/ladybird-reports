@@ -1809,6 +1809,10 @@ tbody tr:hover {
     gap: 0.55rem;
 }
 
+.issue-create-note {
+    margin-top: 0.75rem;
+}
+
 :is(.dialog-actions, .popover-actions) > button {
     height: var(--button-height);
     white-space: nowrap;
