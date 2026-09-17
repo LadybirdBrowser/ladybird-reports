@@ -280,7 +280,7 @@
                     </button>
                 </section>
 
-                {% if report.is_triage || report.is_rejected || !report.is_assigned %}
+                {% if report.is_rejected || (report.is_confirmed && !report.is_assigned) %}
                     <section class="action-group">
                         <form method="post" action="/reports/{{ report.id }}/state">
                             <input
@@ -288,11 +288,12 @@
                                 name="csrf"
                                 value="{{ navigation.as_ref().unwrap().csrf_token }}"
                             >
-                            {% if report.is_triage %}
-                                <input type="hidden" name="state" value="confirmed">
-                                <button type="submit">Confirm report</button>
-                            {% else if report.is_rejected && report.is_assigned %}
-                                <input type="hidden" name="state" value="confirmed">
+                            {% if report.is_rejected %}
+                                {% if report.is_assigned %}
+                                    <input type="hidden" name="state" value="confirmed">
+                                {% else %}
+                                    <input type="hidden" name="state" value="triage">
+                                {% endif %}
                                 <button type="submit">Restore report</button>
                             {% else %}
                                 <input type="hidden" name="state" value="triage">

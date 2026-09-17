@@ -470,7 +470,7 @@ test.describe("authenticated management UI", () => {
 
     await page.getByRole("button", { name: "Unblock submission IP" }).click();
     await expect(page.getByRole("button", { name: "Block submission IP" })).toBeVisible();
-    await page.getByRole("button", { name: "Return to triage" }).click();
+    await page.getByRole("button", { name: "Restore report" }).click();
   });
 
   test("reorders recognized fields by dragging rows", async ({ page }) => {
@@ -540,7 +540,7 @@ test.describe("authenticated management UI", () => {
     expect(await signOut.evaluate((button) => getComputedStyle(button).borderTopWidth)).toBe("0px");
   });
 
-  test("confirms and rejects reports while retaining their details", async ({ page }) => {
+  test("rejects and restores reports while retaining their details", async ({ page }) => {
     await page.goto("/?q=state%3Atriage+platform%3APaginationOS");
     const reportLink = page.locator(".report-title-link").first();
     const href = await reportLink.getAttribute("href");
@@ -548,10 +548,7 @@ test.describe("authenticated management UI", () => {
     await reportLink.click();
 
     await expect(page.getByRole("combobox", { name: "Report state" })).toHaveCount(0);
-    await page.getByRole("button", { name: "Confirm report" }).click();
-    await expect(page.locator(".badge-confirmed")).toHaveText("Confirmed");
-
-    await page.getByRole("button", { name: "Return to triage" }).click();
+    await expect(page.getByRole("button", { name: "Confirm report" })).toHaveCount(0);
     await expect(page.locator(".badge-triage")).toHaveText("Needs triage");
 
     await page.getByRole("button", { name: "Reject report" }).first().click();
@@ -559,6 +556,11 @@ test.describe("authenticated management UI", () => {
     await expect(confirmation).toBeVisible();
     await confirmation.getByRole("button", { name: "Cancel" }).click();
     await expect(page.locator(".badge-triage")).toBeVisible();
+    await page.getByRole("button", { name: "Reject report" }).first().click();
+    await confirmation.getByRole("button", { name: "Reject report" }).click();
+    await expect(page.locator(".badge-rejected")).toHaveText("Rejected");
+    await page.getByRole("button", { name: "Restore report" }).click();
+    await expect(page.locator(".badge-triage")).toHaveText("Needs triage");
     await page.getByRole("button", { name: "Reject report" }).first().click();
     await confirmation.getByRole("button", { name: "Reject report" }).click();
     await expect(page.locator(".badge-rejected")).toHaveText("Rejected");
@@ -661,8 +663,8 @@ test.describe("authenticated management UI", () => {
     expect(await stateChanges.count()).toBeGreaterThanOrEqual(3);
     await expect(stateChanges.filter({ hasText: '"from":"triage","to":"confirmed"' }))
       .not.toHaveCount(0);
-    await expect(stateChanges.filter({ hasText: '"from":"confirmed","to":"triage"' }))
-      .toHaveCount(1);
+    await expect(stateChanges.filter({ hasText: '"from":"rejected","to":"triage"' }))
+      .not.toHaveCount(0);
     await expect(stateChanges.filter({ hasText: '"to":"rejected"' }).first())
       .toBeVisible();
     await expect(page.getByText("issue.create", { exact: true })).toBeVisible();

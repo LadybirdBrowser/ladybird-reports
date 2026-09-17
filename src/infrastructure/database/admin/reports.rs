@@ -534,6 +534,11 @@ impl AdminDatabase {
             transaction.commit().await?;
             return Ok(None);
         }
+        if target == "confirmed" && previous.1.is_none() {
+            return Err(AppError::InvalidRequest(
+                "Link the report to an issue before confirming it",
+            ));
+        }
         if target == "triage" && previous.1.is_some() {
             return Err(AppError::InvalidRequest(
                 "Unlink the report before returning it to triage",

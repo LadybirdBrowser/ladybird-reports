@@ -587,10 +587,18 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
         .expect("create report for source block test");
     }
 
-    admin_database
-        .set_report_state(second_triage_report, "confirmed", 999)
+    assert!(
+        admin_database
+            .set_report_state(second_triage_report, "confirmed", 999)
+            .await
+            .is_err(),
+        "an unlinked report cannot be confirmed"
+    );
+    sqlx::query("UPDATE reports SET state = 'confirmed' WHERE id = $1")
+        .bind(second_triage_report)
+        .execute(&admin_pool)
         .await
-        .expect("confirm one report from the blocked source");
+        .expect("represent a previously confirmed unlinked report");
 
     let block_outcome = admin_database
         .block_report_source(first_triage_report, 999, true)
