@@ -185,7 +185,7 @@ impl AdminDatabase {
                     .await?;
             let assigned = sqlx::query(
                 "UPDATE reports
-                 SET issue_id = $2, assigned_at = now(), state = 'confirmed',
+                 SET issue_id = $2, state = 'confirmed',
                      updated_at = now()
                  WHERE id = $1
                     AND issue_id IS NULL

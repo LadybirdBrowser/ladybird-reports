@@ -38,16 +38,16 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
     let (admin_pool, bootstrap) = initialize_database(&admin_url, None, &cipher)
         .await
         .expect("initialize database");
-    let obsolete_deletion_columns: i64 = sqlx::query_scalar(
+    let obsolete_report_columns: i64 = sqlx::query_scalar(
         "SELECT count(*) FROM information_schema.columns
          WHERE (table_name = 'reports'
-                AND column_name IN ('deleted_at', 'hidden_at', 'confirmed_at'))
+                AND column_name IN ('deleted_at', 'hidden_at', 'confirmed_at', 'assigned_at'))
             OR (table_name = 'attachments' AND column_name = 'deleted_at')",
     )
     .fetch_one(&admin_pool)
     .await
     .expect("inspect report schema");
-    assert_eq!(obsolete_deletion_columns, 0);
+    assert_eq!(obsolete_report_columns, 0);
     let reporting_url = bootstrap
         .generated_reporting_database_url
         .expect("reporting role was generated");
@@ -562,7 +562,6 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
                 source_client_key,
                 source_ip,
                 issue_id,
-                assigned_at,
                 state
              ) VALUES (
                 $1,
@@ -576,7 +575,6 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
                 repeat('8', 64),
                 '203.0.113.10'::inet,
                 $4,
-                CASE WHEN $4::uuid IS NULL THEN NULL ELSE now() END,
                 CASE WHEN $4::uuid IS NULL THEN 'triage' ELSE 'confirmed' END
              )",
         )
@@ -943,13 +941,13 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
         .unlink_report_from_issue(issue_id, first_github_report, 999)
         .await
         .expect("unlink one report from its issue");
-    let unlinked_assignment: (Option<IssueId>, Option<chrono::DateTime<Utc>>) =
-        sqlx::query_as("SELECT issue_id, assigned_at FROM reports WHERE id = $1")
+    let unlinked_assignment: Option<IssueId> =
+        sqlx::query_scalar("SELECT issue_id FROM reports WHERE id = $1")
             .bind(first_github_report)
             .fetch_one(&admin_pool)
             .await
             .expect("check unlinked report");
-    assert_eq!(unlinked_assignment, (None, None));
+    assert_eq!(unlinked_assignment, None);
 
     let reports_unlinked = admin_database
         .hide_issue(issue_id, 999)

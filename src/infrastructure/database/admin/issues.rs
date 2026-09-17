@@ -294,7 +294,7 @@ impl AdminDatabase {
 
         let updated = sqlx::query(
             "UPDATE reports
-             SET issue_id = $2, assigned_at = now(), state = 'confirmed', updated_at = now()
+             SET issue_id = $2, state = 'confirmed', updated_at = now()
              WHERE id = $1
                 AND storage_state = 'ready'",
         )
@@ -346,7 +346,7 @@ impl AdminDatabase {
         };
 
         let report_rows = sqlx::query(
-            "SELECT id, kind, client_version, build, issue_id, state, created_at
+            "SELECT id, kind, client_version, state, created_at
              FROM reports
              WHERE issue_id = $1
                 AND storage_state = 'ready'
@@ -363,10 +363,8 @@ impl AdminDatabase {
                 title: String::new(),
                 kind: row.get("kind"),
                 client_version: row.get("client_version"),
-                build: row.get("build"),
                 platform: None,
                 architecture: None,
-                issue_id: row.get("issue_id"),
                 state: row.get("state"),
                 created_at: row.get("created_at"),
             })
@@ -451,7 +449,7 @@ impl AdminDatabase {
 
         let result = sqlx::query(
             "UPDATE reports
-             SET issue_id = NULL, assigned_at = NULL, updated_at = now()
+             SET issue_id = NULL, updated_at = now()
              WHERE id = $1 AND issue_id = $2
                 AND storage_state = 'ready'",
         )
@@ -517,7 +515,7 @@ impl AdminDatabase {
         let reports_unlinked = sqlx::query(
             "WITH unlinked AS (
                 UPDATE reports
-                SET issue_id = NULL, assigned_at = NULL, updated_at = now()
+                SET issue_id = NULL, updated_at = now()
                 WHERE issue_id = $1
                 RETURNING id
              )

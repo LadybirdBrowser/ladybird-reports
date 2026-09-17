@@ -74,8 +74,6 @@ impl AdminDatabase {
                 reports.id,
                 reports.kind,
                 reports.client_version,
-                reports.build,
-                reports.issue_id,
                 reports.state,
                 reports.created_at
              FROM reports
@@ -130,10 +128,8 @@ impl AdminDatabase {
                 title: String::new(),
                 kind: row.get("kind"),
                 client_version: row.get("client_version"),
-                build: row.get("build"),
                 platform: None,
                 architecture: None,
-                issue_id: row.get("issue_id"),
                 state: row.get("state"),
                 created_at: row.get("created_at"),
             })
@@ -148,7 +144,6 @@ impl AdminDatabase {
                 reports.id,
                 reports.kind,
                 reports.client_version,
-                reports.build,
                 issues.title AS issue_title,
                 reports.state,
                 reports.created_at
@@ -194,9 +189,7 @@ impl AdminDatabase {
                 ReportSearchResult {
                     id,
                     title,
-                    kind,
                     client_version,
-                    build: row.get("build"),
                     platform: fields.platform,
                     architecture: fields.architecture,
                     issue_title: row.get("issue_title"),
@@ -463,7 +456,7 @@ impl AdminDatabase {
 
         sqlx::query(
             "UPDATE reports
-             SET issue_id = $2, assigned_at = now(), state = 'confirmed', updated_at = now()
+             SET issue_id = $2, state = 'confirmed', updated_at = now()
              WHERE id = $1",
         )
         .bind(report_id)
