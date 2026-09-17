@@ -4,7 +4,7 @@ use chrono::SecondsFormat;
 use serde_json::Value;
 
 use crate::{
-    domain::DiscordConfiguration,
+    domain::{DiscordConfiguration, concise_function_name, parse_stack_trace},
     infrastructure::{
         database::{AdminDatabase, PendingDiscordNotification},
         discord::{
@@ -246,6 +246,60 @@ fn report_message(
 }
 
 fn stack_description(stack: &str, configuration: &DiscordConfiguration) -> String {
+    const MAX_FUNCTION_CHARACTERS: usize = 96;
+    const MORE_FRAMES: &str = "*More frames in the full report.*";
+
+    let parsed = parse_stack_trace(stack);
+    let frames = parsed
+        .rows
+        .iter()
+        .filter(|row| row.number.is_some())
+        .collect::<Vec<_>>();
+
+    if frames.is_empty() {
+        return raw_stack_description(stack, configuration);
+    }
+
+    let mut description = String::from("**Stack trace**\n");
+    let mut displayed_frames = 0;
+    let has_relevant_frames = frames.iter().any(|row| row.relevant);
+
+    for frame in &frames {
+        if displayed_frames >= configuration.stack_trace_lines {
+            break;
+        }
+        if has_relevant_frames && !frame.top && !frame.relevant {
+            continue;
+        }
+
+        let symbol =
+            concise_function_name(&frame.symbol, MAX_FUNCTION_CHARACTERS).unwrap_or_else(|| {
+                truncate_text(&frame.symbol.replace('`', "′"), MAX_FUNCTION_CHARACTERS)
+            });
+        let line = format!("`#{}` `{symbol}`\n", frame.number.unwrap());
+        if description.chars().count() + line.chars().count() + MORE_FRAMES.chars().count()
+            > configuration.stack_trace_characters
+        {
+            break;
+        }
+        description.push_str(&line);
+        displayed_frames += 1;
+    }
+
+    if displayed_frames == 0 {
+        return raw_stack_description(stack, configuration);
+    }
+
+    if parsed.frame_count > displayed_frames || parsed.truncated {
+        description.push_str(MORE_FRAMES);
+    } else {
+        description.pop();
+    }
+
+    description
+}
+
+fn raw_stack_description(stack: &str, configuration: &DiscordConfiguration) -> String {
     let selected_lines = stack
         .lines()
         .take(configuration.stack_trace_lines)
@@ -258,7 +312,7 @@ fn stack_description(stack: &str, configuration: &DiscordConfiguration) -> Strin
         excerpt.push('…');
     }
 
-    format!("**Stack trace (excerpt)**\n```text\n{excerpt}\n```")
+    format!("**Stack trace**\n```text\n{excerpt}\n```")
 }
 
 fn truncate_text(value: &str, maximum_characters: usize) -> String {
@@ -291,7 +345,41 @@ mod tests {
         infrastructure::database::PendingDiscordNotification,
     };
 
-    use super::{report_message, retry_delay_seconds};
+    use super::{report_message, retry_delay_seconds, stack_description};
+
+    #[test]
+    fn parsed_stack_preview_shows_functions_without_native_metadata() {
+        let stack = "Native stack (binary build ID, object address):\n\
+            #0 4402e9f4aa8030998b5a8e8bab39a036 0x100028897 non-virtual thunk to Compositor::ConnectionFromClient::crash() at Build/release/bin/Compositor\n\
+            #1 4402e9f4aa8030998b5a8e8bab39a036 0x10002b943 CompositorControlServerStub::handle_crash() at Build/release/bin/Compositor\n\
+            #2 4402e9f4aa8030998b5a8e8bab39a036 0x10002b944 Core::ThreadEventQueue::process() at Build/release/lib/liblagom-core.dylib";
+        let preview = stack_description(stack, &DiscordConfiguration::default());
+
+        assert!(preview.contains("`#0` `Compositor::ConnectionFromClient::crash`"));
+        assert!(preview.contains("`#1` `CompositorControlServerStub::handle_crash`"));
+        assert!(preview.contains("More frames in the full report"));
+        assert!(!preview.contains("4402e9f4"));
+        assert!(!preview.contains("0x100028897"));
+        assert!(!preview.contains("Build/release"));
+        assert!(!preview.contains("Core::ThreadEventQueue"));
+    }
+
+    #[test]
+    fn preview_obeys_configured_frame_and_character_limits() {
+        let stack = "#0 0x100 WebContent::Page::load() at WebContent\n\
+            #1 0x200 WebContent::Page::layout() at WebContent\n\
+            #2 0x300 WebContent::Page::paint() at WebContent";
+        let configuration = DiscordConfiguration {
+            stack_trace_lines: 1,
+            stack_trace_characters: 256,
+            ..DiscordConfiguration::default()
+        };
+        let preview = stack_description(stack, &configuration);
+
+        assert!(preview.contains("`#0` `WebContent::Page::load`"));
+        assert!(!preview.contains("Page::layout"));
+        assert!(preview.chars().count() <= configuration.stack_trace_characters);
+    }
 
     #[test]
     fn report_message_includes_context_and_a_bounded_stack_excerpt() {

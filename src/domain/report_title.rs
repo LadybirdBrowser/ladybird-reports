@@ -59,7 +59,7 @@ pub fn generate_report_title(input: ReportTitleInput<'_>) -> String {
     title
 }
 
-fn concise_function_name(symbol: &str, maximum_characters: usize) -> Option<String> {
+pub fn concise_function_name(symbol: &str, maximum_characters: usize) -> Option<String> {
     // AK's callback wrapper often hides the useful function name inside a
     // template argument. Start at that inner function when present.
     let candidate = symbol

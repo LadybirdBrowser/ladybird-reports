@@ -378,9 +378,9 @@ pub const SETTING_DEFINITIONS: &[SettingDefinition] = &[
     setting(
         "stack_trace_lines",
         "discord.stack_trace_lines",
-        "Discord stack lines",
-        "Limits the stack excerpt included in a report notification.",
-        "Maximum number of lines from the start of the submitted stack trace.",
+        "Discord stack frames",
+        "Limits the parsed stack frames shown in a report notification.",
+        "Maximum number of parsed frames in the preview.",
     ),
     setting(
         "stack_trace_characters",
