@@ -47,9 +47,10 @@ already tracked in the service and matching issues from the configured GitHub
 repository. A GitHub issue already tracked in the service appears only once.
 Selecting an untracked GitHub issue creates the corresponding issue record and
 adds the report. Creating an issue publishes it to GitHub and records it in the
-service as one operation. The editable draft uses the report type and selected
-environment fields, while omitting URLs, stack traces, attachments, and unknown
-fields. Every issue in the service therefore has a GitHub issue at creation.
+service as one operation. The editable draft uses the report type, selected
+environment fields, and the raw stack trace in a code block. It omits URL fields,
+attachments, and unknown fields. Maintainers can review and edit the public
+draft before creating it. Every issue in the service has a GitHub issue at creation.
 The resolved-issue filter applies as soon as it changes. GitHub controls the
 issue's title, description, and open or closed state. Signed GitHub webhooks
 update those cached values in Reports. Report assignments remain intact when

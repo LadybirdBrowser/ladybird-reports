@@ -326,7 +326,7 @@ test.describe("authenticated management UI", () => {
     await expect(page.getByLabel("Description", { exact: true }))
       .toHaveValue(/- Platform: macOS/);
     await expect(page.getByLabel("Description", { exact: true }))
-      .not.toHaveValue(/Core::ThreadEventQueue::process\(\)/);
+      .toHaveValue(/## Stack trace\n\n```text\n[\s\S]*Core::ThreadEventQueue::process\(\)/);
     await expect(page.getByText("Review this public GitHub issue"))
       .toBeVisible();
   });

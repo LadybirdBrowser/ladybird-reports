@@ -1,6 +1,6 @@
 use crate::infrastructure::database::ReportDetails;
 
-use super::title_for_report;
+use super::{stack_trace_for_report, title_for_report};
 
 pub struct IssueProposal {
     pub title: String,
@@ -8,7 +8,8 @@ pub struct IssueProposal {
 }
 
 /// Prepare a public GitHub draft from a small, deliberate set of report data.
-/// URLs, raw stack traces, unknown fields, and attachments stay in Reports.
+/// The raw stack trace is included; the URL field, unknown fields, and
+/// attachments stay in Reports unless a maintainer adds them to the draft.
 /// The proposed title uses only the concise function name derived from a stack.
 pub fn propose_issue(details: &ReportDetails) -> IssueProposal {
     let report_type = match details.report.kind.as_str() {
@@ -43,7 +44,32 @@ pub fn propose_issue(details: &ReportDetails) -> IssueProposal {
         field_value(details, "signal", 40),
     );
 
+    if let Some(stack_trace) = stack_trace_for_report(details).filter(|stack| !stack.is_empty()) {
+        add_stack_trace(&mut description, stack_trace);
+    }
+
     IssueProposal { title, description }
+}
+
+fn add_stack_trace(description: &mut String, stack_trace: &str) {
+    // A trace may itself contain Markdown fences. Use a longer fence so the
+    // whole stored value remains inside one code block.
+    let longest_run = stack_trace
+        .split(|character| character != '`')
+        .map(str::len)
+        .max()
+        .unwrap_or(0);
+    let fence = "`".repeat(longest_run.saturating_add(1).max(3));
+
+    description.push_str("\n## Stack trace\n\n");
+    description.push_str(&fence);
+    description.push_str("text\n");
+    description.push_str(stack_trace);
+    if !stack_trace.ends_with('\n') {
+        description.push('\n');
+    }
+    description.push_str(&fence);
+    description.push('\n');
 }
 
 fn field_value(details: &ReportDetails, key: &str, maximum_characters: usize) -> Option<String> {
@@ -92,7 +118,7 @@ mod tests {
     };
 
     #[test]
-    fn public_proposal_excludes_private_and_unrecognized_fields() {
+    fn public_proposal_includes_stack_but_excludes_other_private_fields() {
         let details = ReportDetails {
             report: ReportRecord {
                 id: ReportId::new(),
@@ -125,16 +151,26 @@ mod tests {
         assert_eq!(proposal.title, "Crash report · macOS");
         assert!(proposal.description.contains("- Platform: macOS"));
         assert!(proposal.description.contains("- Signal: SIGABRT"));
-        for private_value in [
-            "private.example",
-            "private stack",
-            "192.0.2.1",
-            "private unknown",
-        ] {
+        assert!(
+            proposal
+                .description
+                .contains("## Stack trace\n\n```text\nprivate stack trace\n```")
+        );
+        for private_value in ["private.example", "192.0.2.1", "private unknown"] {
             assert!(!proposal.description.contains(private_value));
         }
         assert!(safe_value("@someone", 40).is_none());
         assert!(safe_value("macOS\nprivate data", 40).is_none());
+    }
+
+    #[test]
+    fn stack_trace_with_markdown_fence_stays_in_one_code_block() {
+        let mut description = String::new();
+        add_stack_trace(&mut description, "first frame\n```\nsecond frame");
+        assert_eq!(
+            description,
+            "\n## Stack trace\n\n````text\nfirst frame\n```\nsecond frame\n````\n"
+        );
     }
 
     fn field(key: &str, kind: &str, value: serde_json::Value) -> StoredDiagnosticField {
