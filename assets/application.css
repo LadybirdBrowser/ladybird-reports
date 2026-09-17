@@ -1754,8 +1754,54 @@ details[open] summary {
     background: var(--surface);
 }
 
-.report-field + .report-field {
+.report-field + .report-field,
+.report-field + .report-field-table-wrap,
+.report-field-table-wrap + .report-field {
     margin-top: 0.9rem;
+}
+
+.report-field-table-wrap {
+    min-width: 0;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: var(--surface);
+}
+
+.report-field-table {
+    table-layout: fixed;
+}
+
+.report-field-table th {
+    width: 31%;
+    padding: 0.85rem 1rem;
+    border-right: 1px solid var(--border);
+    color: var(--ink);
+    font-size: 0.86rem;
+    font-weight: 600;
+    letter-spacing: normal;
+    text-transform: none;
+}
+
+.report-field-table th strong,
+.report-field-table th small {
+    display: block;
+    overflow-wrap: anywhere;
+}
+
+.report-field-table th small {
+    margin-top: 0.25rem;
+    color: var(--ink-soft);
+    font-size: 0.72rem;
+    font-weight: 500;
+}
+
+.report-field-table td {
+    padding: 0;
+}
+
+.report-field-table tbody tr:last-child th {
+    border-bottom: 0;
 }
 
 .report-field-header {
@@ -1771,16 +1817,6 @@ details[open] summary {
 .report-field-header h3,
 .report-field-header p {
     margin: 0;
-}
-
-.report-field-inline {
-    display: grid;
-    grid-template-columns: minmax(11rem, 0.42fr) minmax(0, 1fr);
-}
-
-.report-field-inline .report-field-header {
-    border-right: 1px solid var(--border);
-    border-bottom: 0;
 }
 
 .report-field-value {
@@ -2555,13 +2591,28 @@ pre {
         border-bottom: 0;
     }
 
-    .report-field-inline {
-        grid-template-columns: 1fr;
+    .report-field-table tr {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        border-bottom: 1px solid var(--border);
     }
 
-    .report-field-inline .report-field-header {
-        border-right: 0;
-        border-bottom: 1px solid var(--border);
+    .report-field-table tr:last-child {
+        border-bottom: 0;
+    }
+
+    .report-field-table th,
+    .report-field-table td {
+        width: 100%;
+        border: 0;
+    }
+
+    .report-field-table th {
+        padding-bottom: 0.25rem;
+    }
+
+    .report-field-table .report-field-value {
+        padding-top: 0.25rem;
     }
 
     .card-body {

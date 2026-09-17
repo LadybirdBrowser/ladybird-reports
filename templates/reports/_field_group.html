@@ -1,0 +1,54 @@
+{% if group.inline %}
+    <div class="report-field-table-wrap">
+        <table class="report-field-table">
+            <tbody>
+                {% for field in group.fields %}
+                    <tr>
+                        <th scope="row">
+                            <strong>{{ field.label }}</strong>
+                            {% if field.known %}
+                                <small><code>{{ field.key }}</code> · {{ field.kind }}</small>
+                            {% endif %}
+                        </th>
+                        <td>
+                            <div class="report-field-value">
+                                <span>{{ field.value }}</span>
+                                {% if let Some(filter_url) = field.filter_url %}
+                                    <a
+                                        class="field-filter-button"
+                                        href="{{ filter_url }}"
+                                        aria-label="Filter reports by {{ field.label }}"
+                                        title="Find reports with this value"
+                                    >
+                                        <span aria-hidden="true"></span>
+                                    </a>
+                                {% endif %}
+                            </div>
+                        </td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+{% else %}
+    {% for field in group.fields %}
+        <article class="report-field">
+            <header class="report-field-header">
+                <div>
+                    <h3>{{ field.label }}</h3>
+                    {% if field.known && field.stack.is_none() %}
+                        <p class="quiet"><code>{{ field.key }}</code> · {{ field.kind }}</p>
+                    {% endif %}
+                </div>
+                {% if field.stack.is_some() %}
+                    {% include "reports/_stack_trace_controls.html" %}
+                {% endif %}
+            </header>
+            {% if let Some(stack) = field.stack %}
+                {% include "reports/_stack_trace.html" %}
+            {% else %}
+                <pre>{{ field.value }}</pre>
+            {% endif %}
+        </article>
+    {% endfor %}
+{% endif %}

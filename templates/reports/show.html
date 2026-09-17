@@ -60,50 +60,15 @@
                     </div>
                 </div>
 
-                {% if known_fields.is_empty() %}
+                {% if known_groups.is_empty() %}
                     <div class="card empty-state">
                         <strong>No recognized diagnostics</strong>
                         This report did not include any currently recognized fields.
                     </div>
                 {% endif %}
 
-                {% for field in known_fields %}
-                    <article
-                        class="report-field{% if !field.is_multiline %} report-field-inline{% endif %}"
-                    >
-                        <header class="report-field-header">
-                            <div>
-                                <h3>{{ field.label }}</h3>
-                                {% if field.stack.is_none() %}
-                                    <p class="quiet"><code>{{ field.key }}</code> · {{ field.kind }}</p>
-                                {% endif %}
-                            </div>
-                            {% if field.stack.is_some() %}
-                                {% include "reports/_stack_trace_controls.html" %}
-                            {% endif %}
-                        </header>
-                        {% if field.is_multiline %}
-                            {% if let Some(stack) = field.stack %}
-                                {% include "reports/_stack_trace.html" %}
-                            {% else %}
-                                <pre>{{ field.value }}</pre>
-                            {% endif %}
-                        {% else %}
-                            <div class="report-field-value">
-                                <span>{{ field.value }}</span>
-                                {% if let Some(filter_url) = field.filter_url %}
-                                    <a
-                                        class="field-filter-button"
-                                        href="{{ filter_url }}"
-                                        aria-label="Filter reports by {{ field.label }}"
-                                        title="Find reports with this value"
-                                    >
-                                        <span aria-hidden="true"></span>
-                                    </a>
-                                {% endif %}
-                            </div>
-                        {% endif %}
-                    </article>
+                {% for group in known_groups %}
+                    {% include "reports/_field_group.html" %}
                 {% endfor %}
             </section>
 
@@ -198,7 +163,7 @@
                 {% endif %}
             </section>
 
-            {% if !unknown_fields.is_empty() %}
+            {% if !unknown_groups.is_empty() %}
                 <section aria-labelledby="additional-fields-title">
                     <div class="page-header">
                         <div>
@@ -206,40 +171,8 @@
                         </div>
                     </div>
 
-                    {% for field in unknown_fields %}
-                        <article
-                            class="report-field{% if !field.is_multiline %} report-field-inline{% endif %}"
-                        >
-                            <header class="report-field-header">
-                                <div>
-                                    <h3>{{ field.key }}</h3>
-                                </div>
-                                {% if field.stack.is_some() %}
-                                    {% include "reports/_stack_trace_controls.html" %}
-                                {% endif %}
-                            </header>
-                            {% if field.is_multiline %}
-                                {% if let Some(stack) = field.stack %}
-                                    {% include "reports/_stack_trace.html" %}
-                                {% else %}
-                                    <pre>{{ field.value }}</pre>
-                                {% endif %}
-                            {% else %}
-                                <div class="report-field-value">
-                                    <span>{{ field.value }}</span>
-                                    {% if let Some(filter_url) = field.filter_url %}
-                                        <a
-                                            class="field-filter-button"
-                                            href="{{ filter_url }}"
-                                            aria-label="Filter reports by {{ field.key }}"
-                                            title="Find reports with this value"
-                                        >
-                                            <span aria-hidden="true"></span>
-                                        </a>
-                                    {% endif %}
-                                </div>
-                            {% endif %}
-                        </article>
+                    {% for group in unknown_groups %}
+                        {% include "reports/_field_group.html" %}
                     {% endfor %}
                 </section>
             {% endif %}

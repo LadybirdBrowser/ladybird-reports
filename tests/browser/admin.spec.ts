@@ -80,11 +80,16 @@ test.describe("authenticated management UI", () => {
       name: "Web compatibility: WebContent::ConnectionFromClient::debug_request",
     })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Stack trace" })).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Git commit" })).toBeVisible();
+    await expect(page.getByRole("rowheader", { name: /Git commit/ })).toBeVisible();
     await expect(page.getByText("654cf9b187384fa8855eac4fbafaa70e75497083"))
       .toBeVisible();
-    await expect(page.getByRole("heading", { name: "Build configuration" })).toBeVisible();
+    await expect(page.getByRole("rowheader", { name: /Build configuration/ })).toBeVisible();
     await expect(page.getByText("AppleClang 21.0.0.21000101")).toBeVisible();
+    const diagnosticTable = page.locator(".report-field-table").first();
+    await expect(diagnosticTable.getByRole("rowheader", { name: /Git commit/ }))
+      .toBeVisible();
+    await expect(diagnosticTable.getByRole("rowheader", { name: /C\+\+ compiler/ }))
+      .toBeVisible();
     await expect(page.locator(".definition-list").getByText("Build", { exact: true }))
       .toHaveCount(0);
     await page.setViewportSize({ width: 390, height: 800 });

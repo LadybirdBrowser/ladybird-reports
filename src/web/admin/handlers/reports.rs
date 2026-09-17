@@ -119,8 +119,8 @@ pub struct ReportTemplate {
     report: ReportView,
     linked_issue: Option<LinkedIssueView>,
     issue_proposal: IssueProposal,
-    known_fields: Vec<FieldView>,
-    unknown_fields: Vec<FieldView>,
+    known_groups: Vec<FieldGroup>,
+    unknown_groups: Vec<FieldGroup>,
     similar_reports: Vec<SimilarReportView>,
     attachments: Vec<AttachmentView>,
     events: Vec<EventView>,
@@ -160,6 +160,12 @@ pub struct FieldView {
     stack: Option<ParsedStackTrace>,
     stack_signature: Option<StackSignatureView>,
     filter_url: Option<String>,
+    known: bool,
+}
+
+pub struct FieldGroup {
+    inline: bool,
+    fields: Vec<FieldView>,
 }
 
 pub struct StackSignatureView {
@@ -574,7 +580,7 @@ pub async fn show(
         };
         let view = FieldView {
             label: field.current_label.clone().unwrap_or_else(|| key.clone()),
-            is_multiline: matches!(field.kind.as_str(), "multiline" | "stack_trace"),
+            is_multiline: is_stack || matches!(field.kind.as_str(), "multiline" | "stack_trace"),
             stack,
             stack_signature,
             filter_url: (!matches!(field.kind.as_str(), "multiline" | "stack_trace"))
@@ -582,6 +588,7 @@ pub async fn show(
             kind: display_kind,
             key,
             value,
+            known,
         };
 
         if known {
@@ -619,12 +626,34 @@ pub async fn show(
         report: report_view,
         linked_issue,
         issue_proposal,
-        known_fields,
-        unknown_fields,
+        known_groups: group_fields(known_fields),
+        unknown_groups: group_fields(unknown_fields),
         similar_reports,
         attachments,
         events,
     }))
+}
+
+fn group_fields(fields: Vec<FieldView>) -> Vec<FieldGroup> {
+    let mut groups: Vec<FieldGroup> = Vec::new();
+
+    for field in fields {
+        let inline = !field.is_multiline;
+        if inline
+            && let Some(group) = groups.last_mut()
+            && group.inline
+        {
+            group.fields.push(field);
+            continue;
+        }
+
+        groups.push(FieldGroup {
+            inline,
+            fields: vec![field],
+        });
+    }
+
+    groups
 }
 
 impl OverviewField {
