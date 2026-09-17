@@ -14,11 +14,16 @@ use super::{
 };
 
 impl AdminDatabase {
-    pub async fn list_issues(&self, include_resolved: bool) -> Result<Vec<IssueSummary>> {
+    pub async fn list_issues(
+        &self,
+        include_resolved: bool,
+        include_rejected: bool,
+    ) -> Result<Vec<IssueSummary>> {
         let rows = sqlx::query(
             "SELECT
                 issues.id,
                 issues.title,
+                issues.state,
                 issues.resolved_at,
                 issues.github_number,
                 issues.github_state,
@@ -29,18 +34,16 @@ impl AdminDatabase {
                 ON reports.issue_id = issues.id
                 AND reports.storage_state = 'ready'
              WHERE issues.merged_into IS NULL
-                AND issues.hidden_at IS NULL
+                AND ($2 OR issues.state <> 'rejected')
                 AND (
-                    $1 OR issues.resolved_at IS NULL
-                    OR issues.github_state IN (
-                        'unknown', 'missing', 'moved', 'unavailable'
-                    )
+                    $1 OR issues.state <> 'resolved'
                 )
              GROUP BY issues.id
              ORDER BY issues.updated_at DESC
              LIMIT 200",
         )
         .bind(include_resolved)
+        .bind(include_rejected)
         .fetch_all(&self.pool)
         .await?;
 
@@ -49,6 +52,7 @@ impl AdminDatabase {
             .map(|row| IssueSummary {
                 id: row.get("id"),
                 title: row.get("title"),
+                state: row.get("state"),
                 resolved_at: row.get("resolved_at"),
                 github_number: row.get("github_number"),
                 github_state: row.get("github_state"),
@@ -63,6 +67,7 @@ impl AdminDatabase {
             "SELECT
                 issues.id,
                 issues.title,
+                issues.state,
                 issues.resolved_at,
                 issues.github_number,
                 issues.github_state,
@@ -73,7 +78,7 @@ impl AdminDatabase {
                 ON reports.issue_id = issues.id
                 AND reports.storage_state = 'ready'
              WHERE issues.merged_into IS NULL
-                AND issues.hidden_at IS NULL
+                AND issues.state <> 'rejected'
                 AND issues.resolved_at IS NULL
                 AND issues.github_state IN ('open', 'unknown')
                 AND (
@@ -100,6 +105,7 @@ impl AdminDatabase {
             .map(|row| IssueSummary {
                 id: row.get("id"),
                 title: row.get("title"),
+                state: row.get("state"),
                 resolved_at: row.get("resolved_at"),
                 github_number: row.get("github_number"),
                 github_state: row.get("github_state"),
@@ -124,7 +130,7 @@ impl AdminDatabase {
                 FROM issues
                 WHERE lower(github_repository) = lower($1)
                     AND github_number = ANY($2)
-                    AND hidden_at IS NULL
+                    AND state <> 'rejected'
                 UNION ALL
                 SELECT aliases.issue_id, issues.merged_into,
                        aliases.github_number, 0 AS depth
@@ -132,21 +138,21 @@ impl AdminDatabase {
                 JOIN issues ON issues.id = aliases.issue_id
                 WHERE lower(aliases.github_repository) = lower($1)
                     AND aliases.github_number = ANY($2)
-                    AND issues.hidden_at IS NULL
+                    AND issues.state <> 'rejected'
                 UNION ALL
                 SELECT issues.id, issues.merged_into, linked.github_number,
                        linked.depth + 1
                 FROM linked
                 JOIN issues ON issues.id = linked.merged_into
                 WHERE linked.depth < 16
-                    AND issues.hidden_at IS NULL
+                    AND issues.state <> 'rejected'
              )
              SELECT linked.id, linked.github_number, issues.title,
                     issues.github_state
              FROM linked
              JOIN issues ON issues.id = linked.id
              WHERE linked.merged_into IS NULL
-                AND issues.hidden_at IS NULL",
+                AND issues.state <> 'rejected'",
         )
         .bind(repository)
         .bind(github_numbers)
@@ -191,7 +197,7 @@ impl AdminDatabase {
             "WITH RECURSIVE chain AS (
                 SELECT id, merged_into, 0 AS depth
                 FROM issues
-                WHERE hidden_at IS NULL
+                WHERE state <> 'rejected'
                     AND ((lower(github_repository) = lower($1)
                         AND github_number = $2)
                         OR github_issue_id = $3)
@@ -199,7 +205,7 @@ impl AdminDatabase {
                 SELECT aliases.issue_id, issues.merged_into, 0 AS depth
                 FROM issue_github_aliases AS aliases
                 JOIN issues ON issues.id = aliases.issue_id
-                WHERE issues.hidden_at IS NULL
+                WHERE issues.state <> 'rejected'
                     AND ((lower(aliases.github_repository) = lower($1)
                         AND aliases.github_number = $2)
                         OR aliases.github_issue_id = $3)
@@ -208,7 +214,7 @@ impl AdminDatabase {
                 FROM chain
                 JOIN issues ON issues.id = chain.merged_into
                 WHERE chain.depth < 16
-                    AND issues.hidden_at IS NULL
+                    AND issues.state <> 'rejected'
              )
              SELECT id FROM chain WHERE merged_into IS NULL
              ORDER BY depth DESC LIMIT 1",
@@ -222,7 +228,7 @@ impl AdminDatabase {
         let (issue_id, created) = if let Some(issue_id) = existing_issue_id {
             let active: bool = sqlx::query_scalar(
                 "SELECT resolved_at IS NULL AND github_state IN ('open', 'unknown')
-                 FROM issues WHERE id = $1 AND hidden_at IS NULL",
+                 FROM issues WHERE id = $1 AND state <> 'rejected'",
             )
             .bind(issue_id)
             .fetch_one(&mut *transaction)
@@ -290,6 +296,11 @@ impl AdminDatabase {
         if previous.0 == Some(issue_id) && previous.1 == "confirmed" {
             transaction.commit().await?;
             return Ok(GithubIssueAssignment { issue_id, created });
+        }
+        if previous.0.is_some() && previous.0 != Some(issue_id) {
+            return Err(AppError::Conflict(
+                "Unlink the report before adding it to another issue",
+            ));
         }
 
         let updated = sqlx::query(
@@ -386,6 +397,7 @@ impl AdminDatabase {
                 issues.id,
                 issues.title,
                 issues.description,
+                issues.state,
                 issues.resolved_at,
                 issues.merged_into,
                 issues.github_number,
@@ -399,7 +411,7 @@ impl AdminDatabase {
                 issues.created_at,
                 issues.updated_at
              FROM issues
-             WHERE issues.id = $1 AND issues.hidden_at IS NULL",
+             WHERE issues.id = $1",
         )
         .bind(issue_id)
         .fetch_optional(&self.pool)
@@ -409,6 +421,7 @@ impl AdminDatabase {
             id: row.get("id"),
             title: row.get("title"),
             description: row.get("description"),
+            state: row.get("state"),
             resolved_at: row.get("resolved_at"),
             merged_into: row.get("merged_into"),
             github_number: row.get("github_number"),
@@ -435,21 +448,32 @@ impl AdminDatabase {
             .execute(&mut *transaction)
             .await?;
 
-        let issue_visible: bool = sqlx::query_scalar(
+        let issue_exists: bool = sqlx::query_scalar(
             "SELECT EXISTS (
-                SELECT 1 FROM issues WHERE id = $1 AND hidden_at IS NULL
+                SELECT 1 FROM issues WHERE id = $1
              )",
         )
         .bind(issue_id)
         .fetch_one(&mut *transaction)
         .await?;
-        if !issue_visible {
+        if !issue_exists {
             return Err(AppError::NotFound("Issue not found"));
         }
 
-        let result = sqlx::query(
+        let previous_state: String = sqlx::query_scalar(
+            "SELECT state FROM reports
+             WHERE id = $1 AND issue_id = $2 AND storage_state = 'ready'
+             FOR UPDATE",
+        )
+        .bind(report_id)
+        .bind(issue_id)
+        .fetch_optional(&mut *transaction)
+        .await?
+        .ok_or(AppError::NotFound("Assigned report not found"))?;
+
+        sqlx::query(
             "UPDATE reports
-             SET issue_id = NULL, updated_at = now()
+             SET issue_id = NULL, state = 'triage', updated_at = now()
              WHERE id = $1 AND issue_id = $2
                 AND storage_state = 'ready'",
         )
@@ -457,9 +481,6 @@ impl AdminDatabase {
         .bind(issue_id)
         .execute(&mut *transaction)
         .await?;
-        if result.rows_affected() != 1 {
-            return Err(AppError::NotFound("Assigned report not found"));
-        }
 
         sqlx::query(
             "INSERT INTO audit_events (actor, action, entity_id, details)
@@ -472,20 +493,44 @@ impl AdminDatabase {
         .execute(&mut *transaction)
         .await?;
 
+        if previous_state != "triage" {
+            self.audit_report_state_change(
+                &mut transaction,
+                report_id,
+                actor,
+                &previous_state,
+                "triage",
+            )
+            .await?;
+        }
+
         transaction.commit().await?;
         Ok(())
     }
 
-    pub async fn hide_issue(&self, issue_id: IssueId, actor: i64) -> Result<u64> {
+    pub async fn reject_issue(
+        &self,
+        issue_id: IssueId,
+        actor: i64,
+        reject_reports: bool,
+    ) -> Result<u64> {
         let mut transaction = self.pool.begin().await?;
         sqlx::query("SELECT pg_advisory_xact_lock(891125)")
             .execute(&mut *transaction)
             .await?;
 
+        let previous_state: String = sqlx::query_scalar(
+            "SELECT state FROM issues WHERE id = $1 AND state <> 'rejected' FOR UPDATE",
+        )
+        .bind(issue_id)
+        .fetch_optional(&mut *transaction)
+        .await?
+        .ok_or(AppError::NotFound("Issue not found"))?;
+
         let result = sqlx::query(
             "UPDATE issues
-             SET hidden_at = now(), updated_at = now()
-             WHERE id = $1 AND hidden_at IS NULL",
+             SET state = 'rejected', updated_at = now()
+             WHERE id = $1 AND state <> 'rejected'",
         )
         .bind(issue_id)
         .execute(&mut *transaction)
@@ -494,9 +539,8 @@ impl AdminDatabase {
             return Err(AppError::NotFound("Issue not found"));
         }
 
-        // Merged source records point at this issue. Hide them too so their
-        // history pages never link to a hidden destination.
-        let merged_sources_hidden = sqlx::query(
+        // Merged source records point at this issue, so reject them as well.
+        let merged_sources_rejected = sqlx::query(
             "WITH RECURSIVE sources AS (
                 SELECT id FROM issues WHERE merged_into = $1
                 UNION ALL
@@ -504,49 +548,71 @@ impl AdminDatabase {
                 JOIN sources ON issues.merged_into = sources.id
              )
              UPDATE issues
-             SET hidden_at = now(), updated_at = now()
-             WHERE id IN (SELECT id FROM sources) AND hidden_at IS NULL",
+             SET state = 'rejected', updated_at = now()
+             WHERE id IN (SELECT id FROM sources) AND state <> 'rejected'",
         )
         .bind(issue_id)
         .execute(&mut *transaction)
         .await?
         .rows_affected();
 
-        let reports_unlinked = sqlx::query(
-            "WITH unlinked AS (
+        let reports_updated: i64 = sqlx::query_scalar(
+            "WITH previous AS MATERIALIZED (
+                SELECT id, state FROM reports WHERE issue_id = $1 FOR UPDATE
+             ),
+             updated AS (
                 UPDATE reports
-                SET issue_id = NULL, updated_at = now()
-                WHERE issue_id = $1
-                RETURNING id
+                SET issue_id = CASE WHEN $3 THEN reports.issue_id ELSE NULL END,
+                    state = CASE WHEN $3 THEN 'rejected' ELSE 'triage' END,
+                    updated_at = now()
+                FROM previous
+                WHERE reports.id = previous.id
+                RETURNING reports.id, previous.state AS previous_state
+             ),
+             issue_events AS (
+                INSERT INTO audit_events (actor, action, entity_id, details)
+                SELECT $2, 'report.update_issue', id,
+                       jsonb_build_object('from', $1::uuid, 'to', NULL)
+                FROM updated WHERE NOT $3
+                RETURNING 1
+             ),
+             state_events AS (
+                INSERT INTO audit_events (actor, action, entity_id, details)
+                SELECT $2, 'report.update_state', id,
+                       jsonb_build_object(
+                           'from', previous_state,
+                           'to', CASE WHEN $3 THEN 'rejected' ELSE 'triage' END
+                       )
+                FROM updated
+                WHERE previous_state <> CASE WHEN $3 THEN 'rejected' ELSE 'triage' END
+                RETURNING 1
              )
-             INSERT INTO audit_events (actor, action, entity_id, details)
-             SELECT $2, 'report.update_issue', unlinked.id,
-                    jsonb_build_object('from', $1::uuid, 'to', NULL)
-             FROM unlinked",
+             SELECT count(*) FROM updated",
         )
         .bind(issue_id)
         .bind(actor)
-        .execute(&mut *transaction)
-        .await?
-        .rows_affected();
+        .bind(reject_reports)
+        .fetch_one(&mut *transaction)
+        .await?;
 
         sqlx::query(
             "INSERT INTO audit_events (actor, action, entity_id, details)
-             VALUES ($1, 'issue.update_visibility', $2, $3)",
+             VALUES ($1, 'issue.update_state', $2, $3)",
         )
         .bind(actor)
         .bind(issue_id.0)
         .bind(serde_json::json!({
-            "from": "visible",
-            "to": "hidden",
-            "reports_unlinked": reports_unlinked,
-            "merged_sources_hidden": merged_sources_hidden,
+            "from": previous_state,
+            "to": "rejected",
+            "report_action": if reject_reports { "reject" } else { "unlink" },
+            "reports_updated": reports_updated,
+            "merged_sources_rejected": merged_sources_rejected,
         }))
         .execute(&mut *transaction)
         .await?;
 
         transaction.commit().await?;
-        Ok(reports_unlinked)
+        Ok(reports_updated as u64)
     }
 
     pub async fn merge_issue(
@@ -571,7 +637,7 @@ impl AdminDatabase {
             "SELECT EXISTS(
                 SELECT 1 FROM issues
                 WHERE id = $1 AND merged_into IS NULL
-                    AND hidden_at IS NULL
+                    AND state <> 'rejected'
                     AND resolved_at IS NULL AND github_state = 'open'
             )",
         )
@@ -587,7 +653,7 @@ impl AdminDatabase {
             "UPDATE issues
              SET merged_into = $2, updated_at = now()
              WHERE id = $1 AND merged_into IS NULL
-                AND hidden_at IS NULL",
+                AND state <> 'rejected'",
         )
         .bind(source)
         .bind(destination)

@@ -1413,9 +1413,24 @@ tbody tr:hover {
     overflow-wrap: anywhere;
 }
 
-.report-linked-issue {
-    padding-bottom: 1rem;
-    border-bottom: 1px solid var(--border);
+.radio-option {
+    display: flex;
+    gap: 0.8rem;
+    align-items: flex-start;
+    padding: 0.7rem 0;
+    cursor: pointer;
+}
+
+.radio-option input {
+    flex: 0 0 auto;
+    width: auto;
+    margin-top: 0.3rem;
+}
+
+.radio-option small {
+    display: block;
+    color: var(--ink-soft);
+    font-weight: 400;
 }
 
 .report-linked-issue h3 {

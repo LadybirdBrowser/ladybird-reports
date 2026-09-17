@@ -8,9 +8,57 @@ use crate::{
     infrastructure::database::AdminDatabase,
 };
 
-use super::SimilarReport;
+use super::{ReportSummary, SimilarReport};
 
 impl AdminDatabase {
+    pub async fn issue_signature_matches(&self, issue_id: IssueId) -> Result<Vec<ReportSummary>> {
+        let rows = sqlx::query(
+            "SELECT reports.id, reports.kind, reports.client_version,
+                    reports.state, reports.created_at
+             FROM reports
+             WHERE reports.issue_id IS NULL
+                AND reports.state = 'triage'
+                AND reports.storage_state = 'ready'
+                AND EXISTS (
+                    SELECT 1
+                    FROM report_stack_signatures AS candidate
+                    JOIN report_stack_signatures AS linked_signature
+                        ON linked_signature.fingerprint = candidate.fingerprint
+                        AND linked_signature.algorithm_version = candidate.algorithm_version
+                    JOIN reports AS linked
+                        ON linked.id = linked_signature.report_id
+                    WHERE candidate.report_id = reports.id
+                        AND candidate.algorithm_version = $2
+                        AND candidate.fingerprint IS NOT NULL
+                        AND linked.issue_id = $1
+                        AND linked.kind = reports.kind
+                        AND linked.storage_state = 'ready'
+                )
+             ORDER BY reports.created_at DESC, reports.id DESC
+             LIMIT 20",
+        )
+        .bind(issue_id)
+        .bind(STACK_SIGNATURE_VERSION)
+        .fetch_all(&self.pool)
+        .await?;
+
+        let mut reports = rows
+            .into_iter()
+            .map(|row| ReportSummary {
+                id: row.get("id"),
+                title: String::new(),
+                kind: row.get("kind"),
+                client_version: row.get("client_version"),
+                platform: None,
+                architecture: None,
+                state: row.get("state"),
+                created_at: row.get("created_at"),
+            })
+            .collect::<Vec<_>>();
+        self.populate_report_titles(&mut reports).await?;
+        Ok(reports)
+    }
+
     /// Rebuild a bounded batch. Old signatures are replaced when the algorithm changes.
     pub async fn index_pending_stack_traces(&self) -> Result<usize> {
         let pending = self.stack_traces_to_index(None, 50).await?;
@@ -163,7 +211,7 @@ impl AdminDatabase {
                 AND reports.kind = $4
                 AND reports.storage_state = 'ready'
                 AND reports.state = 'confirmed'
-                AND issues.hidden_at IS NULL
+                AND issues.state <> 'rejected'
                 AND issues.merged_into IS NULL
                 AND issues.resolved_at IS NULL
                 AND issues.github_state = 'open'
@@ -308,7 +356,7 @@ impl AdminDatabase {
                 AND reports.storage_state = 'ready'
                 AND reports.state <> 'rejected'
                 AND (reports.issue_id IS NULL
-                    OR (issues.hidden_at IS NULL
+                    OR (issues.state <> 'rejected'
                         AND issues.merged_into IS NULL
                         AND issues.resolved_at IS NULL
                         AND issues.github_state IN ('open', 'unknown')))

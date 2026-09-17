@@ -122,7 +122,7 @@ test.describe("authenticated management UI", () => {
       return document.elementFromPoint(bounds.left + 6, bounds.top + 6)
         ?.closest("a")?.classList.contains("similar-report-main");
     })).toBe(true);
-    await expect(page.getByText("Exact signature")).toBeVisible();
+    await expect(page.getByText("Exact signature").first()).toBeVisible();
     await expect(page.getByRole("button", { name: "Add to issue" })).toBeVisible();
     await expect(page.locator(".badge-triage")).toHaveText("Needs triage");
     await page.getByLabel("Show raw").check();
@@ -687,6 +687,29 @@ test.describe("authenticated management UI", () => {
     await expect(page.getByText("session.signed_in", { exact: true }).first()).toBeVisible();
   });
 
+  test("links an exact issue match and unlinks it from the report", async ({ page }) => {
+    await page.goto("/issues");
+    await page.getByRole("link", { name: "Intermittent navigation timeout" }).click();
+
+    const matches = page.getByRole("region", { name: "Potential matches" });
+    await expect(matches).toBeVisible();
+    const candidate = matches.getByRole("link", { name: /WebContent::/ }).first();
+    const candidateUrl = await candidate.getAttribute("href");
+    expect(candidateUrl).toMatch(/^\/reports\/[0-9a-f-]+$/);
+
+    await matches.getByRole("button", { name: /Link report/ }).first().click();
+    await expect(page).toHaveURL(/\/issues\/[0-9a-f-]+$/);
+    await expect(page.locator(`a[href="${candidateUrl}"]`)).toBeVisible();
+
+    await page.goto(candidateUrl!);
+    await expect(page.locator(".badge-confirmed")).toHaveText("Confirmed");
+    await expect(page.locator(".report-linked-issue")).toBeVisible();
+    await page.getByRole("button", { name: "Unlink report", exact: true }).click();
+    await expect(page).toHaveURL(candidateUrl!);
+    await expect(page.locator(".badge-triage")).toHaveText("Needs triage");
+    await expect(page.getByRole("button", { name: "Add report to issue" })).toBeVisible();
+  });
+
   test("keeps GitHub issue state and replacement links in sync", async ({ page }) => {
     await page.goto("/issues");
     await page.getByRole("link", { name: "Intermittent navigation timeout" }).click();
@@ -747,7 +770,7 @@ test.describe("authenticated management UI", () => {
     issue.updated_at = new Date(Date.now() + 40_000).toISOString();
     expect((await deliverWebhook("reopened")).status()).toBe(204);
     await page.goto("/issues");
-    await expect(page.getByText("Open", { exact: true })).toBeVisible();
+    await expect(page.getByText("Unresolved", { exact: true })).toBeVisible();
 
     issue.state = "closed";
     expect((await deliverWebhook("deleted")).status()).toBe(204);
@@ -798,36 +821,35 @@ test.describe("authenticated management UI", () => {
       .toBe(`http://127.0.0.1:3100/issues/${trackedIssueId}`);
   });
 
-  test("unlinks reports and hides an issue without changing GitHub", async ({ page }) => {
+  test("unlinks reports and rejects an issue without changing GitHub", async ({ page }) => {
     await page.goto(`/reports/${reportId}`);
     const linkedIssue = page.locator(".report-linked-issue");
-    await expect(linkedIssue.getByRole("link", { name: "Investigate renderer overlap" }))
-      .toBeVisible();
+    const issueLink = linkedIssue.locator('a[href^="/issues/"]');
+    await expect(issueLink).toBeVisible();
     await expect(linkedIssue.getByRole("link", { name: "Issue #6200" }))
       .toBeVisible();
 
-    await linkedIssue.getByRole("link", { name: "Investigate renderer overlap" }).click();
+    await issueLink.click();
     const issueUrl = page.url();
     await page.getByRole("button", { name: `Unlink report ${reportId}` }).click();
-    await expect(page.getByRole("link", { name: reportId })).toHaveCount(0);
 
     await page.goto(`/reports/${reportId}`);
-    await expect(page.locator(".badge-confirmed")).toHaveText("Confirmed");
+    await expect(page.locator(".badge-triage")).toHaveText("Needs triage");
     await expect(page.locator(".report-linked-issue")).toHaveCount(0);
 
     await page.goto(issueUrl);
     const remainingReport = await page.locator('a[href^="/reports/"]').first()
       .getAttribute("href");
     expect(remainingReport).not.toBeNull();
-    await page.getByRole("button", { name: "Delete issue" }).click();
-    const confirmation = page.getByRole("dialog", { name: "Delete this issue?" });
+    await page.getByRole("button", { name: "Reject issue" }).first().click();
+    const confirmation = page.getByRole("dialog", { name: "Reject this issue?" });
     await expect(confirmation).toBeVisible();
     await confirmation.getByRole("button", { name: "Cancel" }).click();
     await expect(confirmation).toBeHidden();
-    await page.getByRole("button", { name: "Delete issue" }).click();
-    await confirmation.getByRole("button", { name: "Delete" }).click();
-    await expect(page).toHaveURL(/\/issues$/);
-    expect((await page.request.get(issueUrl)).status()).toBe(404);
+    await page.getByRole("button", { name: "Reject issue" }).first().click();
+    await confirmation.getByRole("button", { name: "Reject issue" }).click();
+    await expect(page).toHaveURL(issueUrl);
+    await expect(page.locator(".page-header .badge-rejected")).toHaveText("Rejected");
 
     await page.goto(remainingReport!);
     await expect(page.locator(".report-linked-issue")).toHaveCount(0);
@@ -836,4 +858,7 @@ test.describe("authenticated management UI", () => {
     );
     expect((await githubIssue.json()).state).toBe("open");
   });
+
+
+
 });

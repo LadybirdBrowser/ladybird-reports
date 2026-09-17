@@ -219,16 +219,19 @@
                             <a href="{{ linked_issue.github_url }}">Issue #{{ linked_issue.github_number }}</a>
                         </div>
                     </section>
+                    <section class="action-group">
+                        <form method="post" action="/reports/{{ report.id }}/unlink">
+                            <input type="hidden" name="csrf" value="{{ navigation.as_ref().unwrap().csrf_token }}">
+                            <input type="hidden" name="issue_id" value="{{ linked_issue.id }}">
+                            <button type="submit">Unlink report</button>
+                        </form>
+                    </section>
                 {% endif %}
-                <section class="action-group">
-                    <button type="button" data-open-issue-dialog>
-                        {% if report.is_assigned %}
-                            Move report to another issue
-                        {% else %}
-                            Add report to issue
-                        {% endif %}
-                    </button>
-                </section>
+                {% if !report.is_assigned %}
+                    <section class="action-group">
+                        <button type="button" data-open-issue-dialog>Add report to issue</button>
+                    </section>
+                {% endif %}
 
                 {% if report.is_rejected || (report.is_confirmed && !report.is_assigned) %}
                     <section class="action-group">
@@ -372,6 +375,7 @@
         </aside>
     </div>
 
+    {% if !report.is_assigned %}
     <dialog
         class="issue-dialog modal-overlay"
         aria-labelledby="issue-dialog-title"
@@ -497,4 +501,5 @@
             </form>
         </section>
     </dialog>
+    {% endif %}
 {% endblock %}

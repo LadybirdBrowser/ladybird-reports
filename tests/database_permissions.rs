@@ -825,6 +825,12 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
             .await
             .expect("check synchronized issue state");
     assert!(resolved_at.is_some());
+    let resolved_state: String = sqlx::query_scalar("SELECT state FROM issues WHERE id = $1")
+        .bind(created_issue.issue_id)
+        .fetch_one(&admin_pool)
+        .await
+        .expect("check issue state after GitHub closure");
+    assert_eq!(resolved_state, "resolved");
     assert!(
         admin_database
             .assign_report_to_issue(first_github_report, created_issue.issue_id, 999)
@@ -956,25 +962,35 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
             .await
             .expect("check unlinked report");
     assert_eq!(unlinked_assignment, None);
+    let unlinked_state: String = sqlx::query_scalar("SELECT state FROM reports WHERE id = $1")
+        .bind(first_github_report)
+        .fetch_one(&admin_pool)
+        .await
+        .expect("check unlinked report state");
+    assert_eq!(unlinked_state, "triage");
 
     let reports_unlinked = admin_database
-        .hide_issue(issue_id, 999)
+        .reject_issue(issue_id, 999, false)
         .await
-        .expect("hide tracked issue and unlink its reports");
+        .expect("reject tracked issue and unlink its reports");
     assert_eq!(reports_unlinked as i64, linked_before_delete - 1);
-    assert!(
+    assert_eq!(
         admin_database
             .find_issue(issue_id)
             .await
-            .expect("look up hidden issue")
-            .is_none()
+            .unwrap()
+            .unwrap()
+            .state,
+        "rejected"
     );
-    assert!(
+    assert_eq!(
         admin_database
             .find_issue(created_issue.issue_id)
             .await
-            .expect("look up merged issue hidden with destination")
-            .is_none()
+            .unwrap()
+            .unwrap()
+            .state,
+        "rejected"
     );
     let remaining_assignments: i64 =
         sqlx::query_scalar("SELECT count(*) FROM reports WHERE issue_id = $1")
@@ -985,13 +1001,13 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
     assert_eq!(remaining_assignments, 0);
     let hide_audit: serde_json::Value = sqlx::query_scalar(
         "SELECT details FROM audit_events
-         WHERE entity_id = $1 AND action = 'issue.update_visibility'",
+         WHERE entity_id = $1 AND action = 'issue.update_state'",
     )
     .bind(issue_id)
     .fetch_one(&admin_pool)
     .await
     .expect("read issue deletion audit");
-    assert_eq!(hide_audit["reports_unlinked"], reports_unlinked);
+    assert_eq!(hide_audit["reports_updated"], reports_unlinked);
 
     let retracked = admin_database
         .assign_report_to_github_issue(
@@ -1352,6 +1368,20 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
         .unlink_report_from_issue(matching_issue, matching_report, 999)
         .await
         .expect("intentionally unlink the automatically matched report");
+    let potential_matches = admin_database
+        .issue_signature_matches(matching_issue)
+        .await
+        .expect("find unlinked triage reports with the issue signature");
+    assert!(
+        potential_matches
+            .iter()
+            .any(|report| report.id == matching_report)
+    );
+    assert!(
+        potential_matches
+            .iter()
+            .all(|report| report.state == "triage")
+    );
     sqlx::query("UPDATE report_stack_signatures SET algorithm_version = 0 WHERE report_id = $1")
         .bind(matching_report)
         .execute(&admin_pool)
@@ -1410,6 +1440,40 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
     assert!(first_queued);
     assert!(later_queued);
     assert!(!duplicate_queued);
+
+    let rejected_group = admin_database
+        .assign_report_to_github_issue(
+            &github_issue(9999, "Reject this group"),
+            first_unlinked,
+            "LadybirdBrowser/ladybird",
+            999,
+        )
+        .await
+        .expect("create a group to reject with its report");
+    assert_eq!(
+        admin_database
+            .reject_issue(rejected_group.issue_id, 999, true)
+            .await
+            .expect("reject issue and linked report"),
+        1
+    );
+    let rejected_report: (String, Option<IssueId>) =
+        sqlx::query_as("SELECT state, issue_id FROM reports WHERE id = $1")
+            .bind(first_unlinked)
+            .fetch_one(&admin_pool)
+            .await
+            .expect("check rejected report");
+    assert_eq!(rejected_report.0, "rejected");
+    assert_eq!(rejected_report.1, Some(rejected_group.issue_id));
+    assert_eq!(
+        admin_database
+            .find_issue(rejected_group.issue_id)
+            .await
+            .unwrap()
+            .unwrap()
+            .state,
+        "rejected"
+    );
 }
 
 async fn insert_stack_report_for_matching(

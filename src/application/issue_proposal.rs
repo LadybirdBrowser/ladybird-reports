@@ -20,8 +20,13 @@ pub fn propose_issue(details: &ReportDetails) -> IssueProposal {
     let platform = field_value(details, "platform", 40);
     let title = title_for_report(details);
 
-    let mut description =
-        format!("## Summary\n\n{report_type} reported by Ladybird.\n\n## Environment\n");
+    let mut description = format!("## Summary\n\n{report_type} reported by Ladybird.\n");
+
+    if let Some(stack_trace) = stack_trace_for_report(details).filter(|stack| !stack.is_empty()) {
+        add_stack_trace(&mut description, stack_trace);
+    }
+
+    description.push_str("\n## Environment\n\n");
     add_detail(
         &mut description,
         "Ladybird version",
@@ -43,10 +48,6 @@ pub fn propose_issue(details: &ReportDetails) -> IssueProposal {
         "Signal",
         field_value(details, "signal", 40),
     );
-
-    if let Some(stack_trace) = stack_trace_for_report(details).filter(|stack| !stack.is_empty()) {
-        add_stack_trace(&mut description, stack_trace);
-    }
 
     IssueProposal { title, description }
 }

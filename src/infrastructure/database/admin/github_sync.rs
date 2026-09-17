@@ -35,7 +35,7 @@ impl AdminDatabase {
                     github_url, github_state
              FROM issues
              WHERE id = $1 AND merged_into IS NULL
-                AND hidden_at IS NULL
+                AND state <> 'rejected'
              FOR UPDATE",
         )
         .bind(issue_id)
@@ -60,7 +60,7 @@ impl AdminDatabase {
         let already_linked: bool = sqlx::query_scalar(
             "SELECT EXISTS (
                 SELECT 1 FROM issues
-                WHERE id <> $1 AND hidden_at IS NULL
+                WHERE id <> $1 AND state <> 'rejected'
                     AND (
                         (lower(github_repository) = lower($2) AND github_number = $3)
                         OR github_issue_id = $4
@@ -68,7 +68,7 @@ impl AdminDatabase {
                 UNION ALL
                 SELECT 1 FROM issue_github_aliases AS aliases
                 JOIN issues ON issues.id = aliases.issue_id
-                WHERE issues.hidden_at IS NULL
+                WHERE issues.state <> 'rejected'
                     AND ((lower(aliases.github_repository) = lower($2)
                         AND aliases.github_number = $3)
                         OR aliases.github_issue_id = $4)
@@ -109,6 +109,7 @@ impl AdminDatabase {
                  title = $6,
                  description = $7,
                  github_state = $8,
+                 state = CASE WHEN $8 = 'closed' THEN 'resolved' ELSE 'unresolved' END,
                  github_checked_at = now(),
                  github_updated_at = $9,
                  github_reports_field_id = NULL,
@@ -167,7 +168,7 @@ impl AdminDatabase {
             "SELECT id, github_issue_id, github_state, title, description,
                     github_repository, github_url, github_updated_at
              FROM issues
-             WHERE hidden_at IS NULL
+             WHERE state <> 'rejected'
                 AND (github_issue_id = $1
                     OR (lower(github_repository) = lower($2) AND github_number = $3))
              ORDER BY COALESCE(github_issue_id = $1, false) DESC
@@ -216,6 +217,11 @@ impl AdminDatabase {
                  description = $4,
                  github_url = $5,
                  github_state = $6,
+                 state = CASE
+                    WHEN $6 IN ('missing', 'moved', 'unavailable') THEN 'needs_attention'
+                    WHEN $6 = 'closed' THEN 'resolved'
+                    ELSE 'unresolved'
+                 END,
                  github_checked_at = now(),
                  github_updated_at = $7,
                  resolved_at = CASE
@@ -285,7 +291,7 @@ impl AdminDatabase {
         let row = sqlx::query(
             "SELECT id, github_state, github_issue_id
              FROM issues
-             WHERE hidden_at IS NULL
+             WHERE state <> 'rejected'
                 AND (github_issue_id = $1
                     OR (lower(github_repository) = lower($2) AND github_number = $3))
              ORDER BY COALESCE(github_issue_id = $1, false) DESC
@@ -312,6 +318,7 @@ impl AdminDatabase {
             "UPDATE issues
              SET github_issue_id = COALESCE(github_issue_id, $2),
                  github_state = $3,
+                 state = 'needs_attention',
                  github_checked_at = now(),
                  updated_at = CASE WHEN github_state <> $3 THEN now() ELSE updated_at END
              WHERE id = $1",
@@ -353,7 +360,7 @@ impl AdminDatabase {
                  github_reports_link_url = $4
              WHERE id = $1 AND github_issue_id IS NOT DISTINCT FROM $2
                  AND merged_into IS NULL
-                 AND hidden_at IS NULL",
+                 AND state <> 'rejected'",
         )
         .bind(issue_id)
         .bind(github_issue_id)

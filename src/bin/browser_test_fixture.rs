@@ -283,6 +283,25 @@ async fn main() -> Result<()> {
         insert_example_report(&mut transaction, report).await?;
     }
 
+    // Keep one older, exact-signature report in triage for the issue view.
+    // Historical reports are reviewed by a maintainer rather than auto-linked.
+    sqlx::query(
+        "UPDATE reports
+         SET auto_match_eligible = false
+         WHERE build = 'Linux · x86_64 · Debug'",
+    )
+    .execute(&mut *transaction)
+    .await?;
+    sqlx::query(
+        "INSERT INTO report_fields
+            (report_id, key, kind, value, recognized_at_submission)
+         SELECT id, 'signal', 'text', '\"SIGABRT\"'::jsonb, true
+         FROM reports
+         WHERE build = 'Linux · x86_64 · Debug'",
+    )
+    .execute(&mut *transaction)
+    .await?;
+
     for index in 0..52 {
         insert_example_report(
             &mut transaction,

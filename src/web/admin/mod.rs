@@ -52,6 +52,10 @@ pub fn router(state: AdminState) -> Router {
             post(handlers::reports::assign_to_issue),
         )
         .route(
+            "/reports/{report_id}/unlink",
+            post(handlers::reports::unlink_from_issue),
+        )
+        .route(
             "/reports/{report_id}/state",
             post(handlers::reports::set_state),
         )
@@ -66,7 +70,7 @@ pub fn router(state: AdminState) -> Router {
             post(handlers::issues::create_from_report),
         )
         .route("/issues/{id}", get(handlers::issues::show))
-        .route("/issues/{id}/hide", post(handlers::issues::hide))
+        .route("/issues/{id}/reject", post(handlers::issues::reject))
         .route(
             "/issues/{id}/reports/{report_id}/unlink",
             post(handlers::issues::unlink_report),

@@ -680,6 +680,7 @@ pub async fn assign_to_issue(
     Form(form): Form<IssueAssignmentForm>,
 ) -> Result<Redirect> {
     session.verify_csrf(&form.csrf)?;
+    state.database.ensure_report_unassigned(report_id).await?;
 
     let issue_id = if let Some(value) = form.issue_selection.strip_prefix("issue:") {
         let issue_id = value
@@ -739,6 +740,34 @@ pub async fn assign_to_issue(
 #[derive(Deserialize)]
 pub struct ReportActionForm {
     csrf: String,
+}
+
+#[derive(Deserialize)]
+pub struct UnlinkReportForm {
+    csrf: String,
+    issue_id: IssueId,
+}
+
+pub async fn unlink_from_issue(
+    State(state): State<AdminState>,
+    Extension(session): Extension<Session>,
+    Path(report_id): Path<ReportId>,
+    Form(form): Form<UnlinkReportForm>,
+) -> Result<Redirect> {
+    session.verify_csrf(&form.csrf)?;
+    state
+        .database
+        .unlink_report_from_issue(form.issue_id, report_id, session.github_id)
+        .await?;
+
+    tracing::info!(
+        event = "report.update_issue",
+        %report_id,
+        from = %form.issue_id,
+        to = "none",
+        actor = session.login,
+    );
+    Ok(Redirect::to(&format!("/reports/{report_id}")))
 }
 
 #[derive(Deserialize)]

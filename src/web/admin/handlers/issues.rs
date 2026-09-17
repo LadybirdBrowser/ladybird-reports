@@ -22,6 +22,8 @@ use super::github::{ensure_github_reports_link, refresh_tracked_issue};
 pub struct IssueFilters {
     #[serde(default)]
     resolved: bool,
+    #[serde(default)]
+    rejected: bool,
 }
 
 #[derive(Template)]
@@ -29,6 +31,7 @@ pub struct IssueFilters {
 pub struct IssuesTemplate {
     navigation: Option<Navigation>,
     include_resolved: bool,
+    include_rejected: bool,
     issues: Vec<IssueRow>,
 }
 
@@ -37,8 +40,7 @@ pub struct IssueRow {
     title: String,
     report_count: i64,
     github_number: i64,
-    is_resolved: bool,
-    github_state: String,
+    state: String,
 }
 
 #[derive(Template)]
@@ -47,6 +49,7 @@ pub struct IssueTemplate {
     navigation: Option<Navigation>,
     issue: IssueView,
     reports: Vec<ReportView>,
+    potential_matches: Vec<ReportView>,
     merge_destinations: Vec<IssueOption>,
     events: Vec<EventView>,
     sync_warning: bool,
@@ -59,7 +62,7 @@ pub struct IssueView {
     description: String,
     github_number: i64,
     github_url: String,
-    is_resolved: bool,
+    state: String,
     github_state: String,
     merged_into: Option<IssueId>,
 }
@@ -90,7 +93,7 @@ pub async fn index(
 ) -> Result<TemplateResponse<IssuesTemplate>> {
     let issues = state
         .database
-        .list_issues(filters.resolved)
+        .list_issues(filters.resolved, filters.rejected)
         .await?
         .into_iter()
         .map(|issue| IssueRow {
@@ -98,14 +101,14 @@ pub async fn index(
             title: issue.title,
             report_count: issue.report_count,
             github_number: issue.github_number,
-            is_resolved: issue.resolved_at.is_some(),
-            github_state: issue.github_state,
+            state: issue.state,
         })
         .collect();
 
     Ok(TemplateResponse(IssuesTemplate {
         navigation: Some(Navigation::for_session(&state, &session)),
         include_resolved: filters.resolved,
+        include_rejected: filters.rejected,
         issues,
     }))
 }
@@ -125,6 +128,7 @@ pub async fn create_from_report(
     Form(form): Form<CreateIssueForm>,
 ) -> Result<Redirect> {
     session.verify_csrf(&form.csrf)?;
+    state.database.ensure_report_unassigned(report_id).await?;
 
     crate::infrastructure::database::validate_issue_text(&form.title, &form.description)?;
 
@@ -173,25 +177,40 @@ pub async fn show(
     Extension(session): Extension<Session>,
     Path(issue_id): Path<IssueId>,
 ) -> Result<TemplateResponse<IssueTemplate>> {
-    let sync_warning = match refresh_tracked_issue(&state, &session, issue_id).await {
-        Ok(_) => false,
-        Err(
-            AppError::Unavailable
-            | AppError::RateLimited
-            | AppError::PermissionDenied(_)
-            | AppError::Conflict(_),
-        ) => {
-            tracing::warn!(event = "github.issue_refresh_failed", %issue_id);
-            true
+    let issue_state = state
+        .database
+        .find_issue(issue_id)
+        .await?
+        .ok_or_else(|| not_found("Issue not found"))?
+        .state;
+
+    let sync_warning = if issue_state == "rejected" {
+        false
+    } else {
+        match refresh_tracked_issue(&state, &session, issue_id).await {
+            Ok(_) => false,
+            Err(
+                AppError::Unavailable
+                | AppError::RateLimited
+                | AppError::PermissionDenied(_)
+                | AppError::Conflict(_),
+            ) => {
+                tracing::warn!(event = "github.issue_refresh_failed", %issue_id);
+                true
+            }
+            Err(error) => return Err(error),
         }
-        Err(error) => return Err(error),
     };
 
-    let github_field_warning = match ensure_github_reports_link(&state, &session, issue_id).await {
-        Ok(()) => false,
-        Err(error) => {
-            tracing::warn!(event = "github.reports_link_sync_failed", %issue_id, ?error);
-            true
+    let github_field_warning = if issue_state == "rejected" {
+        false
+    } else {
+        match ensure_github_reports_link(&state, &session, issue_id).await {
+            Ok(()) => false,
+            Err(error) => {
+                tracing::warn!(event = "github.reports_link_sync_failed", %issue_id, ?error);
+                true
+            }
         }
     };
 
@@ -201,9 +220,30 @@ pub async fn show(
         .await?
         .ok_or_else(|| not_found("Issue not found"))?;
 
+    let potential_matches = if details.issue.state == "unresolved"
+        && details.issue.merged_into.is_none()
+        && details.issue.resolved_at.is_none()
+        && details.issue.github_state == "open"
+    {
+        state
+            .database
+            .issue_signature_matches(issue_id)
+            .await?
+            .into_iter()
+            .map(|report| ReportView {
+                id: report.id,
+                title: report.title,
+                client_version: report.client_version,
+                created_at: report.created_at,
+            })
+            .collect()
+    } else {
+        Vec::new()
+    };
+
     let destinations = state
         .database
-        .list_issues(false)
+        .list_issues(false, false)
         .await?
         .into_iter()
         .filter(|issue| {
@@ -225,7 +265,7 @@ pub async fn show(
         description: details.issue.description,
         github_number: details.issue.github_number,
         github_url: details.issue.github_url,
-        is_resolved: details.issue.resolved_at.is_some(),
+        state: details.issue.state,
         github_state: details.issue.github_state,
         merged_into: details.issue.merged_into,
     };
@@ -256,6 +296,7 @@ pub async fn show(
         navigation: Some(Navigation::for_session(&state, &session)),
         issue,
         reports,
+        potential_matches,
         merge_destinations: destinations,
         events,
         sync_warning,
@@ -284,27 +325,38 @@ pub async fn unlink_report(
     Ok(Redirect::to(&format!("/issues/{issue_id}")))
 }
 
-pub async fn hide(
+#[derive(Deserialize)]
+pub struct RejectIssueForm {
+    csrf: String,
+    report_action: String,
+}
+
+pub async fn reject(
     State(state): State<AdminState>,
     Extension(session): Extension<Session>,
     Path(issue_id): Path<IssueId>,
-    Form(form): Form<IssueActionForm>,
+    Form(form): Form<RejectIssueForm>,
 ) -> Result<Redirect> {
     session.verify_csrf(&form.csrf)?;
-    let reports_unlinked = state
+    let reject_reports = match form.report_action.as_str() {
+        "unlink" => false,
+        "reject" => true,
+        _ => return Err(AppError::InvalidRequest("Invalid report action")),
+    };
+    let reports_updated = state
         .database
-        .hide_issue(issue_id, session.github_id)
+        .reject_issue(issue_id, session.github_id, reject_reports)
         .await?;
 
     tracing::warn!(
-        event = "issue.update_visibility",
+        event = "issue.update_state",
         %issue_id,
-        from = "visible",
-        to = "hidden",
-        reports_unlinked,
+        to = "rejected",
+        report_action = form.report_action,
+        reports_updated,
         actor = session.login,
     );
-    Ok(Redirect::to("/issues"))
+    Ok(Redirect::to(&format!("/issues/{issue_id}")))
 }
 
 #[derive(Deserialize)]

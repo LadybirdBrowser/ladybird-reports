@@ -154,6 +154,7 @@ pub struct BlockReportSourceOutcome {
 pub struct IssueSummary {
     pub id: IssueId,
     pub title: String,
+    pub state: String,
     pub resolved_at: Option<DateTime<Utc>>,
     pub github_number: i64,
     pub github_state: String,
@@ -165,6 +166,7 @@ pub struct IssueSummary {
 pub struct IssueRecord {
     pub id: IssueId,
     pub title: String,
+    pub state: String,
     pub description: String,
     pub resolved_at: Option<DateTime<Utc>>,
     pub merged_into: Option<IssueId>,

@@ -7,18 +7,17 @@
         <div>
             <p class="eyebrow">Tracked issue</p>
             <h1>{{ issue.title }}</h1>
-            <p class="page-summary monospace report-id">{{ issue.id }}</p>
         </div>
-        {% if issue.merged_into.is_some() %}
+        {% if issue.state == "rejected" %}
+            <span class="badge badge-rejected">Rejected</span>
+        {% else if issue.merged_into.is_some() %}
             <span class="badge badge-neutral">Merged</span>
-        {% else if issue.github_state == "unknown" %}
-            <span class="badge badge-neutral">Unverified</span>
-        {% else if issue.github_state == "missing" || issue.github_state == "moved" || issue.github_state == "unavailable" %}
+        {% else if issue.state == "needs_attention" %}
             <span class="badge badge-warning">Needs attention</span>
-        {% else if issue.is_resolved %}
+        {% else if issue.state == "resolved" %}
             <span class="badge badge-success">Resolved</span>
         {% else %}
-            <span class="badge badge-triage">Open</span>
+            <span class="badge badge-triage">Unresolved</span>
         {% endif %}
     </header>
 
@@ -44,7 +43,6 @@
             <section class="card" aria-labelledby="issue-description-title">
                 <div class="card-header">
                     <h2 id="issue-description-title">Description</h2>
-                    <a href="{{ issue.github_url }}">Edit on GitHub</a>
                 </div>
                 <div class="card-body issue-description">
                     {% if issue.description.is_empty() %}
@@ -116,6 +114,43 @@
                 {% endif %}
             </section>
 
+            {% if !potential_matches.is_empty() %}
+                <section class="card" aria-labelledby="potential-matches-title">
+                    <div class="card-header">
+                        <h2 id="potential-matches-title">Potential matches</h2>
+                        <span class="badge badge-neutral">{{ potential_matches.len() }}</span>
+                    </div>
+                    <div class="table-scroll">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Report</th>
+                                    <th>Version</th>
+                                    <th>Received</th>
+                                    <th><span class="visually-hidden">Action</span></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for report in potential_matches %}
+                                    <tr>
+                                        <td><a class="primary-link" href="/reports/{{ report.id }}">{{ report.title }}</a></td>
+                                        <td>{{ report.client_version }}</td>
+                                        <td class="quiet">{{ report.created_at }}</td>
+                                        <td>
+                                            <form method="post" action="/reports/{{ report.id }}/issue">
+                                                <input type="hidden" name="csrf" value="{{ navigation.as_ref().unwrap().csrf_token }}">
+                                                <input type="hidden" name="issue_selection" value="issue:{{ issue.id }}">
+                                                <button class="button-secondary table-action" type="submit" aria-label="Link report {{ report.id }}">Link</button>
+                                            </form>
+                                        </td>
+                                    </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+            {% endif %}
+
             <section class="card" aria-labelledby="issue-history-title">
                 <div class="card-header">
                     <h2 id="issue-history-title">Activity</h2>
@@ -149,7 +184,7 @@
                         <span>GitHub</span>
                         <a href="{{ issue.github_url }}">Issue #{{ issue.github_number }}</a>
                     </div>
-                    {% if issue.merged_into.is_none() %}
+                    {% if issue.merged_into.is_none() && issue.state != "rejected" %}
                         {% if issue.github_state == "missing" %}
                             <p class="issue-link-warning">The GitHub issue was deleted. Link a replacement to resume tracking.</p>
                         {% else if issue.github_state == "moved" %}
@@ -239,6 +274,7 @@
                 </div>
             </section>
 
+            {% if issue.state != "rejected" %}
             <section class="card">
                 <div class="card-header">
                     <h2>Merge issue</h2>
@@ -269,42 +305,48 @@
                     <h2>Actions</h2>
                 </div>
                 <div class="card-body">
-                    <button class="button-danger" type="button" popovertarget="hide-issue-confirmation">
-                        Delete issue
+                    <button class="button-danger" type="button" popovertarget="reject-issue-confirmation">
+                        Reject issue
                     </button>
                     <div
                         class="confirmation-popover modal-overlay"
-                        id="hide-issue-confirmation"
+                        id="reject-issue-confirmation"
                         role="dialog"
-                        aria-labelledby="hide-issue-confirmation-title"
+                        aria-labelledby="reject-issue-confirmation-title"
                         popover
                     >
-                        <form method="post" action="/issues/{{ issue.id }}/hide">
+                        <form method="post" action="/issues/{{ issue.id }}/reject">
                             <input
                                 type="hidden"
                                 name="csrf"
                                 value="{{ navigation.as_ref().unwrap().csrf_token }}"
                             >
-                            <h3 id="hide-issue-confirmation-title">Delete this issue?</h3>
-                            <p>
-                                The issue will disappear from Reports, but its record stays stored.
-                                Linked reports return to triage or confirmed. GitHub is unchanged.
-                            </p>
+                            <h3 id="reject-issue-confirmation-title">Reject this issue?</h3>
+                            <p>Choose what happens to its linked reports. GitHub is unchanged.</p>
+                            <label class="radio-option">
+                                <input type="radio" name="report_action" value="unlink" checked>
+                                <span>Unlink reports <small>Return them to triage</small></span>
+                            </label>
+                            <label class="radio-option">
+                                <input type="radio" name="report_action" value="reject">
+                                <span>Reject reports <small>Keep them grouped with this issue</small></span>
+                            </label>
                             <div class="popover-actions">
                                 <button
                                     class="button-secondary"
                                     type="button"
-                                    popovertarget="hide-issue-confirmation"
+                                    popovertarget="reject-issue-confirmation"
                                     popovertargetaction="hide"
                                 >
                                     Cancel
                                 </button>
-                                <button class="button-danger" type="submit">Delete</button>
+                                <button class="button-danger" type="submit">Reject issue</button>
                             </div>
                         </form>
                     </div>
                 </div>
             </section>
+            {% endif %}
         </aside>
     </div>
 {% endblock %}

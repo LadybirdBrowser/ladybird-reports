@@ -37,6 +37,24 @@ impl TitleFields {
 }
 
 impl AdminDatabase {
+    pub async fn ensure_report_unassigned(&self, report_id: ReportId) -> Result<()> {
+        let issue_id: Option<Option<IssueId>> = sqlx::query_scalar(
+            "SELECT issue_id FROM reports
+             WHERE id = $1 AND storage_state = 'ready'",
+        )
+        .bind(report_id)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        match issue_id {
+            Some(None) => Ok(()),
+            Some(Some(_)) => Err(AppError::Conflict(
+                "Unlink the report before adding it to another issue",
+            )),
+            None => Err(AppError::NotFound("Report not found")),
+        }
+    }
+
     pub async fn attachment(
         &self,
         attachment_id: AttachmentId,
@@ -435,7 +453,7 @@ impl AdminDatabase {
                 FROM issues
                 WHERE id = $1
                     AND merged_into IS NULL
-                    AND hidden_at IS NULL
+                    AND state <> 'rejected'
                     AND resolved_at IS NULL
                     AND github_state = 'open'
             )",
@@ -465,6 +483,11 @@ impl AdminDatabase {
         if previous.0 == Some(issue_id) && previous.1 == "confirmed" {
             transaction.commit().await?;
             return Ok(());
+        }
+        if previous.0.is_some() && previous.0 != Some(issue_id) {
+            return Err(AppError::Conflict(
+                "Unlink the report before adding it to another issue",
+            ));
         }
 
         sqlx::query(
