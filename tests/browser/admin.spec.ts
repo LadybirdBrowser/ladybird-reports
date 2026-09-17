@@ -101,6 +101,9 @@ test.describe("authenticated management UI", () => {
     })).toBeLessThan(12);
     await expect(page.locator(".stack-trace-heading")).toHaveCount(0);
     await expect(page.locator(".stack-frame-table").getByRole("row").first()).toBeVisible();
+    await expect(page.locator(".stack-frame-note").filter({
+      hasText: "Native stack (binary build ID, object address):",
+    })).toHaveCount(0);
     await expect(page.getByText("Core::ThreadEventQueue::process()", { exact: true })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Possible matches" })).toBeVisible();
     await expect(page.getByRole("link", { name: "Intermittent navigation timeout" }))

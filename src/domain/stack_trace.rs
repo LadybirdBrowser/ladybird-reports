@@ -3,6 +3,7 @@ use sha2::{Digest, Sha256};
 pub const STACK_SIGNATURE_VERSION: i32 = 1;
 const MAX_RENDERED_LINES: usize = 256;
 const MAX_SIGNATURE_FRAMES: usize = 24;
+const NATIVE_STACK_HEADER: &str = "Native stack (binary build ID, object address):";
 
 /// A presentation of a submitted stack. The original text remains in report_fields.
 pub struct ParsedStackTrace {
@@ -33,6 +34,12 @@ pub fn parse_stack_trace(text: &str) -> ParsedStackTrace {
         if index >= MAX_RENDERED_LINES {
             truncated = true;
             break;
+        }
+
+        // Ladybird prefixes native stacks with a format label. Keep it in the
+        // original text, but do not render it as an unparsed stack row.
+        if index == 0 && line.trim() == NATIVE_STACK_HEADER {
+            continue;
         }
 
         let row = parse_frame(line).unwrap_or_else(|| StackTraceRow {
@@ -153,12 +160,11 @@ mod tests {
     fn parses_ladybird_frames_and_keeps_unparsed_lines() {
         let text = include_str!("../../tests/fixtures/webcontent-stack.txt");
         let parsed = parse_stack_trace(text);
-        assert_eq!(parsed.rows[0].number, None);
-        assert_eq!(parsed.rows[1].number, Some(0));
-        assert_eq!(parsed.rows[1].module, "WebContent");
-        assert!(parsed.rows[1].symbol.contains("debug_request"));
-        assert_eq!(parsed.rows[2].address, "0x1f3c3");
-        assert_eq!(parsed.rows[6].raw, "#5 unavailable");
+        assert_eq!(parsed.rows[0].number, Some(0));
+        assert_eq!(parsed.rows[0].module, "WebContent");
+        assert!(parsed.rows[0].symbol.contains("debug_request"));
+        assert_eq!(parsed.rows[1].address, "0x1f3c3");
+        assert_eq!(parsed.rows[5].raw, "#5 unavailable");
         assert_eq!(parsed.frame_keys.len(), 1);
     }
 
