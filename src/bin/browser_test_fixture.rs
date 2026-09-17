@@ -1,11 +1,12 @@
 use ladybird_reports::{
-    domain::{IssueId, ReportId, SubmissionId, UploadId},
+    domain::{AttachmentId, IssueId, ReportId, SubmissionId, UploadId},
     error::Result,
     infrastructure::{
         SecretCipher, database::AdminDatabase, hash_secret, random_token, read_secret,
     },
     runtime::required_environment,
 };
+use sha2::{Digest, Sha256};
 use sqlx::postgres::PgPoolOptions;
 
 const REPORT_ID: &str = "01a0a536-01cd-7ac7-a3cf-ae6a2d5030e5";
@@ -155,6 +156,35 @@ async fn main() -> Result<()> {
     ))
     .bind(serde_json::json!("debug"))
     .bind(serde_json::json!("AppleClang 21.0.0.21000101"))
+    .execute(&mut *transaction)
+    .await?;
+
+    let attachment_id = AttachmentId::new();
+    let attachment_bytes = vec![b'x'; 3756];
+    let storage_key = format!("reports/{REPORT_ID}/{attachment_id}");
+    let attachment_directory = std::path::PathBuf::from(required_environment("ATTACHMENT_ROOT")?)
+        .join("reports")
+        .join(REPORT_ID);
+    if tokio::fs::try_exists(&attachment_directory).await? {
+        tokio::fs::remove_dir_all(&attachment_directory).await?;
+    }
+    tokio::fs::create_dir_all(&attachment_directory).await?;
+    tokio::fs::write(
+        attachment_directory.join(attachment_id.to_string()),
+        &attachment_bytes,
+    )
+    .await?;
+    sqlx::query(
+        "INSERT INTO attachments
+            (id, report_id, client_id, name, media_type, size, sha256, storage_key)
+         VALUES ($1, $2, $3, 'crash-diagnostics.txt', 'text/plain', $4, $5, $6)",
+    )
+    .bind(attachment_id)
+    .bind(REPORT_ID.parse::<ReportId>().expect("valid fixture UUIDv7"))
+    .bind(AttachmentId::new())
+    .bind(attachment_bytes.len() as i64)
+    .bind(hex::encode(Sha256::digest(&attachment_bytes)))
+    .bind(storage_key)
     .execute(&mut *transaction)
     .await?;
 

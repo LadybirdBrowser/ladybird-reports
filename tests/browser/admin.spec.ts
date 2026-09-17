@@ -111,8 +111,19 @@ test.describe("authenticated management UI", () => {
     })).toHaveCount(0);
     await expect(page.getByText("Core::ThreadEventQueue::process()", { exact: true })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Possible matches" })).toBeVisible();
-    await expect(page.getByRole("link", { name: "Intermittent navigation timeout" }))
-      .toBeVisible();
+    const possibleMatch = page.locator(".similar-report").filter({
+      hasText: "Intermittent navigation timeout",
+    });
+    await expect(possibleMatch.locator(".similar-report-main"))
+      .toHaveAttribute("href", /^\/reports\//);
+    await expect(possibleMatch).toContainText(/\d{2} \w{3} \d{4}, \d{2}:\d{2} UTC/);
+    await possibleMatch.scrollIntoViewIfNeeded();
+    expect(await possibleMatch.evaluate((row) => {
+      const bounds = row.getBoundingClientRect();
+      return document.elementFromPoint(bounds.left + 6, bounds.top + 6)
+        ?.closest("a")?.classList.contains("similar-report-main");
+    })).toBe(true);
+    await expect(page.getByText("Review before linking")).toHaveCount(0);
     await expect(page.getByText("Exact signature")).toBeVisible();
     await expect(page.getByRole("button", { name: "Add to issue" })).toBeVisible();
     await expect(page.locator(".badge-triage")).toHaveText("Needs triage");
@@ -125,11 +136,30 @@ test.describe("authenticated management UI", () => {
     await expect(page.getByText("macOS", { exact: true }).first()).toBeVisible();
     await expect(page.getByText("arm64", { exact: true }).first()).toBeVisible();
     await expect(page.getByText("127.0.0.1", { exact: true })).toBeVisible();
+    const sourceAddress = page.locator(".definition-list > div").filter({
+      has: page.getByText("Source IP address", { exact: true }),
+    });
+    await sourceAddress.locator("code").evaluate((value) => {
+      value.textContent = "2001:9e0:862a:6201:d8fd:5d40:445d:4115";
+    });
+    expect(await sourceAddress.evaluate((field) => field.scrollWidth <= field.clientWidth))
+      .toBe(true);
     await expect(page.getByRole("heading", { name: "Additional fields" })).toBeVisible();
     await expect(page.locator(".report-field-value").filter({ hasText: "<script>" })).toBeVisible();
     await expect(page.getByRole("link", { name: "Filter reports by Stack trace" })).toHaveCount(0);
     await expect(page.getByRole("heading", { name: "Attachments" }).locator(".."))
-      .toContainText("0 files");
+      .toContainText("1 file");
+    const attachmentRow = page.locator(".attachment-table tbody tr").first();
+    await expect(attachmentRow).toContainText("crash-diagnostics.txt");
+    await expect(attachmentRow).toContainText("text/plain");
+    await expect(attachmentRow).toContainText("3.7 KiB");
+    const downloadLink = attachmentRow.locator("td:nth-child(2) a");
+    const attachmentResponse = await page.request.get(await downloadLink.getAttribute("href")!);
+    expect(attachmentResponse.headers()["content-disposition"])
+      .toContain('attachment; filename="crash-diagnostics.txt"');
+    const download = page.waitForEvent("download");
+    await downloadLink.click();
+    expect((await download).suggestedFilename()).toBe("crash-diagnostics.txt");
     expect(await page.getByRole("heading", { name: "Attachments" }).evaluate((attachments) => {
       const additionalFields = document.querySelector("#additional-fields-title");
       return Boolean(additionalFields &&

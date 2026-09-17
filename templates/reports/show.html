@@ -114,27 +114,22 @@
                             <p class="eyebrow">Stack signatures</p>
                             <h2 id="similar-reports-title">Possible matches</h2>
                         </div>
-                        <p>Review before linking</p>
                     </div>
                     <div class="similar-report-list">
                         {% for candidate in similar_reports %}
                             <article class="similar-report">
-                                <div>
-                                    {% if let Some(issue_id) = candidate.issue_id %}
-                                        <a class="primary-link" href="/issues/{{ issue_id }}">
-                                            {{ candidate.issue_title.as_deref().unwrap_or("Issue") }}
-                                        </a>
+                                <a class="similar-report-main" href="/reports/{{ candidate.report_id }}">
+                                    {% if candidate.issue_id.is_some() %}
+                                        <strong>{{ candidate.issue_title.as_deref().unwrap_or("Issue") }}</strong>
                                     {% else %}
-                                        <a class="primary-link" href="/reports/{{ candidate.report_id }}">
-                                            Unassigned report
-                                        </a>
+                                        <strong>Unassigned report</strong>
                                     {% endif %}
                                     <p>
                                         {% if candidate.exact %}Exact signature{% else %}{{ candidate.matching_frames }} matching frames{% endif %}
                                         · {{ candidate.client_version }}
-                                        · <a href="/reports/{{ candidate.report_id }}">View example</a>
+                                        · {{ candidate.submitted_at }}
                                     </p>
-                                </div>
+                                </a>
                                 {% if let Some(issue_id) = candidate.issue_id %}
                                     <form method="post" action="/reports/{{ report.id }}/issue">
                                         <input type="hidden" name="csrf" value="{{ navigation.as_ref().unwrap().csrf_token }}">
@@ -151,32 +146,54 @@
             <section class="card" aria-labelledby="attachments-title">
                 <div class="card-header">
                     <h2 id="attachments-title">Attachments</h2>
-                    <p>{{ attachments.len() }} files</p>
+                    <p>{{ attachments.len() }} {% if attachments.len() == 1 %}file{% else %}files{% endif %}</p>
                 </div>
                 {% if !attachments.is_empty() %}
-                    <div class="card-body stack">
-                        {% for attachment in attachments %}
-                            <article class="attachment">
-                                <p>
-                                    <a class="primary-link" href="/attachments/{{ attachment.id }}">
-                                        {{ attachment.name }}
-                                    </a>
-                                    <span class="quiet">
-                                        {{ attachment.media_type }} · {{ attachment.size }} bytes
-                                    </span>
-                                </p>
-                                {% if attachment.is_png %}
-                                    <details>
-                                        <summary>Preview image</summary>
-                                        <img
-                                            loading="lazy"
-                                            src="/attachments/{{ attachment.id }}"
-                                            alt="Report attachment"
-                                        >
-                                    </details>
-                                {% endif %}
-                            </article>
-                        {% endfor %}
+                    <div class="attachment-table-scroll">
+                        <table class="attachment-table">
+                            <thead>
+                                <tr>
+                                    <th scope="col">File</th>
+                                    <th scope="col">Type</th>
+                                    <th scope="col">Size</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for attachment in attachments %}
+                                    <tr>
+                                        <td>
+                                            <a href="/attachments/{{ attachment.id }}" download="{{ attachment.name }}">
+                                                {{ attachment.name }}
+                                            </a>
+                                        </td>
+                                        <td>
+                                            <a href="/attachments/{{ attachment.id }}" download="{{ attachment.name }}" aria-label="Download {{ attachment.name }}">
+                                                {{ attachment.media_type }}
+                                            </a>
+                                        </td>
+                                        <td>
+                                            <a href="/attachments/{{ attachment.id }}" download="{{ attachment.name }}" aria-label="Download {{ attachment.name }}">
+                                                {{ attachment.size }}
+                                            </a>
+                                        </td>
+                                    </tr>
+                                    {% if attachment.is_png %}
+                                        <tr class="attachment-preview-row">
+                                            <td colspan="3">
+                                                <details>
+                                                    <summary>Preview image</summary>
+                                                    <img
+                                                        loading="lazy"
+                                                        src="/attachments/{{ attachment.id }}"
+                                                        alt="Report attachment"
+                                                    >
+                                                </details>
+                                            </td>
+                                        </tr>
+                                    {% endif %}
+                                {% endfor %}
+                            </tbody>
+                        </table>
                     </div>
                 {% endif %}
             </section>

@@ -172,6 +172,7 @@ pub struct SimilarReportView {
     issue_id: Option<IssueId>,
     issue_title: Option<String>,
     client_version: String,
+    submitted_at: String,
     exact: bool,
     matching_frames: usize,
 }
@@ -180,7 +181,7 @@ pub struct AttachmentView {
     id: AttachmentId,
     name: String,
     media_type: String,
-    size: i64,
+    size: String,
     is_png: bool,
 }
 
@@ -426,6 +427,10 @@ pub async fn show(
                 issue_id: candidate.issue_id,
                 issue_title: candidate.issue_title,
                 client_version: candidate.client_version,
+                submitted_at: candidate
+                    .created_at
+                    .format("%d %b %Y, %H:%M UTC")
+                    .to_string(),
                 exact: candidate.exact,
                 matching_frames: candidate.matching_frames,
             })
@@ -594,7 +599,7 @@ pub async fn show(
             name: attachment.name,
             is_png: attachment.media_type == "image/png",
             media_type: attachment.media_type,
-            size: attachment.size,
+            size: format_attachment_size(attachment.size),
         })
         .collect();
 
@@ -848,15 +853,56 @@ pub async fn attachment(
     } else {
         "text/plain; charset=utf-8"
     };
+    let disposition = attachment_disposition(&attachment.name);
 
     Ok((
         [
             ("content-type", content_type),
-            ("content-disposition", "inline"),
+            ("content-disposition", disposition.as_str()),
         ],
         bytes,
     )
         .into_response())
+}
+
+fn attachment_disposition(name: &str) -> String {
+    let fallback = name
+        .chars()
+        .map(|character| {
+            if character.is_ascii_alphanumeric() || matches!(character, '-' | '_' | '.') {
+                character
+            } else {
+                '_'
+            }
+        })
+        .collect::<String>();
+    let encoded = name
+        .bytes()
+        .map(|byte| {
+            if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b'~') {
+                (byte as char).to_string()
+            } else {
+                format!("%{byte:02X}")
+            }
+        })
+        .collect::<String>();
+
+    format!("attachment; filename=\"{fallback}\"; filename*=UTF-8''{encoded}")
+}
+
+fn format_attachment_size(bytes: i64) -> String {
+    let mut size = bytes as f64;
+    let mut unit = "bytes";
+    for next_unit in ["KiB", "MiB", "GiB", "TiB"] {
+        if size < 1024.0 {
+            break;
+        }
+        size /= 1024.0;
+        unit = next_unit;
+    }
+
+    let precision = usize::from(unit != "bytes");
+    format!("{size:.precision$} {unit}")
 }
 
 fn next_page_url(
@@ -931,4 +977,24 @@ fn submitted_date_filter_url(date: NaiveDate) -> String {
         .append_pair("until", &date.to_string());
 
     format!("/?{}", url.query().unwrap_or_default())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{attachment_disposition, format_attachment_size};
+
+    #[test]
+    fn attachment_sizes_use_binary_units() {
+        assert_eq!(format_attachment_size(1023), "1023 bytes");
+        assert_eq!(format_attachment_size(3756), "3.7 KiB");
+        assert_eq!(format_attachment_size(1_048_576), "1.0 MiB");
+    }
+
+    #[test]
+    fn attachment_names_are_safe_in_download_headers() {
+        assert_eq!(
+            attachment_disposition("crash notes-ä.txt"),
+            "attachment; filename=\"crash_notes-_.txt\"; filename*=UTF-8''crash%20notes-%C3%A4.txt"
+        );
+    }
 }

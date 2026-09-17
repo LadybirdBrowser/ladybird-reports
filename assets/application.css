@@ -388,6 +388,10 @@ nav a:hover {
     margin-bottom: 0;
 }
 
+.report-layout .page-header {
+    margin-bottom: 0.85rem;
+}
+
 .eyebrow {
     margin-bottom: 0.45rem;
     color: var(--brand);
@@ -1384,6 +1388,12 @@ tbody tr:hover {
     gap: 0.75rem;
 }
 
+.overview-value code {
+    min-width: 0;
+    font-size: 0.84rem;
+    overflow-wrap: anywhere;
+}
+
 /* Reports and issue actions */
 
 .report-id {
@@ -1995,6 +2005,7 @@ pre {
 }
 
 .similar-report {
+    position: relative;
     display: flex;
     min-width: 0;
     padding: 0.9rem 1.1rem;
@@ -2002,6 +2013,33 @@ pre {
     justify-content: space-between;
     gap: 1rem;
     border-bottom: 1px solid var(--border);
+}
+
+.similar-report:hover {
+    background: var(--surface-subtle);
+}
+
+.similar-report-main {
+    min-width: 0;
+    flex: 1;
+    color: var(--ink);
+    text-decoration: none;
+}
+
+.similar-report-main::after {
+    position: absolute;
+    inset: 0;
+    content: "";
+}
+
+.similar-report-main:focus-visible::after {
+    outline: 2px solid var(--brand);
+    outline-offset: -2px;
+}
+
+.similar-report form {
+    position: relative;
+    z-index: 1;
 }
 
 .similar-report:last-child {
@@ -2045,18 +2083,43 @@ pre {
     }
 }
 
-.attachment {
-    padding: 1rem;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-md);
+.attachment-table-scroll {
+    overflow-x: auto;
+}
+
+.attachment-table th:last-child,
+.attachment-table td:last-child {
+    text-align: right;
+}
+
+.attachment-table td {
+    padding: 0;
+}
+
+.attachment-table td a {
+    display: block;
+    padding: 0.85rem 1rem;
+    color: var(--ink-soft);
+    text-decoration: none;
+    white-space: nowrap;
+}
+
+.attachment-table td:first-child a {
+    color: var(--ink);
+    font-weight: 650;
+    overflow-wrap: anywhere;
+    white-space: normal;
+}
+
+.attachment-table tbody tr:not(.attachment-preview-row):hover {
     background: var(--surface-subtle);
 }
 
-.attachment p {
-    margin: 0;
+.attachment-preview-row td {
+    padding: 0.8rem 1rem;
 }
 
-.attachment img {
+.attachment-preview-row img {
     max-width: 100%;
     margin-top: 0.8rem;
     border: 1px solid var(--border);
