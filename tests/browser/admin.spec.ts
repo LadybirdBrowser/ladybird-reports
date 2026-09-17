@@ -125,11 +125,16 @@ test.describe("authenticated management UI", () => {
     await expect(page.getByText("macOS", { exact: true }).first()).toBeVisible();
     await expect(page.getByText("arm64", { exact: true }).first()).toBeVisible();
     await expect(page.getByText("127.0.0.1", { exact: true })).toBeVisible();
-    await expect(page.getByText("Unknown field", { exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Additional fields" })).toBeVisible();
     await expect(page.locator(".report-field-value").filter({ hasText: "<script>" })).toBeVisible();
     await expect(page.getByRole("link", { name: "Filter reports by Stack trace" })).toHaveCount(0);
     await expect(page.getByRole("heading", { name: "Attachments" }).locator(".."))
       .toContainText("0 files");
+    expect(await page.getByRole("heading", { name: "Attachments" }).evaluate((attachments) => {
+      const additionalFields = document.querySelector("#additional-fields-title");
+      return Boolean(additionalFields &&
+        attachments.compareDocumentPosition(additionalFields) & Node.DOCUMENT_POSITION_FOLLOWING);
+    })).toBe(true);
     await expect(page.getByText("No attachments")).toHaveCount(0);
 
     const stackTrace = page.locator(".stack-trace");
