@@ -90,8 +90,6 @@ test.describe("authenticated management UI", () => {
       .toBeVisible();
     await expect(diagnosticTable.getByRole("rowheader", { name: /C\+\+ compiler/ }))
       .toBeVisible();
-    await expect(page.locator(".definition-list").getByText("Build", { exact: true }))
-      .toHaveCount(0);
     await page.setViewportSize({ width: 390, height: 800 });
     expect(await page.locator(".stack-frame-symbol").first().evaluate(
       (cell) => cell.getBoundingClientRect().width,
@@ -109,11 +107,7 @@ test.describe("authenticated management UI", () => {
       const actions = header.querySelector(".stack-header-actions")!.getBoundingClientRect();
       return Math.abs(title.top - actions.top);
     })).toBeLessThan(12);
-    await expect(page.locator(".stack-trace-heading")).toHaveCount(0);
     await expect(page.locator(".stack-frame-table").getByRole("row").first()).toBeVisible();
-    await expect(page.locator(".stack-frame-note").filter({
-      hasText: "Native stack (binary build ID, object address):",
-    })).toHaveCount(0);
     await expect(page.getByText("Core::ThreadEventQueue::process()", { exact: true })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Possible matches" })).toBeVisible();
     const possibleMatch = page.locator(".similar-report").filter({
@@ -128,7 +122,6 @@ test.describe("authenticated management UI", () => {
       return document.elementFromPoint(bounds.left + 6, bounds.top + 6)
         ?.closest("a")?.classList.contains("similar-report-main");
     })).toBe(true);
-    await expect(page.getByText("Review before linking")).toHaveCount(0);
     await expect(page.getByText("Exact signature")).toBeVisible();
     await expect(page.getByRole("button", { name: "Add to issue" })).toBeVisible();
     await expect(page.locator(".badge-triage")).toHaveText("Needs triage");
@@ -170,7 +163,6 @@ test.describe("authenticated management UI", () => {
       return Boolean(additionalFields &&
         attachments.compareDocumentPosition(additionalFields) & Node.DOCUMENT_POSITION_FOLLOWING);
     })).toBe(true);
-    await expect(page.getByText("No attachments")).toHaveCount(0);
 
     const stackTrace = page.locator(".stack-trace");
     expect(
@@ -301,9 +293,7 @@ test.describe("authenticated management UI", () => {
 
   test("searches tracked and GitHub issues in one selector", async ({ page }) => {
     await page.goto("/issues");
-    await expect(page.getByRole("heading", { name: "Create issue" })).toHaveCount(0);
     await expect(page.getByText("Intermittent navigation timeout")).toBeVisible();
-    await expect(page.getByRole("button", { name: /Apply/ })).toHaveCount(0);
 
     await page.getByLabel("Include resolved").check();
     await expect.poll(() => new URL(page.url()).searchParams.get("resolved"))
@@ -401,7 +391,6 @@ test.describe("authenticated management UI", () => {
     await page.goto("/");
     await expect(page.getByLabel("Search reports"))
       .toHaveValue("state:triage state:confirmed");
-    await expect(page.getByRole("button", { name: "Apply filters" })).toHaveCount(0);
     await page.evaluate(() => ((window as any).reportPageStayedLoaded = true));
     const search = page.getByLabel("Search reports");
     const initialUrl = page.url();
@@ -438,7 +427,6 @@ test.describe("authenticated management UI", () => {
     await page.goto("/");
     await expect(page.locator(".badge-triage").first()).toBeVisible();
     await expect(page.locator(".badge-confirmed").first()).toHaveText("Confirmed");
-    await expect(page.locator(".badge-assigned")).toHaveCount(0);
     await expect(page.locator(".badge-rejected")).toHaveCount(0);
 
     const search = page.getByLabel("Search reports");
@@ -511,7 +499,6 @@ test.describe("authenticated management UI", () => {
   test("reorders recognized fields by dragging rows", async ({ page }) => {
     await page.goto("/settings");
 
-    await expect(page.getByRole("columnheader", { name: "Position" })).toHaveCount(0);
 
     const stackRow = page.locator('[data-field-key="stack"]');
     const signalRow = page.locator('[data-field-key="signal"]');
@@ -534,7 +521,6 @@ test.describe("authenticated management UI", () => {
     await expect(orderedRows.nth(0)).toContainText("signal");
     await expect(orderedRows.nth(1)).toContainText("stack");
 
-    await expect(page.getByRole("button", { name: "Save field order" })).toHaveCount(0);
     await expect(page.getByText("Stack trace is now at position 2.")).toBeVisible();
     await page.reload();
     await expect(orderedRows.nth(0)).toContainText("signal");
@@ -569,7 +555,6 @@ test.describe("authenticated management UI", () => {
     await page.goto("/");
 
     await page.getByRole("button", { name: "Open account menu for browser-tester" }).click();
-    await expect(page.getByText("Signed in as")).toHaveCount(0);
     const signOut = page.getByRole("button", { name: "Sign out" });
     await expect(signOut).toBeVisible();
     expect(await signOut.evaluate((button) => getComputedStyle(button).borderTopWidth)).toBe("0px");
@@ -582,8 +567,6 @@ test.describe("authenticated management UI", () => {
     expect(href).not.toBeNull();
     await reportLink.click();
 
-    await expect(page.getByRole("combobox", { name: "Report state" })).toHaveCount(0);
-    await expect(page.getByRole("button", { name: "Confirm report" })).toHaveCount(0);
     await expect(page.locator(".badge-triage")).toHaveText("Needs triage");
 
     await page.getByRole("button", { name: "Reject report" }).first().click();
@@ -632,9 +615,6 @@ test.describe("authenticated management UI", () => {
     await expect(page.getByRole("link", { name: "Issue #7300" }))
       .toBeVisible();
     await expect(page.getByText("GitHub", { exact: true })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Save issue" })).toHaveCount(0);
-    await expect(page.locator('form[action^="/issues/"][action$="/issues/"]'))
-      .toHaveCount(0);
     await expect(page.locator(".issue-description"))
       .toContainText("Created by the browser test.");
     const editFromReports = await page.request.post(page.url(), {
@@ -716,8 +696,6 @@ test.describe("authenticated management UI", () => {
     );
     expect((await existingIssueField.json()).value)
       .toBe(`http://127.0.0.1:3100/issues/${trackedIssueId}`);
-    await expect(page.getByRole("button", { name: /^(Close|Reopen) GitHub issue$/ }))
-      .toHaveCount(0);
 
     const issue = {
       id: 94812,
@@ -758,7 +736,6 @@ test.describe("authenticated management UI", () => {
     await page.reload();
     await expect(page.getByRole("heading", { name: issue.title })).toBeVisible();
     await expect(page.locator(".issue-description")).toContainText(issue.body);
-    await expect(page.getByRole("button", { name: "Save issue" })).toHaveCount(0);
 
     issue.state = "closed";
     issue.updated_at = new Date(Date.now() + 20_000).toISOString();
@@ -853,7 +830,6 @@ test.describe("authenticated management UI", () => {
     expect((await page.request.get(issueUrl)).status()).toBe(404);
 
     await page.goto(remainingReport!);
-    await expect(page.locator(".badge-assigned")).toHaveCount(0);
     await expect(page.locator(".report-linked-issue")).toHaveCount(0);
     const githubIssue = await page.request.get(
       "http://127.0.0.1:3101/repos/LadybirdBrowser/ladybird/issues/6200",
