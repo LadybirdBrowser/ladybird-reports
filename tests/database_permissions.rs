@@ -1067,6 +1067,18 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
         .expect("create report with transactional Discord notification");
     }
 
+    sqlx::query(
+        "INSERT INTO report_fields
+            (report_id, key, kind, value, recognized_at_submission)
+         VALUES
+            ($1, 'process', 'text', '\"WebContent\"'::jsonb, true),
+            ($1, 'platform', 'text', '\"macOS\"'::jsonb, true)",
+    )
+    .bind(first_notification_report)
+    .execute(&admin_pool)
+    .await
+    .expect("add fields used to generate the Discord report title");
+
     let first_notification = admin_database
         .claim_discord_notification(40)
         .await
@@ -1074,6 +1086,10 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
         .expect("first Discord notification exists");
     assert_eq!(first_notification.attempt_count, 0);
     assert_eq!(first_notification.client_version, "notification-test");
+    assert_eq!(
+        first_notification.title,
+        "Crash report · WebContent · macOS"
+    );
 
     assert!(
         admin_database

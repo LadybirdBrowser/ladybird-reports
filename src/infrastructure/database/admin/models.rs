@@ -66,6 +66,7 @@ pub struct GithubIssueAssignment {
 pub struct PendingDiscordNotification {
     pub report_id: ReportId,
     pub lease_id: DiscordDeliveryLeaseId,
+    pub title: String,
     pub kind: String,
     pub client_version: String,
     pub build: String,

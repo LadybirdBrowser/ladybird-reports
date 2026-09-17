@@ -258,6 +258,19 @@ impl AdminDatabase {
         Ok(fields)
     }
 
+    pub(super) async fn generated_report_title(
+        &self,
+        report_id: ReportId,
+        kind: &str,
+        client_version: &str,
+    ) -> Result<String> {
+        let mut fields = self.report_title_fields(&[report_id]).await?;
+        Ok(fields
+            .remove(&report_id)
+            .unwrap_or_default()
+            .title(kind, client_version))
+    }
+
     pub(super) async fn populate_report_titles(&self, reports: &mut [ReportSummary]) -> Result<()> {
         let ids = reports.iter().map(|report| report.id).collect::<Vec<_>>();
         let mut title_fields = self.report_title_fields(&ids).await?;

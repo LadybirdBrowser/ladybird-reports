@@ -102,18 +102,24 @@ impl AdminDatabase {
         .await?;
 
         let attempt_count: i32 = row.get("attempt_count");
+        transaction.commit().await?;
+        let kind: String = row.get("kind");
+        let client_version: String = row.get("client_version");
+        let title = self
+            .generated_report_title(report_id, &kind, &client_version)
+            .await?;
         let notification = PendingDiscordNotification {
             report_id,
             lease_id,
-            kind: row.get("kind"),
-            client_version: row.get("client_version"),
+            title,
+            kind,
+            client_version,
             build: row.get("build"),
             fields: row.get("fields"),
             created_at: row.get("created_at"),
             attempt_count: attempt_count as u32,
         };
 
-        transaction.commit().await?;
         Ok(Some(notification))
     }
 

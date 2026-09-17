@@ -232,7 +232,7 @@ fn report_message(
     DiscordWebhookMessage {
         username: "Ladybird Reports",
         embeds: vec![DiscordEmbed {
-            title: format!("New {}", report_kind_label(&notification.kind)),
+            title: truncate_text(&notification.title, 256),
             url: report_url,
             description,
             color: report_color(&notification.kind),
@@ -274,14 +274,6 @@ fn truncate_text(value: &str, maximum_characters: usize) -> String {
     truncated
 }
 
-fn report_kind_label(kind: &str) -> &str {
-    match kind {
-        "crash" => "crash report",
-        "web_compat" => "web compatibility report",
-        _ => "diagnostic report",
-    }
-}
-
 fn report_color(kind: &str) -> u32 {
     match kind {
         "crash" => 0xd84a4a,
@@ -311,6 +303,7 @@ mod tests {
         let notification = PendingDiscordNotification {
             report_id: ReportId::new(),
             lease_id: DiscordDeliveryLeaseId::new(),
+            title: "Crash: WebContent::ConnectionFromClient::debug_request".into(),
             kind: "crash".into(),
             client_version: "Ladybird Nightly".into(),
             build: "macOS arm64".into(),
@@ -328,7 +321,10 @@ mod tests {
         let message = report_message(&notification, "https://reports.example", &configuration);
         let embed = &message.embeds[0];
 
-        assert_eq!(embed.title, "New crash report");
+        assert_eq!(
+            embed.title,
+            "Crash: WebContent::ConnectionFromClient::debug_request"
+        );
         assert!(embed.url.ends_with(&notification.report_id.to_string()));
         assert!(embed.description.contains("frame one"));
         assert!(embed.description.contains("frame ′two′"));
