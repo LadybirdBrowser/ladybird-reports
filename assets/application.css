@@ -1503,7 +1503,8 @@ tbody tr:hover {
     display: flex;
     gap: 0.8rem;
     align-items: flex-start;
-    padding: 0.7rem 0;
+    margin: 0;
+    padding: 0.5rem 0;
     cursor: pointer;
 }
 
@@ -1640,7 +1641,7 @@ tbody tr:hover {
     left: 50%;
     width: min(24rem, calc(100vw - 1rem));
     margin: 0;
-    padding: 1rem;
+    padding: 1.25rem;
     border: 1px solid var(--border-strong);
     border-radius: var(--radius-md);
     background: var(--surface-raised);
@@ -1660,7 +1661,7 @@ tbody tr:hover {
 }
 
 .confirmation-popover p {
-    margin-bottom: 1rem;
+    margin-bottom: 0.75rem;
     color: var(--ink-soft);
     font-size: 0.82rem;
 }
