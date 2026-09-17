@@ -66,6 +66,7 @@ pub struct IssueView {
 
 pub struct ReportView {
     id: crate::domain::ReportId,
+    title: String,
     client_version: String,
     created_at: DateTime<Utc>,
 }
@@ -234,6 +235,7 @@ pub async fn show(
         .into_iter()
         .map(|report| ReportView {
             id: report.id,
+            title: report.title,
             client_version: report.client_version,
             created_at: report.created_at,
         })

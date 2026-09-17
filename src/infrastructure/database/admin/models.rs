@@ -39,9 +39,12 @@ pub struct ReportQuery {
 #[derive(Clone, Debug)]
 pub struct ReportSummary {
     pub id: ReportId,
+    pub title: String,
     pub kind: String,
     pub client_version: String,
     pub build: String,
+    pub platform: Option<String>,
+    pub architecture: Option<String>,
     pub issue_id: Option<IssueId>,
     pub confirmed_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
@@ -76,9 +79,12 @@ pub struct PendingDiscordNotification {
 #[derive(Clone, Debug)]
 pub struct ReportSearchResult {
     pub id: ReportId,
+    pub title: String,
     pub kind: String,
     pub client_version: String,
     pub build: String,
+    pub platform: Option<String>,
+    pub architecture: Option<String>,
     pub issue_title: Option<String>,
     pub confirmed_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,

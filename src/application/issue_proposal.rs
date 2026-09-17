@@ -1,12 +1,15 @@
 use crate::infrastructure::database::ReportDetails;
 
+use super::title_for_report;
+
 pub struct IssueProposal {
     pub title: String,
     pub description: String,
 }
 
 /// Prepare a public GitHub draft from a small, deliberate set of report data.
-/// URLs, stack traces, unknown fields, and attachments stay in Reports.
+/// URLs, raw stack traces, unknown fields, and attachments stay in Reports.
+/// The proposed title uses only the concise function name derived from a stack.
 pub fn propose_issue(details: &ReportDetails) -> IssueProposal {
     let report_type = match details.report.kind.as_str() {
         "crash" => "Crash",
@@ -14,10 +17,7 @@ pub fn propose_issue(details: &ReportDetails) -> IssueProposal {
         _ => "Diagnostic issue",
     };
     let platform = field_value(details, "platform", 40);
-    let title = match &platform {
-        Some(platform) => format!("{report_type} on {platform}"),
-        None => report_type.to_owned(),
-    };
+    let title = title_for_report(details);
 
     let mut description =
         format!("## Summary\n\n{report_type} reported by Ladybird.\n\n## Environment\n");
@@ -122,7 +122,7 @@ mod tests {
         };
 
         let proposal = propose_issue(&details);
-        assert_eq!(proposal.title, "Crash on macOS");
+        assert_eq!(proposal.title, "Crash report · macOS");
         assert!(proposal.description.contains("- Platform: macOS"));
         assert!(proposal.description.contains("- Signal: SIGABRT"));
         for private_value in [

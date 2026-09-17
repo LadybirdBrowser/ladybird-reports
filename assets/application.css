@@ -376,6 +376,14 @@ nav a:hover {
     gap: 1rem;
 }
 
+.page-header > div {
+    min-width: 0;
+}
+
+.page-header h1 {
+    overflow-wrap: anywhere;
+}
+
 .page-header p:last-child {
     margin-bottom: 0;
 }
@@ -1254,21 +1262,32 @@ button:active,
     margin: 0;
 }
 
-.report-type-link {
-    font-weight: 700;
+.report-table {
+    table-layout: fixed;
 }
 
-.report-table-version {
+.report-table th:first-child {
+    width: 58%;
+}
+
+.report-table th:nth-child(2) {
+    width: 16%;
+}
+
+.report-table-report {
     overflow-wrap: anywhere;
 }
 
-.report-table-version strong,
-.report-table-version .quiet {
-    display: block;
+.report-title-link {
+    font-weight: 700;
 }
 
-.report-mobile-label {
-    display: none;
+.report-table-metadata {
+    display: block;
+    margin-top: 0.3rem;
+    color: var(--ink-soft);
+    font-size: 0.8rem;
+    line-height: 1.4;
 }
 
 .report-received-at {
@@ -2499,9 +2518,8 @@ pre {
         display: grid;
         padding: 1rem 1.15rem;
         grid-template-areas:
-            "type state"
-            "version version"
-            "received received";
+            "report report"
+            "state received";
         grid-template-columns: minmax(0, 1fr) auto;
         column-gap: 0.75rem;
         row-gap: 0.45rem;
@@ -2518,9 +2536,8 @@ pre {
         border: 0;
     }
 
-    .report-table-type {
-        grid-area: type;
-        align-self: center;
+    .report-table-report {
+        grid-area: report;
         overflow-wrap: anywhere;
     }
 
@@ -2529,32 +2546,12 @@ pre {
         align-self: center;
     }
 
-    .report-table-version {
-        grid-area: version;
-    }
-
     .report-table-received {
         grid-area: received;
         white-space: normal;
+        text-align: right;
     }
 
-    .report-table-version .quiet {
-        font-size: 0.8rem;
-    }
-
-    .report-mobile-label {
-        display: block;
-        color: var(--ink-faint);
-        font-size: 0.69rem;
-        font-weight: 750;
-        letter-spacing: 0.07em;
-        text-transform: uppercase;
-    }
-
-    .report-table-received .report-mobile-label {
-        display: inline;
-        margin-right: 0.45rem;
-    }
 }
 
 @media (max-width: 920px) {

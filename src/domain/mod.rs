@@ -5,6 +5,7 @@ mod issue;
 mod proof_of_work;
 mod report;
 mod report_search;
+mod report_title;
 mod stack_trace;
 
 pub use configuration::*;
@@ -14,4 +15,5 @@ pub use issue::*;
 pub use proof_of_work::*;
 pub use report::*;
 pub use report_search::*;
+pub use report_title::*;
 pub use stack_trace::*;

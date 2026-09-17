@@ -68,12 +68,17 @@ test.describe("authenticated management UI", () => {
     );
     await expect(page.getByText("Reporting database setup is incomplete.")).toBeVisible();
     const reportLink = page.locator(`a[href="/reports/${reportId}"]`);
-    await expect(reportLink).toHaveText("Web compatibility report");
+    await expect(reportLink).toHaveText(
+      "Web compatibility: WebContent::ConnectionFromClient::debug_request",
+    );
     await expect(page.locator("tbody")).not.toContainText(reportId);
     await expect(reportLink.locator("xpath=ancestor::tr"))
       .toContainText(/\d{2} [A-Z][a-z]{2} \d{4}, \d{2}:\d{2} UTC/);
 
     await reportLink.click();
+    await expect(page.getByRole("heading", {
+      name: "Web compatibility: WebContent::ConnectionFromClient::debug_request",
+    })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Stack trace" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Git commit" })).toBeVisible();
     await expect(page.getByText("654cf9b187384fa8855eac4fbafaa70e75497083"))
@@ -145,25 +150,26 @@ test.describe("authenticated management UI", () => {
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.goto("/");
     const row = page.locator(".report-table tbody tr").first();
-    const desktopType = await row.locator(".report-table-type").boundingBox();
-    const desktopVersion = await row.locator(".report-table-version").boundingBox();
-    expect(desktopType).not.toBeNull();
-    expect(desktopVersion).not.toBeNull();
-    expect(Math.abs(desktopType!.y - desktopVersion!.y)).toBeLessThan(2);
-    await expect(row.locator(".report-mobile-label").first()).toBeHidden();
+    const title = row.locator(".report-title-link");
+    const metadata = row.locator(".report-table-metadata");
+    await expect(metadata).toContainText("macOS · arm64 · 0.1.0-browser-test");
+    const desktopTitle = await title.boundingBox();
+    const desktopMetadata = await metadata.boundingBox();
+    expect(desktopTitle).not.toBeNull();
+    expect(desktopMetadata).not.toBeNull();
+    expect(desktopMetadata!.y).toBeGreaterThan(desktopTitle!.y);
 
     for (const width of [390, 320]) {
       await page.setViewportSize({ width, height: 800 });
-      const type = await row.locator(".report-table-type").boundingBox();
-      const version = await row.locator(".report-table-version").boundingBox();
+      const report = await row.locator(".report-table-report").boundingBox();
       const state = await row.locator(".report-table-state").boundingBox();
-      expect(type).not.toBeNull();
-      expect(version).not.toBeNull();
+      const received = await row.locator(".report-table-received").boundingBox();
+      expect(report).not.toBeNull();
       expect(state).not.toBeNull();
-      expect(version!.y).toBeGreaterThan(type!.y + type!.height);
-      expect(version!.width).toBeGreaterThan(220);
-      expect(state!.x).toBeGreaterThan(type!.x);
-      await expect(row.getByText("Version and build")).toBeVisible();
+      expect(received).not.toBeNull();
+      expect(state!.y).toBeGreaterThan(report!.y + report!.height);
+      expect(received!.x).toBeGreaterThan(state!.x);
+      expect(report!.width).toBeGreaterThan(220);
       expect(await page.evaluate(() => document.documentElement.scrollWidth))
         .toBeLessThanOrEqual(width);
     }
@@ -174,8 +180,10 @@ test.describe("authenticated management UI", () => {
     await page.goto("/");
 
     const legacyReport = page.locator(".report-table tbody tr")
-      .filter({ hasText: "macOS · arm64 · Release" }).first();
-    await legacyReport.getByRole("link", { name: "Crash report" }).click();
+      .filter({ hasText: "macOS · arm64 · Ladybird Nightly 2026-09-15" }).first();
+    await legacyReport.getByRole("link", {
+      name: "Crash: WebContent::ConnectionFromClient::debug_request",
+    }).click();
 
     const fields = page.locator(".definition-list > div");
     await expect(fields).toHaveCount(7);
@@ -314,7 +322,7 @@ test.describe("authenticated management UI", () => {
 
     await page.getByRole("button", { name: "Create new" }).click();
     await expect(page.getByLabel("Title", { exact: true }))
-      .toHaveValue("Web compatibility issue on macOS");
+      .toHaveValue("Web compatibility: WebContent::ConnectionFromClient::debug_request");
     await expect(page.getByLabel("Description", { exact: true }))
       .toHaveValue(/- Platform: macOS/);
     await expect(page.getByLabel("Description", { exact: true }))
@@ -325,7 +333,7 @@ test.describe("authenticated management UI", () => {
 
   test("searches existing internal issues in the issue workflow", async ({ page }) => {
     await page.goto("/?q=state%3Atriage+platform%3APaginationOS");
-    await page.locator(".report-type-link").first().click();
+    await page.locator(".report-title-link").first().click();
     await page.getByRole("button", { name: "Add report to issue" }).click();
 
     const issueSearch = page.getByRole("combobox", { name: "Search issues" });
@@ -527,7 +535,7 @@ test.describe("authenticated management UI", () => {
 
   test("confirms and hides reports without deleting stored rows", async ({ page }) => {
     await page.goto("/?q=state%3Atriage+platform%3APaginationOS");
-    const reportLink = page.locator(".report-type-link").first();
+    const reportLink = page.locator(".report-title-link").first();
     const href = await reportLink.getAttribute("href");
     expect(href).not.toBeNull();
     await reportLink.click();
@@ -575,7 +583,7 @@ test.describe("authenticated management UI", () => {
     await expect(
       page.getByRole("heading", { name: "Renderer overlap on test page" }),
     ).toBeVisible();
-    await expect(page.getByRole("link", { name: reportId })).toBeVisible();
+    await expect(page.locator(`a[href="/reports/${reportId}"]`)).toBeVisible();
     await expect(page.getByRole("link", { name: "Issue #7300" }))
       .toBeVisible();
     await expect(page.getByText("GitHub", { exact: true })).toBeVisible();
@@ -624,7 +632,7 @@ test.describe("authenticated management UI", () => {
 
     await expect(page.getByRole("heading", { name: "Intermittent navigation timeout" }))
       .toBeVisible();
-    await expect(page.getByRole("link", { name: reportId })).toBeVisible();
+    await expect(page.locator(`a[href="/reports/${reportId}"]`)).toBeVisible();
 
     const githubIssue = await page.request.get(
       "http://127.0.0.1:3101/repos/LadybirdBrowser/ladybird/issues/7300",

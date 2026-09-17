@@ -353,18 +353,22 @@ impl AdminDatabase {
         .fetch_all(&self.pool)
         .await?;
 
-        let reports = report_rows
+        let mut reports = report_rows
             .into_iter()
             .map(|row| ReportSummary {
                 id: row.get("id"),
+                title: String::new(),
                 kind: row.get("kind"),
                 client_version: row.get("client_version"),
                 build: row.get("build"),
+                platform: None,
+                architecture: None,
                 issue_id: row.get("issue_id"),
                 confirmed_at: row.get("confirmed_at"),
                 created_at: row.get("created_at"),
             })
-            .collect();
+            .collect::<Vec<_>>();
+        self.populate_report_titles(&mut reports).await?;
 
         let events = self.audit_events(issue_id.0).await?;
 

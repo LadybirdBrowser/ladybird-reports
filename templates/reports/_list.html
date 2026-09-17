@@ -9,8 +9,7 @@
             <table class="report-table">
             <thead>
                 <tr>
-                    <th>Report type</th>
-                    <th>Version and build</th>
+                    <th>Report</th>
                     <th>State</th>
                     <th>Received</th>
                 </tr>
@@ -18,18 +17,14 @@
             <tbody data-report-rows>
                 {% for report in reports %}
                     <tr>
-                        <td class="report-table-type">
+                        <td class="report-table-report">
                             <a
-                                class="primary-link report-type-link"
+                                class="primary-link report-title-link"
                                 href="/reports/{{ report.id }}"
                             >
-                                {{ report.kind_label }}
+                                {{ report.title }}
                             </a>
-                        </td>
-                        <td class="report-table-version">
-                            <span class="report-mobile-label">Version and build</span>
-                            <strong>{{ report.client_version }}</strong>
-                            <span class="quiet">{{ report.build }}</span>
+                            <span class="report-table-metadata">{{ report.metadata }}</span>
                         </td>
                         <td class="report-table-state">
                             <span class="badge badge-{{ report.state_tone }}">
@@ -37,7 +32,6 @@
                             </span>
                         </td>
                         <td class="quiet report-received-at report-table-received">
-                            <span class="report-mobile-label">Received</span>
                             {{ report.received_at }}
                         </td>
                     </tr>

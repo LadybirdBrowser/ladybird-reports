@@ -49,6 +49,14 @@ links a replacement. Old GitHub links remain searchable through aliases.
 The web layer translates requests into application calls. Public handlers return
 JSON. Admin handlers construct typed view models rendered by Askama templates.
 
+## Report titles
+
+Report titles are generated when reports are read, including for older reports.
+The first parsed stack frame supplies a shortened function name when possible;
+otherwise the title uses report type and available process, platform, or version
+information. The original stack text is unchanged. The same generated title is
+suggested when creating a GitHub issue.
+
 ## Stack signatures
 
 The public API stores stack trace text exactly as submitted in `report_fields`.

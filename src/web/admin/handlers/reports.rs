@@ -8,7 +8,7 @@ use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    application::{IssueProposal, propose_issue},
+    application::{IssueProposal, propose_issue, title_for_report},
     domain::{
         AttachmentId, IssueId, ParsedStackTrace, ReportId, ReportSearch, filter_expression,
         parse_stack_trace, stack_fingerprint,
@@ -64,9 +64,8 @@ pub struct ReportListTemplate {
 
 pub struct ReportRow {
     id: ReportId,
-    kind_label: String,
-    client_version: String,
-    build: String,
+    title: String,
+    metadata: String,
     state_label: &'static str,
     state_tone: &'static str,
     received_at: String,
@@ -129,7 +128,7 @@ pub struct ReportTemplate {
 
 pub struct ReportView {
     id: ReportId,
-    client_version: String,
+    title: String,
     overview: Vec<OverviewField>,
     is_assigned: bool,
     is_confirmed: bool,
@@ -245,9 +244,12 @@ async fn load_report_list(
 
             ReportRow {
                 id: report.id,
-                kind_label: report_kind_label(&report.kind).into(),
-                client_version: report.client_version,
-                build: report.build,
+                title: report.title,
+                metadata: report_metadata(
+                    report.platform.as_deref(),
+                    report.architecture.as_deref(),
+                    &report.client_version,
+                ),
                 state_label,
                 state_tone,
                 received_at: report.created_at.format("%d %b %Y, %H:%M UTC").to_string(),
@@ -279,15 +281,15 @@ pub async fn search_options(
                 (None, Some(_)) => ("Confirmed".into(), "confirmed"),
                 (None, None) => ("Needs triage".into(), "triage"),
             };
-            let description = if report.build.trim().is_empty() {
-                report.client_version
-            } else {
-                format!("{} · {}", report.client_version, report.build)
-            };
+            let description = report_metadata(
+                report.platform.as_deref(),
+                report.architecture.as_deref(),
+                &report.client_version,
+            );
 
             EntitySearchOption {
                 value: report.id.to_string(),
-                label: report_kind_label(&report.kind).into(),
+                label: report.title,
                 description,
                 identifier: report.id.to_string(),
                 badge,
@@ -392,6 +394,17 @@ fn report_kind_label(kind: &str) -> &str {
     }
 }
 
+fn report_metadata(platform: Option<&str>, architecture: Option<&str>, version: &str) -> String {
+    [platform, architecture, Some(version)]
+        .into_iter()
+        .flatten()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| value.chars().take(64).collect::<String>())
+        .collect::<Vec<_>>()
+        .join(" · ")
+}
+
 pub async fn show(
     State(state): State<AdminState>,
     Extension(session): Extension<Session>,
@@ -434,6 +447,7 @@ pub async fn show(
             }),
         None => None,
     };
+    let title = title_for_report(&details);
     let issue_proposal = propose_issue(&details);
     let platform = field_string(&details.fields, "platform").unwrap_or_else(|| "Unknown".into());
     let architecture =
@@ -504,7 +518,7 @@ pub async fn show(
 
     let report_view = ReportView {
         id: details.report.id,
-        client_version: details.report.client_version,
+        title,
         overview,
         is_assigned: details.report.issue_id.is_some(),
         is_confirmed: details.report.confirmed_at.is_some(),

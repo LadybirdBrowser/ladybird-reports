@@ -1,7 +1,12 @@
+use std::collections::HashMap;
+
 use sqlx::{Postgres, QueryBuilder, Row};
 
 use crate::{
-    domain::{AttachmentId, IssueId, ReportId},
+    domain::{
+        AttachmentId, IssueId, REPORT_TITLE_STACK_CHARACTERS, ReportId, ReportTitleInput,
+        generate_report_title,
+    },
     error::{AppError, Result},
     infrastructure::database::AdminDatabase,
 };
@@ -10,6 +15,26 @@ use super::{
     AuditEvent, BlockReportSourceOutcome, ReportDetails, ReportQuery, ReportRecord,
     ReportSearchResult, ReportSummary, StoredAttachment, StoredDiagnosticField,
 };
+
+#[derive(Default)]
+struct TitleFields {
+    stack_trace: Option<String>,
+    process: Option<String>,
+    platform: Option<String>,
+    architecture: Option<String>,
+}
+
+impl TitleFields {
+    fn title(&self, kind: &str, client_version: &str) -> String {
+        generate_report_title(ReportTitleInput {
+            kind,
+            client_version,
+            stack_trace: self.stack_trace.as_deref(),
+            process: self.process.as_deref(),
+            platform: self.platform.as_deref(),
+        })
+    }
+}
 
 impl AdminDatabase {
     pub async fn attachment(
@@ -103,19 +128,23 @@ impl AdminDatabase {
             .push(")) ORDER BY reports.created_at DESC, reports.id DESC LIMIT 51");
 
         let rows = sql.build().fetch_all(&self.pool).await?;
-
-        Ok(rows
+        let mut reports = rows
             .into_iter()
             .map(|row| ReportSummary {
                 id: row.get("id"),
+                title: String::new(),
                 kind: row.get("kind"),
                 client_version: row.get("client_version"),
                 build: row.get("build"),
+                platform: None,
+                architecture: None,
                 issue_id: row.get("issue_id"),
                 confirmed_at: row.get("confirmed_at"),
                 created_at: row.get("created_at"),
             })
-            .collect())
+            .collect::<Vec<_>>();
+        self.populate_report_titles(&mut reports).await?;
+        Ok(reports)
     }
 
     pub async fn search_reports(&self, search: &str) -> Result<Vec<ReportSearchResult>> {
@@ -154,19 +183,107 @@ impl AdminDatabase {
         .bind(search)
         .fetch_all(&self.pool)
         .await?;
+        let ids = rows
+            .iter()
+            .map(|row| row.get("id"))
+            .collect::<Vec<ReportId>>();
+        let mut title_fields = self.report_title_fields(&ids).await?;
 
         Ok(rows
             .into_iter()
-            .map(|row| ReportSearchResult {
-                id: row.get("id"),
-                kind: row.get("kind"),
-                client_version: row.get("client_version"),
-                build: row.get("build"),
-                issue_title: row.get("issue_title"),
-                confirmed_at: row.get("confirmed_at"),
-                created_at: row.get("created_at"),
+            .map(|row| {
+                let id = row.get("id");
+                let kind: String = row.get("kind");
+                let client_version: String = row.get("client_version");
+                let fields = title_fields.remove(&id).unwrap_or_default();
+                let title = fields.title(&kind, &client_version);
+
+                ReportSearchResult {
+                    id,
+                    title,
+                    kind,
+                    client_version,
+                    build: row.get("build"),
+                    platform: fields.platform,
+                    architecture: fields.architecture,
+                    issue_title: row.get("issue_title"),
+                    confirmed_at: row.get("confirmed_at"),
+                    created_at: row.get("created_at"),
+                }
             })
             .collect())
+    }
+
+    async fn report_title_fields(
+        &self,
+        ids: &[ReportId],
+    ) -> Result<HashMap<ReportId, TitleFields>> {
+        if ids.is_empty() {
+            return Ok(HashMap::new());
+        }
+
+        let ids = ids.iter().map(|id| id.0).collect::<Vec<_>>();
+        let rows = sqlx::query(
+            "SELECT fields.report_id, fields.key, fields.kind,
+                CASE
+                    WHEN fields.kind = 'stack_trace'
+                        OR (fields.kind = 'multiline' AND
+                            (fields.key = 'stack' OR definitions.kind = 'stack_trace'))
+                    THEN left(fields.value #>> '{}', $2)
+                    ELSE left(fields.value #>> '{}', 128)
+                END AS text_value,
+                COALESCE(definitions.kind = 'stack_trace', false) AS configured_stack
+             FROM report_fields AS fields
+             LEFT JOIN field_definitions AS definitions ON definitions.key = fields.key
+             WHERE fields.report_id = ANY($1)
+                AND (fields.key IN ('platform', 'architecture', 'process', 'stack')
+                    OR fields.kind = 'stack_trace'
+                    OR definitions.kind = 'stack_trace')",
+        )
+        .bind(ids)
+        .bind(REPORT_TITLE_STACK_CHARACTERS as i32)
+        .fetch_all(&self.pool)
+        .await?;
+
+        let mut fields = HashMap::<ReportId, TitleFields>::new();
+        for row in rows {
+            let report_id = row.get("report_id");
+            let key: String = row.get("key");
+            let kind: String = row.get("kind");
+            let text: Option<String> = row.get("text_value");
+            let configured_stack: bool = row.get("configured_stack");
+            let entry = fields.entry(report_id).or_default();
+
+            match key.as_str() {
+                "platform" => entry.platform = text,
+                "architecture" => entry.architecture = text,
+                "process" => entry.process = text,
+                _ if kind == "stack_trace"
+                    || (kind == "multiline" && (key == "stack" || configured_stack)) =>
+                {
+                    if entry.stack_trace.is_none() || key == "stack" {
+                        entry.stack_trace = text;
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        Ok(fields)
+    }
+
+    pub(super) async fn populate_report_titles(&self, reports: &mut [ReportSummary]) -> Result<()> {
+        let ids = reports.iter().map(|report| report.id).collect::<Vec<_>>();
+        let mut title_fields = self.report_title_fields(&ids).await?;
+
+        for report in reports {
+            let fields = title_fields.remove(&report.id).unwrap_or_default();
+            report.title = fields.title(&report.kind, &report.client_version);
+            report.platform = fields.platform;
+            report.architecture = fields.architecture;
+        }
+
+        Ok(())
     }
 
     pub async fn report_details(&self, report_id: ReportId) -> Result<Option<ReportDetails>> {
