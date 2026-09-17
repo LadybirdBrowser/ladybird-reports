@@ -502,6 +502,14 @@ test.describe("authenticated management UI", () => {
     await expect(page.getByRole("heading", { name: "Staging retention" })).toBeVisible();
     await expect(page.getByText("Seconds since the staging directory was last modified.")).toBeVisible();
     await expect(page.getByText("Select a setting", { exact: true })).toBeHidden();
+
+    await editor.evaluate((element: HTMLTextAreaElement) => {
+      const offset = element.value.indexOf('"github_authorization_team"');
+      element.setSelectionRange(offset, offset);
+      element.dispatchEvent(new Event("select", { bubbles: true }));
+    });
+    await expect(page.getByRole("heading", { name: "GitHub access team" })).toBeVisible();
+    await expect(editor).toHaveValue(/"github_authorization_team": "LadybirdBrowser\/maintainers"/);
   });
 
   test("opens account actions in a popover", async ({ page }) => {

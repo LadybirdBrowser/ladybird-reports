@@ -67,6 +67,17 @@ impl AdminDatabase {
         .execute(&mut *transaction)
         .await?;
 
+        if changed
+            .iter()
+            .any(|path| path == "github_authorization_team")
+        {
+            // An authorization policy change must apply to sessions that were
+            // verified under the old team, including the current session.
+            sqlx::query("DELETE FROM sessions")
+                .execute(&mut *transaction)
+                .await?;
+        }
+
         sqlx::query(
             "INSERT INTO audit_events (actor, action, details)
              VALUES ($1, 'configuration.update', $2)",

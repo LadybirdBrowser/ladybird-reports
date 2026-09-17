@@ -27,6 +27,10 @@ only read-only organization membership and read-write issue permissions. Every
 GitHub API action is therefore limited by both the app's permissions and the signed-in
 user's permissions. The login flow separately verifies active membership in the
 configured authorization team.
+The team is stored as `github_authorization_team` in the database-backed runtime
+configuration, using an `organization/team-slug` value. Its initial value is
+`LadybirdBrowser/maintainers`. Updating the team revokes current sessions; users
+must sign in again and pass the new team's membership check.
 
 GitHub is authoritative for an issue's title, description, and open or closed
 state. The admin service accepts signed GitHub App issue webhooks and refreshes

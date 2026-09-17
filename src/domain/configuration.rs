@@ -15,6 +15,8 @@ pub struct RuntimeConfiguration {
     pub public_base_url: String,
     pub admin_base_url: String,
     pub github_repository: String,
+    #[serde(default = "default_github_authorization_team")]
+    pub github_authorization_team: String,
     #[serde(default)]
     pub github_reports_issue_field_id: Option<i64>,
     pub trusted_proxies: Vec<IpNet>,
@@ -85,6 +87,7 @@ impl Default for RuntimeConfiguration {
             public_base_url: "https://reports.app.ladybird.org".into(),
             admin_base_url: "http://localhost:3000".into(),
             github_repository: "LadybirdBrowser/ladybird".into(),
+            github_authorization_team: default_github_authorization_team(),
             github_reports_issue_field_id: None,
             trusted_proxies: Vec::new(),
             limits: IngestionLimits::default(),
@@ -133,6 +136,13 @@ pub const SETTING_DEFINITIONS: &[SettingDefinition] = &[
         "GitHub repository",
         "The repository searched and updated when an internal issue is linked to GitHub.",
         "An owner and repository name, such as LadybirdBrowser/ladybird.",
+    ),
+    setting(
+        "github_authorization_team",
+        "github_authorization_team",
+        "GitHub access team",
+        "Only active members of this GitHub organization team can sign in. Changing it signs out existing sessions.",
+        "Organization and team slug, such as LadybirdBrowser/maintainers.",
     ),
     setting(
         "github_reports_issue_field_id",
@@ -451,6 +461,7 @@ impl RuntimeConfiguration {
         self.validate_public_url()?;
         validate_origin(&self.admin_base_url, "Invalid admin URL")?;
         self.validate_github_repository()?;
+        self.validate_github_authorization_team()?;
         if self.github_reports_issue_field_id.is_some_and(|id| id < 1) {
             return Err(AppError::InvalidRequest("Invalid GitHub Reports field ID"));
         }
@@ -480,6 +491,25 @@ impl RuntimeConfiguration {
 
         if !valid_component(owner) || !valid_component(repository) || components.next().is_some() {
             return Err(AppError::InvalidRequest("Invalid GitHub repository"));
+        }
+
+        Ok(())
+    }
+
+    fn validate_github_authorization_team(&self) -> Result<()> {
+        let mut components = self.github_authorization_team.split('/');
+        let organization = components.next().unwrap_or_default();
+        let team = components.next().unwrap_or_default();
+        let valid_component = |component: &str| {
+            !component.is_empty()
+                && component.len() <= 100
+                && component
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+        };
+
+        if !valid_component(organization) || !valid_component(team) || components.next().is_some() {
+            return Err(AppError::InvalidRequest("Invalid GitHub access team"));
         }
 
         Ok(())
@@ -603,6 +633,10 @@ impl RuntimeConfiguration {
     }
 }
 
+fn default_github_authorization_team() -> String {
+    "LadybirdBrowser/maintainers".into()
+}
+
 fn validate_origin(value: &str, error_message: &'static str) -> Result<()> {
     let url = reqwest::Url::parse(value).map_err(|_| AppError::InvalidRequest(error_message))?;
 
@@ -664,6 +698,28 @@ mod tests {
         configuration.discord.webhook_url =
             Some("https://discord.com/api/webhooks/123/token".into());
         assert!(configuration.validate().is_ok());
+    }
+
+    #[test]
+    fn github_access_team_must_be_an_organization_and_slug() {
+        let mut configuration = RuntimeConfiguration {
+            github_authorization_team: "ExampleOrg/reports-reviewers".into(),
+            ..RuntimeConfiguration::default()
+        };
+        assert!(configuration.validate().is_ok());
+
+        for invalid_team in [
+            "",
+            "ExampleOrg",
+            "ExampleOrg/",
+            "ExampleOrg/team/extra",
+            "https://github.com/orgs/ExampleOrg/teams/reports-reviewers",
+            "ExampleOrg/../team",
+            "ExampleOrg/team?extra=1",
+        ] {
+            configuration.github_authorization_team = invalid_team.into();
+            assert!(configuration.validate().is_err(), "accepted {invalid_team}");
+        }
     }
 
     fn collect_leaf_paths(value: &Value, prefix: &str, paths: &mut BTreeSet<String>) {

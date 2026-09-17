@@ -69,7 +69,11 @@ pub async fn require_session(
 
         state
             .github
-            .verify_maintainer_identity(&access_token, record.github_id)
+            .verify_team_member_identity(
+                &access_token,
+                &configuration.github_authorization_team,
+                record.github_id,
+            )
             .await?;
 
         state

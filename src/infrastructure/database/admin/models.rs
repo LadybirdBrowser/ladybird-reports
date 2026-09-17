@@ -1,4 +1,4 @@
-use chrono::{DateTime, NaiveDate, Utc};
+use chrono::{DateTime, Duration, NaiveDate, Utc};
 use serde_json::Value;
 
 use crate::domain::{
@@ -14,6 +14,16 @@ pub struct SessionRecord {
     pub encrypted_access_token: String,
     pub membership_verified_at: DateTime<Utc>,
     pub expires_at: DateTime<Utc>,
+}
+
+pub struct NewSession<'a> {
+    pub github_id: i64,
+    pub login: &'a str,
+    pub authorized_team: &'a str,
+    pub token_hash: &'a str,
+    pub encrypted_access_token: &'a str,
+    pub csrf_token: &'a str,
+    pub lifetime: Duration,
 }
 
 #[derive(Clone, Debug, Default)]

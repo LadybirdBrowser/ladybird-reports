@@ -1,9 +1,9 @@
-use chrono::{Duration, Utc};
+use chrono::Utc;
 use sqlx::Row;
 
 use crate::{error::Result, infrastructure::database::AdminDatabase};
 
-use super::SessionRecord;
+use super::{NewSession, SessionRecord};
 
 impl AdminDatabase {
     pub async fn store_oauth_state(&self, state_hash: &str, return_to: &str) -> Result<()> {
@@ -31,25 +31,32 @@ impl AdminDatabase {
         .map_err(Into::into)
     }
 
-    pub async fn create_session(
-        &self,
-        github_id: i64,
-        login: &str,
-        token_hash: &str,
-        encrypted_access_token: &str,
-        csrf_token: &str,
-        lifetime: Duration,
-    ) -> Result<()> {
-        let expires_at = Utc::now() + lifetime;
+    pub async fn create_session(&self, session: NewSession<'_>) -> Result<()> {
+        let expires_at = Utc::now() + session.lifetime;
         let mut transaction = self.pool.begin().await?;
+
+        // Hold a read lock on the policy until the session is committed. A
+        // concurrent team change takes the write lock and revokes sessions,
+        // so a login verified under the old team cannot slip in afterward.
+        let active_team: String = sqlx::query_scalar(
+            "SELECT value ->> 'github_authorization_team'
+             FROM runtime_configuration
+             WHERE singleton = true
+             FOR SHARE",
+        )
+        .fetch_one(&mut *transaction)
+        .await?;
+        if active_team != session.authorized_team {
+            return Err(crate::error::AppError::PermissionDenied("Access denied"));
+        }
 
         sqlx::query(
             "INSERT INTO maintainers (github_id, login)
              VALUES ($1, $2)
              ON CONFLICT (github_id) DO UPDATE SET login = excluded.login",
         )
-        .bind(github_id)
-        .bind(login)
+        .bind(session.github_id)
+        .bind(session.login)
         .execute(&mut *transaction)
         .await?;
 
@@ -63,10 +70,10 @@ impl AdminDatabase {
              )
              VALUES ($1, $2, $3, $4, $5)",
         )
-        .bind(token_hash)
-        .bind(github_id)
-        .bind(encrypted_access_token)
-        .bind(csrf_token)
+        .bind(session.token_hash)
+        .bind(session.github_id)
+        .bind(session.encrypted_access_token)
+        .bind(session.csrf_token)
         .bind(expires_at)
         .execute(&mut *transaction)
         .await?;
@@ -75,7 +82,7 @@ impl AdminDatabase {
             "INSERT INTO audit_events (actor, action)
              VALUES ($1, 'session.signed_in')",
         )
-        .bind(github_id)
+        .bind(session.github_id)
         .execute(&mut *transaction)
         .await?;
 

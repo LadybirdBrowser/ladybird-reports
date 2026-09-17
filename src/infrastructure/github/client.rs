@@ -188,8 +188,13 @@ impl GithubClient {
             .await
     }
 
-    pub async fn verify_maintainer(&self, token: &str, login: &str) -> Result<()> {
-        let path = format!("/orgs/LadybirdBrowser/teams/maintainers/memberships/{login}");
+    pub async fn verify_team_membership(
+        &self,
+        token: &str,
+        authorization_team: &str,
+        login: &str,
+    ) -> Result<()> {
+        let path = team_membership_path(authorization_team, login);
         let membership: TeamMembership = self
             .request_json(Method::GET, &path, token, Option::<&()>::None)
             .await
@@ -207,13 +212,19 @@ impl GithubClient {
         Ok(())
     }
 
-    pub async fn verify_maintainer_identity(&self, token: &str, github_id: i64) -> Result<()> {
+    pub async fn verify_team_member_identity(
+        &self,
+        token: &str,
+        authorization_team: &str,
+        github_id: i64,
+    ) -> Result<()> {
         let user = self.current_user(token).await?;
         if user.id != github_id {
             return Err(AppError::PermissionDenied("Access denied"));
         }
 
-        self.verify_maintainer(token, &user.login).await
+        self.verify_team_membership(token, authorization_team, &user.login)
+            .await
     }
 
     pub async fn issue(&self, token: &str, repository: &str, number: i64) -> Result<GithubIssue> {
@@ -370,6 +381,13 @@ impl GithubClient {
     }
 }
 
+fn team_membership_path(authorization_team: &str, login: &str) -> String {
+    let (organization, team_slug) = authorization_team
+        .split_once('/')
+        .expect("validated GitHub access team has an organization and slug");
+    format!("/orgs/{organization}/teams/{team_slug}/memberships/{login}")
+}
+
 async fn decode_github_response<T: DeserializeOwned>(response: reqwest::Response) -> Result<T> {
     match response.status() {
         status if status.is_success() => response
@@ -393,7 +411,15 @@ async fn decode_github_response<T: DeserializeOwned>(response: reqwest::Response
 mod tests {
     use std::collections::HashMap;
 
-    use super::GithubClient;
+    use super::{GithubClient, team_membership_path};
+
+    #[test]
+    fn membership_path_uses_the_configured_team() {
+        assert_eq!(
+            team_membership_path("ExampleOrg/reports-reviewers", "reviewer"),
+            "/orgs/ExampleOrg/teams/reports-reviewers/memberships/reviewer"
+        );
+    }
 
     #[test]
     fn authorization_url_does_not_request_legacy_oauth_scopes() {

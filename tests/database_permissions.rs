@@ -15,7 +15,7 @@ use ladybird_reports::{
     infrastructure::{
         SecretCipher,
         attachments::FileAttachmentStore,
-        database::{AdminDatabase, IngestDatabase, initialize_database},
+        database::{AdminDatabase, IngestDatabase, NewSession, initialize_database},
         github::{GithubIssue, GithubIssueState},
     },
     web::public::{PublicState, router},
@@ -293,16 +293,23 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
         .await
         .expect("create maintainer for moderation action");
 
+    let original_team = admin_database
+        .configuration()
+        .await
+        .expect("load original access team")
+        .github_authorization_team;
+
     let integration_session_hash = "9".repeat(64);
     admin_database
-        .create_session(
-            999,
-            "integration-test",
-            &integration_session_hash,
-            "encrypted-token",
-            "integration-csrf",
-            Duration::minutes(5),
-        )
+        .create_session(NewSession {
+            github_id: 999,
+            login: "integration-test",
+            authorized_team: &original_team,
+            token_hash: &integration_session_hash,
+            encrypted_access_token: "encrypted-token",
+            csrf_token: "integration-csrf",
+            lifetime: Duration::minutes(5),
+        })
         .await
         .expect("create audited session");
     admin_database
@@ -320,6 +327,66 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
     .await
     .expect("count session audit events");
     assert_eq!(session_audit_count, 2);
+
+    let team_change_session_hash = "8".repeat(64);
+    admin_database
+        .create_session(NewSession {
+            github_id: 999,
+            login: "integration-test",
+            authorized_team: &original_team,
+            token_hash: &team_change_session_hash,
+            encrypted_access_token: "encrypted-token",
+            csrf_token: "integration-csrf",
+            lifetime: Duration::minutes(5),
+        })
+        .await
+        .expect("create session under original team policy");
+
+    let mut configuration = admin_database
+        .configuration()
+        .await
+        .expect("load runtime configuration");
+    configuration.github_authorization_team = "ExampleOrg/reports-reviewers".into();
+    admin_database
+        .update_configuration(&configuration, 999)
+        .await
+        .expect("change access team");
+    assert!(
+        admin_database
+            .find_session(&team_change_session_hash)
+            .await
+            .expect("look up former session")
+            .is_none(),
+        "changing the access team must revoke previously verified sessions"
+    );
+    assert_eq!(
+        admin_database
+            .configuration()
+            .await
+            .expect("load updated configuration")
+            .github_authorization_team,
+        "ExampleOrg/reports-reviewers"
+    );
+    assert!(
+        admin_database
+            .create_session(NewSession {
+                github_id: 999,
+                login: "integration-test",
+                authorized_team: &original_team,
+                token_hash: &"7".repeat(64),
+                encrypted_access_token: "encrypted-token",
+                csrf_token: "integration-csrf",
+                lifetime: Duration::minutes(5),
+            })
+            .await
+            .is_err(),
+        "a login verified under the old team must be rejected"
+    );
+    configuration.github_authorization_team = original_team;
+    admin_database
+        .update_configuration(&configuration, 999)
+        .await
+        .expect("restore access team for browser tests");
 
     attachments
         .remove_report(report_id)

@@ -10,7 +10,7 @@ use serde::Deserialize;
 
 use crate::{
     error::{AppError, Result},
-    infrastructure::{hash_secret, random_token},
+    infrastructure::{database::NewSession, hash_secret, random_token},
 };
 
 use super::{
@@ -138,10 +138,15 @@ pub async fn github_callback(
 
     let token = state.github.exchange_code(&callback.code).await?;
     let user = state.github.current_user(&token.access_token).await?;
+    let configuration = state.database.configuration().await?;
 
     state
         .github
-        .verify_maintainer(&token.access_token, &user.login)
+        .verify_team_membership(
+            &token.access_token,
+            &configuration.github_authorization_team,
+            &user.login,
+        )
         .await?;
 
     let session_token = random_token();
@@ -150,20 +155,22 @@ pub async fn github_callback(
         .expires_in
         .unwrap_or(8 * 60 * 60)
         .clamp(60, 8 * 60 * 60);
+    let session_token_hash = hash_secret(&session_token);
+    let encrypted_access_token = state.secret_cipher.encrypt(&token.access_token)?;
 
     state
         .database
-        .create_session(
-            user.id,
-            &user.login,
-            &hash_secret(&session_token),
-            &state.secret_cipher.encrypt(&token.access_token)?,
-            &csrf_token,
-            Duration::seconds(lifetime_seconds),
-        )
+        .create_session(NewSession {
+            github_id: user.id,
+            login: &user.login,
+            authorized_team: &configuration.github_authorization_team,
+            token_hash: &session_token_hash,
+            encrypted_access_token: &encrypted_access_token,
+            csrf_token: &csrf_token,
+            lifetime: Duration::seconds(lifetime_seconds),
+        })
         .await?;
 
-    let configuration = state.database.configuration().await?;
     let secure = configuration.admin_base_url.starts_with("https:");
     let return_to = validated_return_to(&return_to).unwrap_or("/");
     let mut response = Redirect::to(return_to).into_response();
