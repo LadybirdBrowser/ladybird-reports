@@ -102,6 +102,19 @@ fn parse_frame(line: &str) -> Option<StackTraceRow> {
     let number = rest.get(..number_length)?.parse().ok()?;
     let mut rest = rest.get(number_length..)?.trim_start();
 
+    if rest.eq_ignore_ascii_case("unavailable") {
+        return Some(StackTraceRow {
+            number: Some(number),
+            top: number == 0,
+            symbol: "Unavailable".into(),
+            module: "—".into(),
+            address: "—".into(),
+            build_id: String::new(),
+            raw: String::new(),
+            relevant: false,
+        });
+    }
+
     let first = rest.split_whitespace().next()?;
     let build_id = if first.len() >= 16 && first.bytes().all(|byte| byte.is_ascii_hexdigit()) {
         rest = rest.get(first.len()..)?.trim_start();
@@ -164,7 +177,8 @@ mod tests {
         assert_eq!(parsed.rows[0].module, "WebContent");
         assert!(parsed.rows[0].symbol.contains("debug_request"));
         assert_eq!(parsed.rows[1].address, "0x1f3c3");
-        assert_eq!(parsed.rows[5].raw, "#5 unavailable");
+        assert_eq!(parsed.rows[5].number, Some(5));
+        assert_eq!(parsed.rows[5].symbol, "Unavailable");
         assert_eq!(parsed.frame_keys.len(), 1);
     }
 
