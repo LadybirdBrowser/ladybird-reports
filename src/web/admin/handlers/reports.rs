@@ -461,21 +461,6 @@ pub async fn show(
         OverviewField::searchable("Architecture", &architecture, "architecture", &architecture),
     ];
 
-    // Older clients only supplied the combined build envelope. Newer clients
-    // expose its parts as regular fields below, so avoid repeating them here.
-    if !details
-        .fields
-        .iter()
-        .any(|field| field.key == "build_configuration")
-    {
-        overview.push(OverviewField::searchable(
-            "Build",
-            &details.report.build,
-            "build",
-            &details.report.build,
-        ));
-    }
-
     overview.extend([
         OverviewField {
             label: "Submitted",
@@ -500,6 +485,22 @@ pub async fn show(
             monospace: true,
         },
     ]);
+
+    // Older clients only supplied the combined build envelope. Put that long
+    // value on its own row, after the shorter submission details. Newer clients
+    // expose its parts as regular fields below, so avoid repeating them here.
+    if !details
+        .fields
+        .iter()
+        .any(|field| field.key == "build_configuration")
+    {
+        overview.push(OverviewField::searchable(
+            "Build",
+            &details.report.build,
+            "build",
+            &details.report.build,
+        ));
+    }
 
     let report_view = ReportView {
         id: details.report.id,

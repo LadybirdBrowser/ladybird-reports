@@ -1389,6 +1389,10 @@ tbody tr:hover {
     border-bottom: 0;
 }
 
+.definition-list div:nth-last-child(2):nth-child(even) {
+    border-bottom: 1px solid var(--border);
+}
+
 .definition-list div:last-child:nth-child(odd) {
     grid-column: 1 / -1;
     border-right: 0;

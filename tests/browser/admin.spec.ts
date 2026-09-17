@@ -166,6 +166,37 @@ test.describe("authenticated management UI", () => {
     }
   });
 
+  test("keeps legacy build details on a complete final overview row", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto("/");
+
+    const legacyReport = page.locator(".report-table tbody tr")
+      .filter({ hasText: "macOS · arm64 · Release" }).first();
+    await legacyReport.getByRole("link", { name: "Crash report" }).click();
+
+    const fields = page.locator(".definition-list > div");
+    await expect(fields).toHaveCount(7);
+    await expect(fields.nth(4).locator("dt")).toHaveText("Submitted");
+    await expect(fields.nth(5).locator("dt")).toHaveText("Source IP address");
+    await expect(fields.nth(6).locator("dt")).toHaveText("Build");
+
+    const submitted = await fields.nth(4).boundingBox();
+    const sourceIp = await fields.nth(5).boundingBox();
+    const build = await fields.nth(6).boundingBox();
+    expect(submitted).not.toBeNull();
+    expect(sourceIp).not.toBeNull();
+    expect(build).not.toBeNull();
+    expect(sourceIp!.x).toBeGreaterThan(submitted!.x);
+    expect(build!.width).toBeGreaterThan(submitted!.width + sourceIp!.width - 2);
+    expect(await fields.nth(5).evaluate((field) =>
+      getComputedStyle(field).borderBottomWidth,
+    )).toBe("1px");
+
+    await page.setViewportSize({ width: 390, height: 800 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth))
+      .toBeLessThanOrEqual(390);
+  });
+
   test("sets security headers and revalidates static assets", async ({ page, request }) => {
     const pageResponse = await page.goto("/settings");
     const pageHeaders = pageResponse?.headers() ?? {};
