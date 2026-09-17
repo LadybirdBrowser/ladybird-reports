@@ -607,6 +607,13 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
         .execute(&admin_pool)
         .await
         .expect("represent a previously confirmed unlinked report");
+    assert!(
+        admin_database
+            .set_report_state(second_triage_report, "triage", 999)
+            .await
+            .is_err(),
+        "an unlinked confirmed report cannot be manually returned to triage"
+    );
 
     let block_without_rejection = admin_database
         .block_report_source(other_triage_report, 999, false)

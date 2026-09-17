@@ -562,6 +562,11 @@ impl AdminDatabase {
             transaction.commit().await?;
             return Ok(None);
         }
+        if matches!(target, "triage" | "confirmed") && previous.0 != "rejected" {
+            return Err(AppError::InvalidRequest(
+                "Only rejected reports can be restored",
+            ));
+        }
         if target == "confirmed" && previous.1.is_none() {
             return Err(AppError::InvalidRequest(
                 "Link the report to an issue before confirming it",
