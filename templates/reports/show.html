@@ -68,42 +68,6 @@
                 {% endfor %}
             </section>
 
-            {% if !similar_reports.is_empty() %}
-                <section class="card" aria-labelledby="similar-reports-title">
-                    <div class="card-header">
-                        <div>
-                            <p class="eyebrow">Stack signatures</p>
-                            <h2 id="similar-reports-title">Possible matches</h2>
-                        </div>
-                    </div>
-                    <div class="similar-report-list">
-                        {% for candidate in similar_reports %}
-                            <article class="similar-report">
-                                <a class="similar-report-main" href="/reports/{{ candidate.report_id }}">
-                                    {% if candidate.issue_id.is_some() %}
-                                        <strong>{{ candidate.issue_title.as_deref().unwrap_or("Issue") }}</strong>
-                                    {% else %}
-                                        <strong>Unassigned report</strong>
-                                    {% endif %}
-                                    <p>
-                                        {% if candidate.exact %}Exact signature{% else %}{{ candidate.matching_frames }} matching frames{% endif %}
-                                        · {{ candidate.client_version }}
-                                        · {{ candidate.submitted_at }}
-                                    </p>
-                                </a>
-                                {% if let Some(issue_id) = candidate.issue_id %}
-                                    <form method="post" action="/reports/{{ report.id }}/issue">
-                                        <input type="hidden" name="csrf" value="{{ navigation.as_ref().unwrap().csrf_token }}">
-                                        <input type="hidden" name="issue_selection" value="issue:{{ issue_id }}">
-                                        <button class="button-secondary" type="submit">Add to issue</button>
-                                    </form>
-                                {% endif %}
-                            </article>
-                        {% endfor %}
-                    </div>
-                </section>
-            {% endif %}
-
             <section class="card" aria-labelledby="attachments-title">
                 <div class="card-header">
                     <h2 id="attachments-title">Attachments</h2>

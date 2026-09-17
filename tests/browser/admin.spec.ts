@@ -109,21 +109,6 @@ test.describe("authenticated management UI", () => {
     })).toBeLessThan(12);
     await expect(page.locator(".stack-frame-table").getByRole("row").first()).toBeVisible();
     await expect(page.getByText("Core::ThreadEventQueue::process()", { exact: true })).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Possible matches" })).toBeVisible();
-    const possibleMatch = page.locator(".similar-report").filter({
-      hasText: "Intermittent navigation timeout",
-    });
-    await expect(possibleMatch.locator(".similar-report-main"))
-      .toHaveAttribute("href", /^\/reports\//);
-    await expect(possibleMatch).toContainText(/\d{2} \w{3} \d{4}, \d{2}:\d{2} UTC/);
-    await possibleMatch.scrollIntoViewIfNeeded();
-    expect(await possibleMatch.evaluate((row) => {
-      const bounds = row.getBoundingClientRect();
-      return document.elementFromPoint(bounds.left + 6, bounds.top + 6)
-        ?.closest("a")?.classList.contains("similar-report-main");
-    })).toBe(true);
-    await expect(page.getByText("Exact signature").first()).toBeVisible();
-    await expect(page.getByRole("button", { name: "Add to issue" })).toBeVisible();
     await expect(page.locator(".badge-triage")).toHaveText("Needs triage");
     await page.getByLabel("Show raw").check();
     await expect(page.locator(".stack-raw-text"))
@@ -770,6 +755,10 @@ test.describe("authenticated management UI", () => {
     expect((await deliverWebhook("deleted")).status()).toBe(204);
     await page.goto(`/issues/${trackedIssueId}`);
     await expect(page.getByText("Needs attention", { exact: true })).toBeVisible();
+    const matches = page.getByRole("region", { name: "Potential matches" });
+    await expect(matches.getByRole("link", { name: /WebContent::/ }).first())
+      .toBeVisible();
+    await expect(matches.getByRole("button", { name: /Link report/ })).toHaveCount(0);
     const attentionBadge = page.locator(".page-header .badge-warning");
     expect(await attentionBadge.evaluate((badge) => badge.getClientRects().length)).toBe(1);
     expect(await attentionBadge.evaluate((badge) =>

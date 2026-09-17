@@ -1,5 +1,3 @@
-use std::collections::HashSet;
-
 use sqlx::Row;
 
 use crate::{
@@ -8,7 +6,7 @@ use crate::{
     infrastructure::database::AdminDatabase,
 };
 
-use super::{ReportSummary, SimilarReport};
+use super::ReportSummary;
 
 impl AdminDatabase {
     pub async fn issue_signature_matches(&self, issue_id: IssueId) -> Result<Vec<ReportSummary>> {
@@ -327,89 +325,6 @@ impl AdminDatabase {
 
         Ok(())
     }
-
-    pub async fn similar_reports(&self, report_id: ReportId) -> Result<Vec<SimilarReport>> {
-        let rows = sqlx::query(
-            "WITH source AS (
-                SELECT fingerprint, frame_keys
-                FROM report_stack_signatures
-                WHERE report_id = $1 AND algorithm_version = $2
-                    AND cardinality(frame_keys) >= 1
-                ORDER BY field_key = 'stack' DESC, field_key
-                LIMIT 1
-             )
-             SELECT candidates.report_id, candidates.fingerprint,
-                    candidates.frame_keys, source.fingerprint AS source_fingerprint,
-                    source.frame_keys AS source_frames,
-                    reports.issue_id, issues.title AS issue_title,
-                    reports.client_version, reports.created_at
-             FROM source
-             JOIN report_stack_signatures AS candidates
-                ON candidates.report_id <> $1
-                AND candidates.algorithm_version = $2
-                AND (candidates.fingerprint = source.fingerprint
-                    OR candidates.frame_keys && source.frame_keys)
-             JOIN reports ON reports.id = candidates.report_id
-             JOIN reports AS original ON original.id = $1
-             LEFT JOIN issues ON issues.id = reports.issue_id
-             WHERE reports.kind = original.kind
-                AND reports.storage_state = 'ready'
-                AND reports.state <> 'rejected'
-                AND (reports.issue_id IS NULL
-                    OR (issues.state <> 'rejected'
-                        AND issues.merged_into IS NULL
-                        AND issues.resolved_at IS NULL
-                        AND issues.github_state IN ('open', 'unknown')))
-             ORDER BY candidates.fingerprint = source.fingerprint DESC,
-                      reports.created_at DESC
-             LIMIT 200",
-        )
-        .bind(report_id)
-        .bind(STACK_SIGNATURE_VERSION)
-        .fetch_all(&self.pool)
-        .await?;
-
-        let mut matches = Vec::new();
-        for row in rows {
-            let source_frames: Vec<String> = row.get("source_frames");
-            let candidate_frames: Vec<String> = row.get("frame_keys");
-            let source_fingerprint: Option<String> = row.get("source_fingerprint");
-            let candidate_fingerprint: Option<String> = row.get("fingerprint");
-            let exact = source_fingerprint.is_some() && source_fingerprint == candidate_fingerprint;
-            let (matching_frames, score) = compare_frames(&source_frames, &candidate_frames);
-            if !exact && matching_frames < 2 {
-                continue;
-            }
-
-            matches.push(SimilarReport {
-                report_id: row.get("report_id"),
-                issue_id: row.get("issue_id"),
-                issue_title: row.get("issue_title"),
-                client_version: row.get("client_version"),
-                created_at: row.get("created_at"),
-                exact,
-                matching_frames,
-                score: if exact { 100 } else { score },
-            });
-        }
-
-        matches.sort_by(|left, right| {
-            right
-                .score
-                .cmp(&left.score)
-                .then_with(|| right.created_at.cmp(&left.created_at))
-        });
-
-        // Several reports can support one issue; show its best example once.
-        let mut seen_issues = HashSet::<IssueId>::new();
-        matches.retain(|candidate| {
-            candidate
-                .issue_id
-                .is_none_or(|issue_id| seen_issues.insert(issue_id))
-        });
-        matches.truncate(8);
-        Ok(matches)
-    }
 }
 
 struct PendingStackTrace {
@@ -420,43 +335,4 @@ struct PendingStackTrace {
     signal: Option<String>,
     process: Option<String>,
     auto_match_eligible: bool,
-}
-
-fn compare_frames(left: &[String], right: &[String]) -> (usize, usize) {
-    let left = &left[..left.len().min(12)];
-    let right = &right[..right.len().min(12)];
-    let mut previous = vec![0; right.len() + 1];
-    let mut current = vec![0; right.len() + 1];
-    for left_frame in left {
-        for (index, right_frame) in right.iter().enumerate() {
-            current[index + 1] = if left_frame == right_frame {
-                previous[index] + 1
-            } else {
-                current[index].max(previous[index + 1])
-            };
-        }
-        std::mem::swap(&mut current, &mut previous);
-        current.fill(0);
-    }
-    let matching = previous[right.len()];
-    let prefix = left
-        .iter()
-        .zip(right.iter())
-        .take_while(|(left, right)| left == right)
-        .count();
-    let score = (matching * 70 / left.len().max(right.len()).max(1) + prefix * 30 / 5).min(99);
-    (matching, score)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::compare_frames;
-
-    #[test]
-    fn ranks_ordered_frames_and_rewards_matching_top_frames() {
-        let source = vec!["a".into(), "b".into(), "c".into()];
-        let close = vec!["a".into(), "b".into(), "different".into()];
-        let shifted = vec!["different".into(), "a".into(), "b".into()];
-        assert!(compare_frames(&source, &close).1 > compare_frames(&source, &shifted).1);
-    }
 }

@@ -1304,14 +1304,6 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
             .expect("backfill existing reports"),
         2
     );
-    let candidates = admin_database
-        .similar_reports(stack_reports[0])
-        .await
-        .expect("find matching stack signatures");
-    assert_eq!(candidates.len(), 1);
-    assert_eq!(candidates[0].report_id, stack_reports[1]);
-    assert!(candidates[0].exact);
-    assert_eq!(candidates[0].matching_frames, 2);
     let stored_stack: serde_json::Value = sqlx::query_scalar(
         "SELECT value FROM report_fields WHERE report_id = $1 AND key = 'stack'",
     )

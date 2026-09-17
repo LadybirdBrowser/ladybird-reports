@@ -132,18 +132,6 @@ pub struct ReportDetails {
     pub events: Vec<AuditEvent>,
 }
 
-#[derive(Clone, Debug)]
-pub struct SimilarReport {
-    pub report_id: ReportId,
-    pub issue_id: Option<IssueId>,
-    pub issue_title: Option<String>,
-    pub client_version: String,
-    pub created_at: DateTime<Utc>,
-    pub exact: bool,
-    pub matching_frames: usize,
-    pub score: usize,
-}
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct BlockReportSourceOutcome {
     pub rejected_triage_reports: u64,

@@ -121,7 +121,6 @@ pub struct ReportTemplate {
     issue_proposal: IssueProposal,
     known_groups: Vec<FieldGroup>,
     unknown_groups: Vec<FieldGroup>,
-    similar_reports: Vec<SimilarReportView>,
     attachments: Vec<AttachmentView>,
     events: Vec<EventView>,
 }
@@ -171,16 +170,6 @@ pub struct FieldGroup {
 pub struct StackSignatureView {
     short: String,
     full: String,
-}
-
-pub struct SimilarReportView {
-    report_id: ReportId,
-    issue_id: Option<IssueId>,
-    issue_title: Option<String>,
-    client_version: String,
-    submitted_at: String,
-    exact: bool,
-    matching_frames: usize,
 }
 
 pub struct AttachmentView {
@@ -421,28 +410,6 @@ pub async fn show(
         .await?
         .ok_or_else(|| not_found("Report not found"))?;
     state.database.index_report_stack_traces(report_id).await?;
-    let similar_reports = if details.report.issue_id.is_none() {
-        state
-            .database
-            .similar_reports(report_id)
-            .await?
-            .into_iter()
-            .map(|candidate| SimilarReportView {
-                report_id: candidate.report_id,
-                issue_id: candidate.issue_id,
-                issue_title: candidate.issue_title,
-                client_version: candidate.client_version,
-                submitted_at: candidate
-                    .created_at
-                    .format("%d %b %Y, %H:%M UTC")
-                    .to_string(),
-                exact: candidate.exact,
-                matching_frames: candidate.matching_frames,
-            })
-            .collect()
-    } else {
-        Vec::new()
-    };
     let linked_issue = match details.report.issue_id {
         Some(issue_id) => state
             .database
@@ -612,7 +579,6 @@ pub async fn show(
         issue_proposal,
         known_groups: group_fields(known_fields),
         unknown_groups: group_fields(unknown_fields),
-        similar_reports,
         attachments,
         events,
     }))

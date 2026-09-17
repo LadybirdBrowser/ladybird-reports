@@ -127,7 +127,9 @@
                                     <th>Report</th>
                                     <th>Version</th>
                                     <th>Received</th>
-                                    <th><span class="visually-hidden">Action</span></th>
+                                    {% if can_link_matches %}
+                                        <th><span class="visually-hidden">Action</span></th>
+                                    {% endif %}
                                 </tr>
                             </thead>
                             <tbody>
@@ -136,13 +138,15 @@
                                         <td><a class="primary-link" href="/reports/{{ report.id }}">{{ report.title }}</a></td>
                                         <td>{{ report.client_version }}</td>
                                         <td class="quiet">{{ report.created_at }}</td>
-                                        <td>
-                                            <form method="post" action="/reports/{{ report.id }}/issue">
-                                                <input type="hidden" name="csrf" value="{{ navigation.as_ref().unwrap().csrf_token }}">
-                                                <input type="hidden" name="issue_selection" value="issue:{{ issue.id }}">
-                                                <button class="button-secondary table-action" type="submit" aria-label="Link report {{ report.id }}">Link</button>
-                                            </form>
-                                        </td>
+                                        {% if can_link_matches %}
+                                            <td>
+                                                <form method="post" action="/reports/{{ report.id }}/issue">
+                                                    <input type="hidden" name="csrf" value="{{ navigation.as_ref().unwrap().csrf_token }}">
+                                                    <input type="hidden" name="issue_selection" value="issue:{{ issue.id }}">
+                                                    <button class="button-secondary table-action" type="submit" aria-label="Link report {{ report.id }}">Link</button>
+                                                </form>
+                                            </td>
+                                        {% endif %}
                                     </tr>
                                 {% endfor %}
                             </tbody>
