@@ -20,6 +20,41 @@ const server = createServer((request, response) => {
     return;
   }
 
+  if (request.method === "GET" && url.pathname === "/login/oauth/authorize") {
+    const callback = new URL(url.searchParams.get("redirect_uri"));
+    if (callback.origin !== "http://127.0.0.1:3100" || callback.pathname !== "/auth/callback") {
+      sendJson(response, 400, { message: "Invalid callback" });
+      return;
+    }
+
+    callback.searchParams.set("code", "browser-test-oauth-code");
+    callback.searchParams.set("state", url.searchParams.get("state"));
+    response.writeHead(302, { location: callback.toString() });
+    response.end();
+    return;
+  }
+
+  if (request.method === "POST" && url.pathname === "/login/oauth/access_token") {
+    sendJson(response, 200, {
+      access_token: "browser-test-token",
+      expires_in: 3600,
+    });
+    return;
+  }
+
+  if (request.method === "GET" && url.pathname === "/user") {
+    sendJson(response, 200, { id: 12345, login: "browser-tester" });
+    return;
+  }
+
+  if (
+    request.method === "GET" &&
+    url.pathname === "/orgs/LadybirdBrowser/teams/maintainers/memberships/browser-tester"
+  ) {
+    sendJson(response, 200, { state: "active" });
+    return;
+  }
+
   if (request.method === "GET" && url.pathname === "/test/latest-created-issue") {
     sendJson(response, 200, latestCreatedIssue ?? {});
     return;

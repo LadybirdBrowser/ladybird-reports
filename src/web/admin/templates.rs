@@ -1,6 +1,6 @@
 use askama::Template;
 use axum::{
-    http::StatusCode,
+    http::{Method, StatusCode, Uri},
     response::{Html, IntoResponse, Response},
 };
 
@@ -27,10 +27,20 @@ pub fn not_found(message: &'static str) -> AppError {
     AppError::NotFound(message)
 }
 
-pub fn redirect_to_login() -> Response {
+pub fn redirect_to_login(method: &Method, uri: &Uri) -> Response {
+    let location = if method == Method::GET {
+        uri.path_and_query()
+            .and_then(|path| super::authentication::validated_return_to(path.as_str()))
+            .filter(|path| *path != "/")
+            .map(|path| super::authentication::url_with_next("/login", path))
+            .unwrap_or_else(|| "/login".to_owned())
+    } else {
+        "/login".to_owned()
+    };
+
     (
         StatusCode::SEE_OTHER,
-        [("location", "/login")],
+        [("location", location)],
         "Authentication required",
     )
         .into_response()

@@ -11,6 +11,7 @@ pub struct GithubClient {
     client_id: String,
     client_secret: String,
     api_base_url: reqwest::Url,
+    oauth_base_url: reqwest::Url,
 }
 
 #[derive(Debug, Deserialize)]
@@ -113,17 +114,41 @@ impl GithubClient {
         let api_base_url =
             reqwest::Url::parse(&api_base_url).map_err(|error| AppError::Internal(error.into()))?;
 
+        // Browser tests use a local OAuth endpoint. Release builds always use
+        // GitHub's endpoint, regardless of the surrounding environment.
+        #[cfg(debug_assertions)]
+        let oauth_base_url = std::env::var("GITHUB_TEST_OAUTH_BASE_URL")
+            .unwrap_or_else(|_| "https://github.com".into());
+        #[cfg(not(debug_assertions))]
+        let oauth_base_url = "https://github.com".to_owned();
+        let oauth_base_url = reqwest::Url::parse(&oauth_base_url)
+            .map_err(|error| AppError::Internal(error.into()))?;
+        #[cfg(debug_assertions)]
+        if std::env::var_os("GITHUB_TEST_OAUTH_BASE_URL").is_some()
+            && !matches!(
+                oauth_base_url.host_str(),
+                Some("127.0.0.1" | "localhost" | "[::1]" | "::1")
+            )
+        {
+            return Err(AppError::InvalidRequest(
+                "Test OAuth endpoint must be on the local machine",
+            ));
+        }
+
         Ok(Self {
             http,
             client_id,
             client_secret,
             api_base_url,
+            oauth_base_url,
         })
     }
 
     pub fn authorization_url(&self, redirect_uri: &str, state: &str) -> Result<String> {
-        let mut url = reqwest::Url::parse("https://github.com/login/oauth/authorize")
-            .expect("static GitHub URL is valid");
+        let mut url = self
+            .oauth_base_url
+            .join("/login/oauth/authorize")
+            .expect("OAuth base URL is valid");
 
         url.query_pairs_mut()
             .append_pair("client_id", &self.client_id)
@@ -140,7 +165,11 @@ impl GithubClient {
     pub async fn exchange_code(&self, code: &str) -> Result<GithubAccessToken> {
         let response = self
             .http
-            .post("https://github.com/login/oauth/access_token")
+            .post(
+                self.oauth_base_url
+                    .join("/login/oauth/access_token")
+                    .expect("OAuth base URL is valid"),
+            )
             .header("accept", "application/json")
             .form(&[
                 ("client_id", self.client_id.as_str()),

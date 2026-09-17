@@ -6,28 +6,29 @@ use crate::{error::Result, infrastructure::database::AdminDatabase};
 use super::SessionRecord;
 
 impl AdminDatabase {
-    pub async fn store_oauth_state(&self, state_hash: &str) -> Result<()> {
+    pub async fn store_oauth_state(&self, state_hash: &str, return_to: &str) -> Result<()> {
         sqlx::query(
-            "INSERT INTO oauth_states (state_hash, expires_at)
-             VALUES ($1, now() + interval '10 minutes')",
+            "INSERT INTO oauth_states (state_hash, return_to, expires_at)
+             VALUES ($1, $2, now() + interval '10 minutes')",
         )
         .bind(state_hash)
+        .bind(return_to)
         .execute(&self.pool)
         .await?;
 
         Ok(())
     }
 
-    pub async fn consume_oauth_state(&self, state_hash: &str) -> Result<bool> {
-        let result = sqlx::query(
+    pub async fn consume_oauth_state(&self, state_hash: &str) -> Result<Option<String>> {
+        sqlx::query_scalar(
             "DELETE FROM oauth_states
-             WHERE state_hash = $1 AND expires_at > now()",
+             WHERE state_hash = $1 AND expires_at > now()
+             RETURNING return_to",
         )
         .bind(state_hash)
-        .execute(&self.pool)
-        .await?;
-
-        Ok(result.rows_affected() == 1)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(Into::into)
     }
 
     pub async fn create_session(

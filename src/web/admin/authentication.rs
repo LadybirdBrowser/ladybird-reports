@@ -2,7 +2,7 @@ use askama::Template;
 use axum::{
     Extension,
     extract::{Query, State},
-    http::{HeaderMap, header::SET_COOKIE},
+    http::{HeaderMap, Uri, header::SET_COOKIE},
     response::{IntoResponse, Redirect, Response},
 };
 use chrono::Duration;
@@ -23,6 +23,7 @@ use super::{
 pub struct LoginTemplate {
     navigation: Option<Navigation>,
     application_version: &'static str,
+    github_login_url: String,
 }
 
 #[derive(Clone)]
@@ -47,20 +48,41 @@ impl Navigation {
     }
 }
 
-pub async fn login() -> TemplateResponse<LoginTemplate> {
+#[derive(Default, Deserialize)]
+pub struct ReturnToQuery {
+    next: Option<String>,
+}
+
+pub async fn login(Query(query): Query<ReturnToQuery>) -> TemplateResponse<LoginTemplate> {
+    let github_login_url = query
+        .next
+        .as_deref()
+        .and_then(validated_return_to)
+        .map(|path| url_with_next("/auth/github", path))
+        .unwrap_or_else(|| "/auth/github".to_owned());
+
     TemplateResponse(LoginTemplate {
         navigation: None,
         application_version: crate::runtime::APPLICATION_VERSION,
+        github_login_url,
     })
 }
 
-pub async fn start_github_login(State(state): State<AdminState>) -> Result<Response> {
+pub async fn start_github_login(
+    State(state): State<AdminState>,
+    Query(query): Query<ReturnToQuery>,
+) -> Result<Response> {
     let configuration = state.database.configuration().await?;
     let state_token = random_token();
+    let return_to = query
+        .next
+        .as_deref()
+        .and_then(validated_return_to)
+        .unwrap_or("/");
 
     state
         .database
-        .store_oauth_state(&hash_secret(&state_token))
+        .store_oauth_state(&hash_secret(&state_token), return_to)
         .await?;
 
     let redirect_uri = format!(
@@ -103,16 +125,16 @@ pub async fn github_callback(
         return Err(AppError::PermissionDenied("Invalid GitHub sign-in state"));
     }
 
-    let consumed = state
+    let return_to = state
         .database
         .consume_oauth_state(&hash_secret(&callback.state))
         .await?;
 
-    if !consumed {
+    let Some(return_to) = return_to else {
         return Err(AppError::PermissionDenied(
             "GitHub sign-in state expired or was already used",
         ));
-    }
+    };
 
     let token = state.github.exchange_code(&callback.code).await?;
     let user = state.github.current_user(&token.access_token).await?;
@@ -143,7 +165,8 @@ pub async fn github_callback(
 
     let configuration = state.database.configuration().await?;
     let secure = configuration.admin_base_url.starts_with("https:");
-    let mut response = Redirect::to("/").into_response();
+    let return_to = validated_return_to(&return_to).unwrap_or("/");
+    let mut response = Redirect::to(return_to).into_response();
 
     response.headers_mut().append(
         SET_COOKIE,
@@ -197,4 +220,70 @@ fn session_cookie(name: &str, value: &str, max_age_seconds: i64, secure: bool) -
     format!(
         "{name}={value}; Path=/; HttpOnly; SameSite=Lax; Max-Age={max_age_seconds}{secure_attribute}"
     )
+}
+
+pub(super) fn validated_return_to(target: &str) -> Option<&str> {
+    if target.len() > 2048
+        || !target.starts_with('/')
+        || target.starts_with("//")
+        || target.contains(['\\', '#'])
+        || target.chars().any(char::is_control)
+    {
+        return None;
+    }
+
+    let uri = target.parse::<Uri>().ok()?;
+    if uri.scheme().is_some()
+        || uri.authority().is_some()
+        || uri.path_and_query()?.as_str() != target
+    {
+        return None;
+    }
+
+    let origin = reqwest::Url::parse("https://reports.invalid/").expect("static URL is valid");
+    if origin.join(target).ok()?.origin() != origin.origin() {
+        return None;
+    }
+
+    Some(target)
+}
+
+pub(super) fn url_with_next(path: &str, next: &str) -> String {
+    let base = format!("https://reports.invalid{path}");
+    let url = reqwest::Url::parse_with_params(&base, &[("next", next)])
+        .expect("static internal path is valid");
+    format!("{path}?{}", url.query().expect("next parameter exists"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{url_with_next, validated_return_to};
+
+    #[test]
+    fn return_destination_must_be_a_same_site_path() {
+        for valid in ["/", "/reports/123", "/reports/123?source=discord&view=raw"] {
+            assert_eq!(validated_return_to(valid), Some(valid));
+        }
+
+        for invalid in [
+            "https://example.com/",
+            "//example.com/",
+            "/\\example.com/",
+            "/reports/1#fragment",
+            "/reports/1\r\nLocation: https://example.com",
+        ] {
+            assert_eq!(validated_return_to(invalid), None);
+        }
+    }
+
+    #[test]
+    fn login_link_preserves_path_and_query() {
+        let link = url_with_next("/auth/github", "/reports/123?source=discord&view=raw");
+        let url = reqwest::Url::parse(&format!("https://reports.invalid{link}"))
+            .expect("internal login link is valid");
+        assert_eq!(
+            url.query_pairs().find(|(key, _)| key == "next").unwrap().1,
+            "/reports/123?source=discord&view=raw"
+        );
+    }
 }

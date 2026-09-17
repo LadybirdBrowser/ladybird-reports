@@ -47,16 +47,16 @@ pub async fn require_session(
     next: Next,
 ) -> Result<Response> {
     let Some(session_token) = request_cookie(&request, "session") else {
-        return Ok(redirect_to_login());
+        return Ok(redirect_to_login(request.method(), request.uri()));
     };
 
     if session_token.len() > 128 {
-        return Ok(redirect_to_login());
+        return Ok(redirect_to_login(request.method(), request.uri()));
     }
 
     let token_hash = hash_secret(session_token);
     let Some(record) = state.database.find_session(&token_hash).await? else {
-        return Ok(redirect_to_login());
+        return Ok(redirect_to_login(request.method(), request.uri()));
     };
 
     let configuration = state.database.configuration().await?;

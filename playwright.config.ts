@@ -19,6 +19,7 @@ export default defineConfig({
       ...process.env,
       ADMIN_LISTEN_ADDRESS: `127.0.0.1:${port}`,
       GITHUB_API_BASE_URL: "http://127.0.0.1:3101",
+      GITHUB_TEST_OAUTH_BASE_URL: "http://127.0.0.1:3101",
       GITHUB_WEBHOOK_SECRET: "browser-test-github-webhook-secret-2026",
     },
     url: `${baseURL}/health/ready`,

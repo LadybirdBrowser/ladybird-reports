@@ -249,6 +249,26 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
         .expect("receipt is a report UUID");
 
     let admin_database = AdminDatabase::from_pool(admin_pool.clone());
+    let oauth_state_hash = "1".repeat(64);
+    let requested_report = "/reports/01a0a536-01cd-7ac7-a3cf-ae6a2d5030e5?source=discord";
+    admin_database
+        .store_oauth_state(&oauth_state_hash, requested_report)
+        .await
+        .expect("store requested URL with sign-in state");
+    assert_eq!(
+        admin_database
+            .consume_oauth_state(&oauth_state_hash)
+            .await
+            .expect("consume sign-in state"),
+        Some(requested_report.to_owned())
+    );
+    assert_eq!(
+        admin_database
+            .consume_oauth_state(&oauth_state_hash)
+            .await
+            .expect("check one-time sign-in state"),
+        None
+    );
     let report = admin_database
         .report_details(report_id)
         .await

@@ -29,6 +29,32 @@ test("unauthenticated visitors can only reach the sign-in page", async ({ page }
   await expect(page.locator("footer")).toContainText("Ladybird Reports · 0.1.0-dev");
 });
 
+test("sign-in returns to the requested report and preserves its query", async ({ page }) => {
+  const destination = `/reports/${reportId}?source=discord&view=raw`;
+  await page.goto(destination);
+
+  const loginUrl = new URL(page.url());
+  expect(loginUrl.pathname).toBe("/login");
+  expect(loginUrl.searchParams.get("next")).toBe(destination);
+
+  const loginLink = page.getByRole("link", { name: "Continue with GitHub" });
+  const githubLoginUrl = new URL(await loginLink.getAttribute("href")!, loginUrl);
+  expect(githubLoginUrl.pathname).toBe("/auth/github");
+  expect(githubLoginUrl.searchParams.get("next")).toBe(destination);
+
+  await loginLink.click();
+  await expect(page).toHaveURL(new RegExp(`/reports/${reportId}\\?source=discord&view=raw$`));
+  await expect(page.getByRole("heading", { name: "Stack trace" })).toBeVisible();
+  expect((await page.context().cookies()).some((cookie) => cookie.name === "oauth_state"))
+    .toBe(false);
+});
+
+test("sign-in ignores an external return destination", async ({ page }) => {
+  await page.goto("/login?next=%2F%2Fevil.example%2Fpath");
+  await expect(page.getByRole("link", { name: "Continue with GitHub" }))
+    .toHaveAttribute("href", "/auth/github");
+});
+
 test.describe("authenticated management UI", () => {
   test.use({
     storageState: "target/browser-test-storage-state.json",
@@ -580,7 +606,7 @@ test.describe("authenticated management UI", () => {
     await expect(page.getByText("report.update_visibility", { exact: true })).toBeVisible();
     await expect(page.getByText("issue.create", { exact: true })).toBeVisible();
     await expect(page.getByText("report.submitted", { exact: true }).first()).toBeVisible();
-    await expect(page.getByText("session.signed_in", { exact: true })).toBeVisible();
+    await expect(page.getByText("session.signed_in", { exact: true }).first()).toBeVisible();
   });
 
   test("keeps GitHub issue state and replacement links in sync", async ({ page }) => {
