@@ -724,7 +724,7 @@ test.describe("authenticated management UI", () => {
       id: 94812,
       number: 4812,
       title: "Navigation stops after redirect",
-      body: "Updated on GitHub with more reproduction details.",
+      body: "## Reproduction\n\n- [x] Open the page\n\n| Result | Status |\n| --- | --- |\n| Navigation | Stalled |\n\n```text\nstack frame\n```",
       html_url: "https://github.com/LadybirdBrowser/ladybird/issues/4812",
       state: "open",
       updated_at: new Date(Date.now() + 10_000).toISOString(),
@@ -758,7 +758,11 @@ test.describe("authenticated management UI", () => {
     expect((await deliverWebhook("edited")).status()).toBe(204);
     await page.reload();
     await expect(page.getByRole("heading", { name: issue.title })).toBeVisible();
-    await expect(page.locator(".issue-description")).toContainText(issue.body);
+    const description = page.locator(".issue-description");
+    await expect(description.getByRole("heading", { name: "Reproduction" })).toBeVisible();
+    await expect(description.getByRole("checkbox")).toBeChecked();
+    await expect(description.locator("table td").first()).toHaveText("Navigation");
+    await expect(description.locator("pre code")).toContainText("stack frame");
 
     issue.state = "closed";
     issue.updated_at = new Date(Date.now() + 20_000).toISOString();

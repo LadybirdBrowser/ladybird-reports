@@ -13,6 +13,7 @@ axum = { version = "0.8", features = ["macros", "multipart"] }
 base64 = "0.22"
 chacha20poly1305 = "0.10"
 chrono = { version = "0.4", features = ["serde"] }
+comrak = { version = "0.55", default-features = false }
 cookie = "0.18"
 fs2 = "0.4"
 hex = "0.4"

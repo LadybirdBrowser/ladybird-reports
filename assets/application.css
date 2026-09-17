@@ -1409,8 +1409,90 @@ tbody tr:hover {
 }
 
 .issue-description {
-    white-space: pre-wrap;
     overflow-wrap: anywhere;
+}
+
+.issue-description > :first-child {
+    margin-top: 0;
+}
+
+.issue-description > :last-child {
+    margin-bottom: 0;
+}
+
+.issue-description h1,
+.issue-description h2,
+.issue-description h3 {
+    margin: 1.4rem 0 0.55rem;
+    line-height: 1.3;
+}
+
+.issue-description h1 {
+    font-size: 1.35rem;
+}
+
+.issue-description h2 {
+    font-size: 1.15rem;
+}
+
+.issue-description h3 {
+    font-size: 1rem;
+}
+
+.issue-description ul,
+.issue-description ol {
+    padding-left: 1.5rem;
+}
+
+.issue-description blockquote {
+    margin: 1rem 0;
+    padding-left: 1rem;
+    border-left: 3px solid var(--border-strong);
+    color: var(--ink-soft);
+}
+
+.issue-description a {
+    color: var(--brand);
+}
+
+.issue-description img {
+    max-width: 100%;
+    height: auto;
+}
+
+.issue-description pre {
+    overflow-x: auto;
+    padding: 1rem;
+    border-radius: var(--radius-sm);
+    background: var(--surface-subtle);
+    white-space: pre;
+}
+
+.issue-description code {
+    font-size: 0.9em;
+}
+
+.issue-description :not(pre) > code {
+    padding: 0.1em 0.3em;
+    border-radius: 0.25rem;
+    background: var(--surface-subtle);
+}
+
+.issue-description table {
+    display: block;
+    max-width: 100%;
+    overflow-x: auto;
+    border-collapse: collapse;
+}
+
+.issue-description th,
+.issue-description td {
+    padding: 0.5rem 0.75rem;
+    border: 1px solid var(--border);
+}
+
+.issue-description input[type="checkbox"] {
+    width: auto;
 }
 
 .radio-option {

@@ -48,7 +48,7 @@
                     {% if issue.description.is_empty() %}
                         <span class="quiet">No description on GitHub.</span>
                     {% else %}
-                        {{ issue.description }}
+                        {{ issue.description_html|safe }}
                     {% endif %}
                 </div>
             </section>

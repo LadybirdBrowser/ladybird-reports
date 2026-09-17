@@ -90,7 +90,8 @@ fn add_security_headers(headers: &mut HeaderMap) {
     headers.insert(
         HeaderName::from_static("content-security-policy"),
         HeaderValue::from_static(
-            "default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self'; \
+            "default-src 'none'; style-src 'self'; script-src 'self'; \
+             img-src 'self' https://github.com https://*.githubusercontent.com; \
              connect-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'",
         ),
     );

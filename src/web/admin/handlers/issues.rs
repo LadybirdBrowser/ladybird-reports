@@ -5,6 +5,7 @@ use axum::{
     response::Redirect,
 };
 use chrono::{DateTime, Utc};
+use comrak::{Options, markdown_to_html};
 use serde::Deserialize;
 
 use crate::{
@@ -60,6 +61,7 @@ pub struct IssueView {
     id: IssueId,
     title: String,
     description: String,
+    description_html: String,
     github_number: i64,
     github_url: String,
     state: String,
@@ -84,6 +86,40 @@ pub struct EventView {
     actor: String,
     details: String,
     created_at: DateTime<Utc>,
+}
+
+fn render_issue_description(markdown: &str) -> String {
+    let mut options = Options::default();
+    options.extension.table = true;
+    options.extension.strikethrough = true;
+    options.extension.autolink = true;
+    options.extension.tasklist = true;
+    options.extension.alerts = true;
+    options.render.escape = true;
+
+    // GitHub issue bodies can include HTML. Leave it escaped because the
+    // description is supplied by another service and inserted into our UI.
+    markdown_to_html(markdown, &options)
+}
+
+#[cfg(test)]
+mod markdown_tests {
+    use super::render_issue_description;
+
+    #[test]
+    fn renders_github_markdown_without_trusting_raw_html() {
+        let html = render_issue_description(
+            "| Field | Value |\n| --- | --- |\n| Stack | `frame` |\n\n- [x] Checked\n\n<script>alert(1)</script>",
+        );
+
+        assert!(html.contains("<table>"));
+        assert!(html.contains("<code>frame</code>"));
+        assert!(html.contains("type=\"checkbox\""));
+        assert!(html.contains("&lt;script&gt;"));
+        assert!(
+            !render_issue_description("[bad](javascript:alert(1))").contains("href=\"javascript:")
+        );
+    }
 }
 
 pub async fn index(
@@ -259,10 +295,12 @@ pub async fn show(
         })
         .collect();
 
+    let description_html = render_issue_description(&details.issue.description);
     let issue = IssueView {
         id: details.issue.id,
         title: details.issue.title,
         description: details.issue.description,
+        description_html,
         github_number: details.issue.github_number,
         github_url: details.issue.github_url,
         state: details.issue.state,
