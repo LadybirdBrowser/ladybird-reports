@@ -360,6 +360,26 @@
         </div>
 
         <section data-issue-panel="existing">
+            {% if !potential_issues.is_empty() %}
+                <div class="issue-suggestions">
+                    <h3>Potential matching issues</h3>
+                    {% for issue in potential_issues %}
+                        <div class="issue-suggestion">
+                            <div>
+                                <a class="primary-link" href="/issues/{{ issue.id }}">{{ issue.title }}</a>
+                                {% if issue.github_state != "open" %}
+                                    <span class="quiet">GitHub link needs attention</span>
+                                {% endif %}
+                            </div>
+                            <form method="post" action="/reports/{{ report.id }}/issue">
+                                <input type="hidden" name="csrf" value="{{ navigation.as_ref().unwrap().csrf_token }}">
+                                <input type="hidden" name="issue_selection" value="issue:{{ issue.id }}">
+                                <button class="button-secondary" type="submit">Add to issue</button>
+                            </form>
+                        </div>
+                    {% endfor %}
+                </div>
+            {% endif %}
             <form method="post" action="/reports/{{ report.id }}/issue">
                 <input
                     type="hidden"

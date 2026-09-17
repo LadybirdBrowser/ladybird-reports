@@ -320,7 +320,7 @@ test.describe("authenticated management UI", () => {
     await expect(page.locator(".entity-selector-chip")).toContainText(
       "Investigate renderer overlap",
     );
-    await expect(issueDialog.locator('input[name="issue_selection"]'))
+    await expect(issueDialog.locator('input[data-entity-value]'))
       .toHaveValue("github:6200");
 
     await page.getByRole("button", { name: "Create new" }).click();
@@ -756,9 +756,45 @@ test.describe("authenticated management UI", () => {
     await page.goto(`/issues/${trackedIssueId}`);
     await expect(page.getByText("Needs attention", { exact: true })).toBeVisible();
     const matches = page.getByRole("region", { name: "Potential matches" });
-    await expect(matches.getByRole("link", { name: /WebContent::/ }).first())
+    const candidate = matches.getByRole("link", { name: /WebContent::/ }).first();
+    const candidateUrl = await candidate.getAttribute("href");
+    expect(candidateUrl).toMatch(/^\/reports\//);
+    await expect(matches.getByRole("button", { name: /Link report/ }).first())
       .toBeVisible();
-    await expect(matches.getByRole("button", { name: /Link report/ })).toHaveCount(0);
+
+    await page.goto(candidateUrl!);
+    await page.getByRole("button", { name: "Add report to issue" }).click();
+    const issueDialog = page.getByRole("dialog", { name: "Add report to an issue" });
+    const suggestion = issueDialog.locator(".issue-suggestion").filter({
+      hasText: "Navigation stops after redirect",
+    });
+    await expect(suggestion).toBeVisible();
+    await expect(suggestion).toContainText("Navigation stops after redirect");
+    await expect(suggestion).toContainText("GitHub link needs attention");
+    await expect(suggestion.getByRole("button", { name: "Add to issue" }))
+      .toBeVisible();
+
+    await issueDialog.getByRole("combobox", { name: "Search issues" })
+      .fill("Navigation stops after redirect");
+    await expect(page.getByRole("option", { name: /Navigation stops after redirect/ }))
+      .toBeVisible();
+    await issueDialog.getByRole("combobox", { name: "Search issues" }).press("Escape");
+    await suggestion.getByRole("button", { name: "Add to issue" }).click();
+    await expect(page).toHaveURL(`/issues/${trackedIssueId}`);
+    await page.goto(candidateUrl!);
+    await expect(page.locator(".report-linked-issue")).toBeVisible();
+    await page.getByRole("button", { name: "Unlink report", exact: true }).click();
+    await expect(page.locator(".badge-triage")).toHaveText("Needs triage");
+
+    await page.goto(`/issues/${trackedIssueId}`);
+    await matches.getByRole("button", { name: /Link report/ }).first().click();
+    await expect(page).toHaveURL(`/issues/${trackedIssueId}`);
+    await page.goto(candidateUrl!);
+    await expect(page.locator(".report-linked-issue")).toBeVisible();
+    await page.getByRole("button", { name: "Unlink report", exact: true }).click();
+    await expect(page.locator(".badge-triage")).toHaveText("Needs triage");
+
+    await page.goto(`/issues/${trackedIssueId}`);
     const attentionBadge = page.locator(".page-header .badge-warning");
     expect(await attentionBadge.evaluate((badge) => badge.getClientRects().length)).toBe(1);
     expect(await attentionBadge.evaluate((badge) =>

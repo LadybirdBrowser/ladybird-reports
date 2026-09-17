@@ -459,9 +459,8 @@ impl AdminDatabase {
                 FROM issues
                 WHERE id = $1
                     AND merged_into IS NULL
-                    AND state <> 'rejected'
+                    AND state IN ('unresolved', 'needs_attention')
                     AND resolved_at IS NULL
-                    AND github_state = 'open'
             )",
         )
         .bind(issue_id)
@@ -470,7 +469,7 @@ impl AdminDatabase {
 
         if !assignable {
             return Err(AppError::InvalidRequest(
-                "Issue does not exist, is resolved, or has been merged",
+                "Issue is not available for report assignment",
             ));
         }
 

@@ -51,7 +51,6 @@ pub struct IssueTemplate {
     issue: IssueView,
     reports: Vec<ReportView>,
     potential_matches: Vec<ReportView>,
-    can_link_matches: bool,
     merge_destinations: Vec<IssueOption>,
     events: Vec<EventView>,
     sync_warning: bool,
@@ -257,10 +256,6 @@ pub async fn show(
         .await?
         .ok_or_else(|| not_found("Issue not found"))?;
 
-    let can_link_matches = details.issue.state == "unresolved"
-        && details.issue.merged_into.is_none()
-        && details.issue.resolved_at.is_none()
-        && details.issue.github_state == "open";
     let potential_matches = if matches!(
         details.issue.state.as_str(),
         "unresolved" | "needs_attention"
@@ -341,7 +336,6 @@ pub async fn show(
         issue,
         reports,
         potential_matches,
-        can_link_matches,
         merge_destinations: destinations,
         events,
         sync_warning,

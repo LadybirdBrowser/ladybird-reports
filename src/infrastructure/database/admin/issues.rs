@@ -78,9 +78,8 @@ impl AdminDatabase {
                 ON reports.issue_id = issues.id
                 AND reports.storage_state = 'ready'
              WHERE issues.merged_into IS NULL
-                AND issues.state <> 'rejected'
+                AND issues.state IN ('unresolved', 'needs_attention')
                 AND issues.resolved_at IS NULL
-                AND issues.github_state IN ('open', 'unknown')
                 AND (
                     $1 = ''
                     OR position(lower($1) in lower(issues.title)) > 0

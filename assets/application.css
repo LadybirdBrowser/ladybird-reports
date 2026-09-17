@@ -1816,6 +1816,59 @@ tbody tr:hover {
     box-shadow: var(--shadow-sm);
 }
 
+.issue-suggestions {
+    margin-bottom: 1.25rem;
+}
+
+.issue-suggestions h3 {
+    margin: 0 0 0.6rem;
+    font-size: 0.85rem;
+}
+
+.issue-suggestion {
+    display: flex;
+    padding: 0.8rem 0.9rem;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    border: 1px solid var(--border);
+    background: var(--surface-subtle);
+}
+
+.issue-suggestion + .issue-suggestion {
+    border-top: 0;
+}
+
+.issue-suggestion:first-of-type {
+    border-radius: var(--radius-md) var(--radius-md) 0 0;
+}
+
+.issue-suggestion:last-of-type {
+    border-radius: 0 0 var(--radius-md) var(--radius-md);
+}
+
+.issue-suggestion:only-of-type {
+    border-radius: var(--radius-md);
+}
+
+.issue-suggestion > div {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.issue-suggestion .quiet {
+    display: block;
+    margin-top: 0.25rem;
+    font-size: 0.78rem;
+}
+
+@media (max-width: 600px) {
+    .issue-suggestion {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+}
+
 .dialog-actions {
     display: flex;
     margin-top: 1.25rem;

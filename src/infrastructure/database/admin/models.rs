@@ -150,6 +150,13 @@ pub struct IssueSummary {
 }
 
 #[derive(Clone, Debug)]
+pub struct PotentialIssueMatch {
+    pub id: IssueId,
+    pub title: String,
+    pub github_state: String,
+}
+
+#[derive(Clone, Debug)]
 pub struct IssueRecord {
     pub id: IssueId,
     pub title: String,

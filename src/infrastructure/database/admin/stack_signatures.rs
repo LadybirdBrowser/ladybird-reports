@@ -6,9 +6,52 @@ use crate::{
     infrastructure::database::AdminDatabase,
 };
 
-use super::ReportSummary;
+use super::{PotentialIssueMatch, ReportSummary};
 
 impl AdminDatabase {
+    pub async fn potential_issue_matches(
+        &self,
+        report_id: ReportId,
+    ) -> Result<Vec<PotentialIssueMatch>> {
+        let rows = sqlx::query(
+            "SELECT issues.id, issues.title, issues.github_state
+             FROM report_stack_signatures AS source
+             JOIN reports AS incoming ON incoming.id = source.report_id
+             JOIN report_stack_signatures AS linked
+                ON linked.fingerprint = source.fingerprint
+                AND linked.algorithm_version = source.algorithm_version
+             JOIN reports AS linked_report
+                ON linked_report.id = linked.report_id
+                AND linked_report.kind = incoming.kind
+             JOIN issues ON issues.id = linked_report.issue_id
+             WHERE source.report_id = $1
+                AND source.algorithm_version = $2
+                AND source.fingerprint IS NOT NULL
+                AND incoming.issue_id IS NULL
+                AND incoming.storage_state = 'ready'
+                AND linked_report.storage_state = 'ready'
+                AND issues.merged_into IS NULL
+                AND issues.state IN ('unresolved', 'needs_attention')
+                AND issues.resolved_at IS NULL
+             GROUP BY issues.id
+             ORDER BY count(DISTINCT linked_report.id) DESC, issues.updated_at DESC
+             LIMIT 5",
+        )
+        .bind(report_id)
+        .bind(STACK_SIGNATURE_VERSION)
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows
+            .into_iter()
+            .map(|row| PotentialIssueMatch {
+                id: row.get("id"),
+                title: row.get("title"),
+                github_state: row.get("github_state"),
+            })
+            .collect())
+    }
+
     pub async fn issue_signature_matches(&self, issue_id: IssueId) -> Result<Vec<ReportSummary>> {
         let rows = sqlx::query(
             "SELECT reports.id, reports.kind, reports.client_version,

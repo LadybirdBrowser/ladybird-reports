@@ -118,6 +118,7 @@ pub struct ReportTemplate {
     navigation: Option<Navigation>,
     report: ReportView,
     linked_issue: Option<LinkedIssueView>,
+    potential_issues: Vec<PotentialIssueView>,
     issue_proposal: IssueProposal,
     known_groups: Vec<FieldGroup>,
     unknown_groups: Vec<FieldGroup>,
@@ -141,6 +142,12 @@ pub struct LinkedIssueView {
     title: String,
     github_number: i64,
     github_url: String,
+}
+
+pub struct PotentialIssueView {
+    id: IssueId,
+    title: String,
+    github_state: String,
 }
 
 pub struct OverviewField {
@@ -410,6 +417,21 @@ pub async fn show(
         .await?
         .ok_or_else(|| not_found("Report not found"))?;
     state.database.index_report_stack_traces(report_id).await?;
+    let potential_issues = if details.report.issue_id.is_none() {
+        state
+            .database
+            .potential_issue_matches(report_id)
+            .await?
+            .into_iter()
+            .map(|issue| PotentialIssueView {
+                id: issue.id,
+                title: issue.title,
+                github_state: issue.github_state,
+            })
+            .collect()
+    } else {
+        Vec::new()
+    };
     let linked_issue = match details.report.issue_id {
         Some(issue_id) => state
             .database
@@ -576,6 +598,7 @@ pub async fn show(
         navigation: Some(Navigation::for_session(&state, &session)),
         report: report_view,
         linked_issue,
+        potential_issues,
         issue_proposal,
         known_groups: group_fields(known_fields),
         unknown_groups: group_fields(unknown_fields),
@@ -636,10 +659,6 @@ pub async fn assign_to_issue(
         let issue_id = value
             .parse::<IssueId>()
             .map_err(|_| AppError::InvalidRequest("Select an issue"))?;
-        let issue = super::github::refresh_tracked_issue(&state, &session, issue_id).await?;
-        if issue.github_state != "open" || issue.merged_into.is_some() {
-            return Err(AppError::Conflict("GitHub issue is not open"));
-        }
         state
             .database
             .assign_report_to_issue(report_id, issue_id, session.github_id)
