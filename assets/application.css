@@ -413,7 +413,6 @@ nav a:hover {
     min-width: 0;
 }
 
-.content-grid,
 .report-layout,
 .issue-layout,
 .settings-grid {
@@ -481,13 +480,6 @@ nav a:hover {
     top: 1.25rem;
 }
 
-.section-divider {
-    height: 1px;
-    margin: 1.25rem 0;
-    border: 0;
-    background: var(--border);
-}
-
 .empty-state {
     padding: 2.8rem 1.5rem;
     color: var(--ink-soft);
@@ -507,8 +499,7 @@ form {
     margin: 0;
 }
 
-label,
-.field-label {
+label {
     display: block;
     margin-bottom: 0.9rem;
     color: var(--ink-soft);
@@ -682,17 +673,6 @@ textarea:focus {
 
 /* Searchable entity selector */
 
-.field-group {
-    margin-bottom: 1rem;
-}
-
-.field-optional {
-    margin-left: 0.25rem;
-    color: var(--ink-faint);
-    font-size: 0.72rem;
-    font-weight: 550;
-}
-
 .entity-selector {
     position: relative;
 }
@@ -748,22 +728,6 @@ textarea:focus {
     background: var(--ink-faint);
     content: "";
     transform: rotate(45deg);
-}
-
-.key-hint {
-    position: absolute;
-    right: 0.85rem;
-    display: grid;
-    width: 1.5rem;
-    height: 1.5rem;
-    border: 1px solid var(--border);
-    border-bottom-color: var(--border-strong);
-    border-radius: 0.35rem;
-    background: var(--surface-subtle);
-    color: var(--ink-faint);
-    font: 650 0.72rem/1 ui-monospace, SFMono-Regular, Menlo, monospace;
-    place-items: center;
-    pointer-events: none;
 }
 
 .entity-selector-popover {
@@ -947,6 +911,11 @@ textarea:focus {
     color: var(--success);
 }
 
+.entity-selector-badge.is-rejected {
+    background: var(--danger-soft);
+    color: var(--danger);
+}
+
 .entity-selector-selection {
     margin-bottom: 0.65rem;
     padding: 0.75rem;
@@ -1065,10 +1034,6 @@ textarea:focus {
 
 .entity-selector-empty-icon::after {
     transform: translate(-50%, -50%) rotate(-45deg);
-}
-
-.entity-selector-note {
-    margin-top: 0.55rem;
 }
 
 .entity-selector-skeleton {
@@ -1201,27 +1166,6 @@ button:active,
     background: var(--danger-strong);
 }
 
-.button-quiet {
-    min-height: auto;
-    padding: 0.2rem 0.25rem;
-    border: 0;
-    background: transparent;
-    color: var(--header-soft);
-    font-weight: 600;
-}
-
-.button-quiet:hover {
-    background: transparent;
-    color: var(--header-ink);
-}
-
-.button-row {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 0.65rem;
-}
-
 .filter-panel {
     margin-bottom: 1.25rem;
     padding: 1rem 1.15rem;
@@ -1344,10 +1288,6 @@ tbody tr:hover {
     color: var(--brand);
 }
 
-.muted {
-    color: var(--ink-soft);
-}
-
 .quiet {
     color: var(--ink-faint);
     font-size: 0.82rem;
@@ -1374,7 +1314,6 @@ tbody tr:hover {
     color: var(--warning);
 }
 
-.badge-assigned,
 .badge-success,
 .badge-confirmed {
     border-color: color-mix(in srgb, var(--success) 22%, transparent);
@@ -1547,62 +1486,6 @@ tbody tr:hover {
     margin-bottom: 0.85rem;
     color: var(--ink-soft);
     font-size: 0.82rem;
-}
-
-.github-choice {
-    display: grid;
-    margin: 1rem 0;
-    padding: 0;
-    border: 0;
-    gap: 0.55rem;
-}
-
-.github-choice legend {
-    margin-bottom: 0.55rem;
-    color: var(--ink);
-    font-size: 0.8rem;
-    font-weight: 700;
-}
-
-.choice-card {
-    display: grid;
-    padding: 0.75rem;
-    grid-template-columns: auto minmax(0, 1fr);
-    align-items: start;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    background: var(--surface);
-    cursor: pointer;
-    gap: 0.9rem;
-    transition: border-color 120ms ease, background 120ms ease, box-shadow 120ms ease;
-}
-
-.choice-card:has(input:checked) {
-    border-color: color-mix(in srgb, var(--brand) 55%, var(--border));
-    background: color-mix(in srgb, var(--brand) 6%, var(--surface));
-    box-shadow: 0 0 0 2px color-mix(in srgb, var(--brand) 10%, transparent);
-}
-
-.choice-card input {
-    margin-top: 0.18rem;
-    accent-color: var(--brand);
-}
-
-.choice-card span {
-    display: grid;
-    gap: 0.15rem;
-}
-
-.choice-card strong {
-    color: var(--ink);
-    font-size: 0.82rem;
-}
-
-.choice-card small {
-    color: var(--ink-soft);
-    font-size: 0.74rem;
-    font-weight: 450;
-    line-height: 1.4;
 }
 
 [data-github-panel] {
@@ -2243,29 +2126,6 @@ pre {
     margin-bottom: 1rem;
     color: var(--ink-soft);
     font-size: 0.83rem;
-}
-
-.warning-panel {
-    margin-bottom: 1rem;
-    padding: 0.9rem;
-    border: 1px solid color-mix(in srgb, var(--warning) 30%, transparent);
-    border-radius: var(--radius-md);
-    background: var(--warning-soft);
-}
-
-.warning-panel strong {
-    color: var(--warning);
-}
-
-.warning-panel p {
-    margin: 0.35rem 0 0.85rem;
-    color: var(--ink-soft);
-    font-size: 0.82rem;
-}
-
-.narrow-card {
-    width: min(52rem, 100%);
-    margin: 0 auto;
 }
 
 .code-editor {
