@@ -46,7 +46,6 @@ impl AdminDatabase {
                 ON signatures.report_id = fields.report_id
                 AND signatures.field_key = fields.key
              WHERE reports.storage_state = 'ready'
-                AND reports.deleted_at IS NULL
                 AND ($1::uuid IS NULL OR reports.id = $1)
                 AND (fields.kind = 'stack_trace'
                     OR (fields.kind = 'multiline'
@@ -163,8 +162,7 @@ impl AdminDatabase {
                 AND signatures.fingerprint = $3
                 AND reports.kind = $4
                 AND reports.storage_state = 'ready'
-                AND reports.hidden_at IS NULL
-                AND reports.deleted_at IS NULL
+                AND reports.state = 'confirmed'
                 AND issues.hidden_at IS NULL
                 AND issues.merged_into IS NULL
                 AND issues.resolved_at IS NULL
@@ -180,13 +178,18 @@ impl AdminDatabase {
 
         if issues.len() == 1 {
             let issue_id = issues[0];
+            let previous_state: Option<String> =
+                sqlx::query_scalar("SELECT state FROM reports WHERE id = $1 FOR UPDATE")
+                    .bind(trace.report_id)
+                    .fetch_optional(&mut **transaction)
+                    .await?;
             let assigned = sqlx::query(
                 "UPDATE reports
-                 SET issue_id = $2, assigned_at = now(), updated_at = now()
+                 SET issue_id = $2, assigned_at = now(), state = 'confirmed',
+                     updated_at = now()
                  WHERE id = $1
                     AND issue_id IS NULL
-                    AND hidden_at IS NULL
-                    AND deleted_at IS NULL
+                    AND state <> 'rejected'
                     AND storage_state = 'ready'",
             )
             .bind(trace.report_id)
@@ -210,6 +213,19 @@ impl AdminDatabase {
                 }))
                 .execute(&mut **transaction)
                 .await?;
+
+                if let Some(previous_state) = previous_state.filter(|state| state != "confirmed") {
+                    sqlx::query(
+                        "INSERT INTO audit_events (action, entity_id, details)
+                         VALUES ('report.update_state', $1,
+                            jsonb_build_object('from', $2::text, 'to', 'confirmed',
+                                'source', 'stack_signature'))",
+                    )
+                    .bind(trace.report_id.0)
+                    .bind(previous_state)
+                    .execute(&mut **transaction)
+                    .await?;
+                }
             }
 
             // A signature already associated with an issue needs no Discord alert.
@@ -242,8 +258,7 @@ impl AdminDatabase {
                     AND signatures.fingerprint = $3
                     AND reports.kind = $4
                     AND reports.storage_state = 'ready'
-                    AND reports.hidden_at IS NULL
-                    AND reports.deleted_at IS NULL
+                    AND reports.state <> 'rejected'
                     AND reports.created_at BETWEEN
                         incoming.created_at - interval '5 minutes' AND incoming.created_at
             )",
@@ -291,8 +306,7 @@ impl AdminDatabase {
              LEFT JOIN issues ON issues.id = reports.issue_id
              WHERE reports.kind = original.kind
                 AND reports.storage_state = 'ready'
-                AND reports.hidden_at IS NULL
-                AND reports.deleted_at IS NULL
+                AND reports.state <> 'rejected'
                 AND (reports.issue_id IS NULL
                     OR (issues.hidden_at IS NULL
                         AND issues.merged_into IS NULL

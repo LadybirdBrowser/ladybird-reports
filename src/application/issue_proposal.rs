@@ -128,7 +128,7 @@ mod tests {
                 client_version: "Ladybird Nightly 2026.09.16".into(),
                 build: "Release".into(),
                 issue_id: None,
-                confirmed_at: None,
+                state: "triage".into(),
                 source_ip: Some("192.0.2.1".into()),
                 has_submission_source: true,
                 submission_source_is_blocked: false,

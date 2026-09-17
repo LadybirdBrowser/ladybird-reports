@@ -55,7 +55,10 @@ pub fn router(state: AdminState) -> Router {
             "/reports/{report_id}/state",
             post(handlers::reports::set_state),
         )
-        .route("/reports/{report_id}/hide", post(handlers::reports::hide))
+        .route(
+            "/reports/{report_id}/reject",
+            post(handlers::reports::reject),
+        )
         .route("/attachments/{id}", get(handlers::reports::attachment))
         .route("/issues", get(handlers::issues::index))
         .route(

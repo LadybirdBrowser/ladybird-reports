@@ -50,8 +50,7 @@ impl AdminDatabase {
              JOIN reports ON reports.id = notifications.report_id
              WHERE notifications.delivered_at IS NULL
                 AND reports.storage_state = 'ready'
-                AND reports.deleted_at IS NULL
-                AND reports.hidden_at IS NULL
+                AND reports.state <> 'rejected'
                 AND NOT EXISTS (
                     SELECT 1
                     FROM report_fields AS fields

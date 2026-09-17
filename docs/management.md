@@ -18,7 +18,7 @@ state:triage state:confirmed signal:sigabrt
 
 Built-in qualifiers are `state`, `kind`, `version`, `client_version`, `build`,
 `id`, `report`, `ip`, and `source_ip`. State values are `triage`, `confirmed`,
-and `assigned`, or `all`. Repeating a qualifier matches any of its values, so
+and `rejected`, or `all`. Repeating a qualifier matches any of its values, so
 `state:triage state:confirmed` includes both states. Different qualifiers are
 combined, so adding `platform:linux` restricts both states to Linux reports.
 The default is `state:triage state:confirmed`. Any other qualifier is treated
@@ -34,13 +34,14 @@ when the algorithm version changes. Possible matches appear on unassigned
 report pages for maintainers to review and link manually; no report is linked
 automatically. Signature data is removed when its report is purged.
 
-The state selector moves an unassigned report between triage and confirmed.
-Deleting a report hides it from the management interface while retention
-continues to govern when its stored data is removed.
+Report actions can confirm a report, return an unlinked report to triage, or
+reject a report with a confirmation dialog. Rejected reports remain available through
+`state:rejected`; retention still governs when their data is removed. Adding
+a report to an issue confirms it.
 
-Blocking a submission source rejects its future public API requests. The
-confirmation also offers to hide every report from that source that is still
-in triage; confirmed and assigned reports remain available.
+Blocking a submission source rejects its future public API requests and
+rejects the selected report. The confirmation also offers to reject other
+reports from that source that are still in triage.
 
 The issue workflow opens from a report. Its combined search shows active issues
 already tracked in the service and matching issues from the configured GitHub
@@ -58,7 +59,7 @@ an issue is closed, deleted, or transferred. A deleted or moved link is flagged 
 repair, and its previous GitHub identity stays associated with the issue.
 The report view links to its tracked issue. From the issue view, a maintainer
 can unlink individual reports. Deleting an issue hides its Reports record and
-unlinks all remaining reports, which return to triage or confirmed. Neither
+unlinks all remaining reports without changing their state. Neither
 action changes the GitHub issue, and a hidden issue cannot receive reports.
 Merging two tracked issues moves the reports to the destination. Maintainers
 update the source GitHub issue separately.

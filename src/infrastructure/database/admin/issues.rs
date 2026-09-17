@@ -27,8 +27,6 @@ impl AdminDatabase {
              FROM issues
              LEFT JOIN reports
                 ON reports.issue_id = issues.id
-                AND reports.deleted_at IS NULL
-                AND reports.hidden_at IS NULL
                 AND reports.storage_state = 'ready'
              WHERE issues.merged_into IS NULL
                 AND issues.hidden_at IS NULL
@@ -73,8 +71,6 @@ impl AdminDatabase {
              FROM issues
              LEFT JOIN reports
                 ON reports.issue_id = issues.id
-                AND reports.deleted_at IS NULL
-                AND reports.hidden_at IS NULL
                 AND reports.storage_state = 'ready'
              WHERE issues.merged_into IS NULL
                 AND issues.hidden_at IS NULL
@@ -279,12 +275,10 @@ impl AdminDatabase {
             (issue_id, true)
         };
 
-        let previous_issue: Option<IssueId> = sqlx::query_scalar(
-            "SELECT issue_id
+        let previous: (Option<IssueId>, String) = sqlx::query_as(
+            "SELECT issue_id, state
              FROM reports
              WHERE id = $1
-                AND deleted_at IS NULL
-                AND hidden_at IS NULL
                 AND storage_state = 'ready'
              FOR UPDATE",
         )
@@ -293,17 +287,15 @@ impl AdminDatabase {
         .await?
         .ok_or(AppError::NotFound("Report not found"))?;
 
-        if previous_issue == Some(issue_id) {
+        if previous.0 == Some(issue_id) && previous.1 == "confirmed" {
             transaction.commit().await?;
             return Ok(GithubIssueAssignment { issue_id, created });
         }
 
         let updated = sqlx::query(
             "UPDATE reports
-             SET issue_id = $2, assigned_at = now(), updated_at = now()
+             SET issue_id = $2, assigned_at = now(), state = 'confirmed', updated_at = now()
              WHERE id = $1
-                AND deleted_at IS NULL
-                AND hidden_at IS NULL
                 AND storage_state = 'ready'",
         )
         .bind(report_id)
@@ -315,18 +307,31 @@ impl AdminDatabase {
             return Err(AppError::NotFound("Report not found"));
         }
 
-        sqlx::query(
-            "INSERT INTO audit_events (actor, action, entity_id, details)
-             VALUES ($1, 'report.update_issue', $2, $3)",
-        )
-        .bind(actor)
-        .bind(report_id.0)
-        .bind(serde_json::json!({
-            "from": previous_issue,
-            "to": issue_id,
-        }))
-        .execute(&mut *transaction)
-        .await?;
+        if previous.0 != Some(issue_id) {
+            sqlx::query(
+                "INSERT INTO audit_events (actor, action, entity_id, details)
+                 VALUES ($1, 'report.update_issue', $2, $3)",
+            )
+            .bind(actor)
+            .bind(report_id.0)
+            .bind(serde_json::json!({
+                "from": previous.0,
+                "to": issue_id,
+            }))
+            .execute(&mut *transaction)
+            .await?;
+        }
+
+        if previous.1 != "confirmed" {
+            self.audit_report_state_change(
+                &mut transaction,
+                report_id,
+                actor,
+                &previous.1,
+                "confirmed",
+            )
+            .await?;
+        }
 
         transaction.commit().await?;
 
@@ -341,11 +346,9 @@ impl AdminDatabase {
         };
 
         let report_rows = sqlx::query(
-            "SELECT id, kind, client_version, build, issue_id, confirmed_at, created_at
+            "SELECT id, kind, client_version, build, issue_id, state, created_at
              FROM reports
              WHERE issue_id = $1
-                AND deleted_at IS NULL
-                AND hidden_at IS NULL
                 AND storage_state = 'ready'
              ORDER BY created_at DESC",
         )
@@ -364,7 +367,7 @@ impl AdminDatabase {
                 platform: None,
                 architecture: None,
                 issue_id: row.get("issue_id"),
-                confirmed_at: row.get("confirmed_at"),
+                state: row.get("state"),
                 created_at: row.get("created_at"),
             })
             .collect::<Vec<_>>();
@@ -450,7 +453,7 @@ impl AdminDatabase {
             "UPDATE reports
              SET issue_id = NULL, assigned_at = NULL, updated_at = now()
              WHERE id = $1 AND issue_id = $2
-                AND hidden_at IS NULL AND deleted_at IS NULL",
+                AND storage_state = 'ready'",
         )
         .bind(report_id)
         .bind(issue_id)

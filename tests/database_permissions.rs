@@ -38,6 +38,16 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
     let (admin_pool, bootstrap) = initialize_database(&admin_url, None, &cipher)
         .await
         .expect("initialize database");
+    let obsolete_deletion_columns: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM information_schema.columns
+         WHERE (table_name = 'reports'
+                AND column_name IN ('deleted_at', 'hidden_at', 'confirmed_at'))
+            OR (table_name = 'attachments' AND column_name = 'deleted_at')",
+    )
+    .fetch_one(&admin_pool)
+    .await
+    .expect("inspect report schema");
+    assert_eq!(obsolete_deletion_columns, 0);
     let reporting_url = bootstrap
         .generated_reporting_database_url
         .expect("reporting role was generated");
@@ -531,10 +541,12 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
 
     let first_triage_report = ReportId::new();
     let second_triage_report = ReportId::new();
+    let other_triage_report = ReportId::new();
     let assigned_report = ReportId::new();
     for (test_report_id, assigned_issue) in [
         (first_triage_report, None),
         (second_triage_report, None),
+        (other_triage_report, None),
         (assigned_report, Some(issue_id)),
     ] {
         sqlx::query(
@@ -550,7 +562,8 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
                 source_client_key,
                 source_ip,
                 issue_id,
-                assigned_at
+                assigned_at,
+                state
              ) VALUES (
                 $1,
                 $2,
@@ -563,7 +576,8 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
                 repeat('8', 64),
                 '203.0.113.10'::inet,
                 $4,
-                CASE WHEN $4::uuid IS NULL THEN NULL ELSE now() END
+                CASE WHEN $4::uuid IS NULL THEN NULL ELSE now() END,
+                CASE WHEN $4::uuid IS NULL THEN 'triage' ELSE 'confirmed' END
              )",
         )
         .bind(test_report_id)
@@ -576,32 +590,30 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
     }
 
     admin_database
-        .set_report_confirmation(second_triage_report, true, 999)
+        .set_report_state(second_triage_report, "confirmed", 999)
         .await
         .expect("confirm one report from the blocked source");
 
     let block_outcome = admin_database
         .block_report_source(first_triage_report, 999, true)
         .await
-        .expect("block source and remove its triage reports");
-    assert_eq!(block_outcome.removed_triage_reports, 1);
-    assert!(block_outcome.current_report_removed);
+        .expect("block source and reject its triage reports");
+    assert_eq!(block_outcome.rejected_triage_reports, 1);
 
-    let removed_triage_reports: i64 = sqlx::query_scalar(
+    let rejected_triage_reports: i64 = sqlx::query_scalar(
         "SELECT count(*)
          FROM reports
          WHERE source_client_key = repeat('8', 64)
             AND issue_id IS NULL
-            AND hidden_at IS NOT NULL
-            AND deleted_at IS NULL",
+            AND state = 'rejected'",
     )
     .fetch_one(&admin_pool)
     .await
-    .expect("count removed triage reports");
-    assert_eq!(removed_triage_reports, 1);
+    .expect("count rejected triage reports");
+    assert_eq!(rejected_triage_reports, 2);
 
     let confirmed_report_is_visible: bool = sqlx::query_scalar(
-        "SELECT confirmed_at IS NOT NULL AND hidden_at IS NULL
+        "SELECT state = 'confirmed'
          FROM reports
          WHERE id = $1",
     )
@@ -612,22 +624,22 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
     assert!(confirmed_report_is_visible);
 
     admin_database
-        .hide_report(second_triage_report, 999)
+        .set_report_state(second_triage_report, "rejected", 999)
         .await
-        .expect("hide the confirmed report");
-    let hidden_report_is_retained: bool = sqlx::query_scalar(
-        "SELECT hidden_at IS NOT NULL AND deleted_at IS NULL
+        .expect("reject the confirmed report");
+    let rejected_report_is_retained: bool = sqlx::query_scalar(
+        "SELECT state = 'rejected'
          FROM reports
          WHERE id = $1",
     )
     .bind(second_triage_report)
     .fetch_one(&admin_pool)
     .await
-    .expect("check hidden report retention state");
-    assert!(hidden_report_is_retained);
+    .expect("check rejected report retention state");
+    assert!(rejected_report_is_retained);
 
     let assigned_report_is_visible: bool = sqlx::query_scalar(
-        "SELECT hidden_at IS NULL AND deleted_at IS NULL
+        "SELECT state = 'confirmed'
          FROM reports
          WHERE id = $1",
     )
@@ -636,6 +648,13 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
     .await
     .expect("check assigned report after source block");
     assert!(assigned_report_is_visible);
+    assert!(
+        admin_database
+            .set_report_state(assigned_report, "triage", 999)
+            .await
+            .is_err(),
+        "a linked report cannot return to triage"
+    );
 
     let first_github_report = ReportId::new();
     let second_github_report = ReportId::new();
@@ -710,6 +729,19 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
         .expect("reuse issue created for the same GitHub issue");
     assert_eq!(reused_created_issue.issue_id, created_issue.issue_id);
     assert!(!reused_created_issue.created);
+    let assigned_states: Vec<String> =
+        sqlx::query_scalar("SELECT state FROM reports WHERE id = ANY($1) ORDER BY id")
+            .bind(
+                &[
+                    first_github_report,
+                    second_github_report,
+                    third_github_report,
+                ][..],
+            )
+            .fetch_all(&admin_pool)
+            .await
+            .expect("read states after GitHub issue assignments");
+    assert_eq!(assigned_states, vec!["confirmed"; 3]);
     let synchronized_issue = admin_database
         .find_issue(created_issue.issue_id)
         .await
@@ -1224,6 +1256,35 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
         .await
         .expect("link first report manually");
 
+    admin_database
+        .set_report_state(stack_reports[0], "rejected", 999)
+        .await
+        .expect("reject a linked report");
+    let unmatched_report =
+        insert_stack_report_for_matching(&admin_pool, original_stacks[1], 0).await;
+    admin_database
+        .index_report_stack_traces(unmatched_report)
+        .await
+        .expect("index report while its matching issue report is rejected");
+    let unmatched_issue: Option<IssueId> =
+        sqlx::query_scalar("SELECT issue_id FROM reports WHERE id = $1")
+            .bind(unmatched_report)
+            .fetch_one(&admin_pool)
+            .await
+            .expect("read issue for unmatched report");
+    assert_eq!(unmatched_issue, None);
+
+    admin_database
+        .assign_report_to_issue(stack_reports[0], matching_issue, 999)
+        .await
+        .expect("reconfirm a report by adding it to the same issue");
+    let restored_state: String = sqlx::query_scalar("SELECT state FROM reports WHERE id = $1")
+        .bind(stack_reports[0])
+        .fetch_one(&admin_pool)
+        .await
+        .expect("read restored report state");
+    assert_eq!(restored_state, "confirmed");
+
     let matching_report =
         insert_stack_report_for_matching(&admin_pool, original_stacks[1], 0).await;
     let queued_before_indexing: bool = sqlx::query_scalar(
@@ -1248,6 +1309,12 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
             .await
             .expect("read automatically linked issue");
     assert_eq!(linked_issue, Some(matching_issue));
+    let linked_state: String = sqlx::query_scalar("SELECT state FROM reports WHERE id = $1")
+        .bind(matching_report)
+        .fetch_one(&admin_pool)
+        .await
+        .expect("read automatically linked report state");
+    assert_eq!(linked_state, "confirmed");
     let queued_after_matching: bool = sqlx::query_scalar(
         "SELECT EXISTS (
             SELECT 1 FROM discord_report_notifications WHERE report_id = $1

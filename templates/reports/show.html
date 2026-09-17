@@ -11,8 +11,8 @@
             <h1>{{ report.title }}</h1>
         </div>
 
-        {% if report.is_assigned %}
-            <span class="badge badge-assigned">Assigned</span>
+        {% if report.is_rejected %}
+            <span class="badge badge-rejected">Rejected</span>
         {% else if report.is_confirmed %}
             <span class="badge badge-confirmed">Confirmed</span>
         {% else %}
@@ -284,75 +284,70 @@
                     </button>
                 </section>
 
-                {% if !report.is_assigned %}
+                {% if report.is_triage || report.is_rejected || !report.is_assigned %}
                     <section class="action-group">
-                        <form
-                            class="report-state-form"
-                            method="post"
-                            action="/reports/{{ report.id }}/state"
-                            data-auto-filter
-                        >
+                        <form method="post" action="/reports/{{ report.id }}/state">
                             <input
                                 type="hidden"
                                 name="csrf"
                                 value="{{ navigation.as_ref().unwrap().csrf_token }}"
                             >
-                            <select name="state" aria-label="Report state">
-                                <option value="triage" {% if report.is_triage %}selected{% endif %}>
-                                    Needs triage
-                                </option>
-                                <option
-                                    value="confirmed"
-                                    {% if report.is_confirmed %}selected{% endif %}
-                                >
-                                    Confirmed
-                                </option>
-                            </select>
-                            <button class="visually-hidden" type="submit">Update report state</button>
+                            {% if report.is_triage %}
+                                <input type="hidden" name="state" value="confirmed">
+                                <button type="submit">Confirm report</button>
+                            {% else if report.is_rejected && report.is_assigned %}
+                                <input type="hidden" name="state" value="confirmed">
+                                <button type="submit">Restore report</button>
+                            {% else %}
+                                <input type="hidden" name="state" value="triage">
+                                <button type="submit">Return to triage</button>
+                            {% endif %}
                         </form>
                     </section>
                 {% endif %}
 
-                <section class="action-group">
-                    <button
-                        class="button-danger hide-report-trigger"
-                        type="button"
-                        popovertarget="hide-report-confirmation"
-                    >
-                        Delete report
-                    </button>
-                    <div
-                        class="confirmation-popover modal-overlay"
-                        id="hide-report-confirmation"
-                        role="dialog"
-                        aria-labelledby="hide-report-confirmation-title"
-                        popover
-                    >
-                        <form method="post" action="/reports/{{ report.id }}/hide">
-                            <input
-                                type="hidden"
-                                name="csrf"
-                                value="{{ navigation.as_ref().unwrap().csrf_token }}"
-                            >
-                            <h3 id="hide-report-confirmation-title">Delete this report?</h3>
-                            <p>
-                                The report will disappear from the management UI. Its data stays
-                                stored until the configured retention period expires.
-                            </p>
-                            <div class="popover-actions">
-                                <button
-                                    class="button-secondary"
-                                    type="button"
-                                    popovertarget="hide-report-confirmation"
-                                    popovertargetaction="hide"
+                {% if !report.is_rejected %}
+                    <section class="action-group">
+                        <button
+                            class="button-danger"
+                            type="button"
+                            popovertarget="reject-report-confirmation"
+                        >
+                            Reject report
+                        </button>
+                        <div
+                            class="confirmation-popover modal-overlay"
+                            id="reject-report-confirmation"
+                            role="dialog"
+                            aria-labelledby="reject-report-confirmation-title"
+                            popover
+                        >
+                            <form method="post" action="/reports/{{ report.id }}/reject">
+                                <input
+                                    type="hidden"
+                                    name="csrf"
+                                    value="{{ navigation.as_ref().unwrap().csrf_token }}"
                                 >
-                                    Cancel
-                                </button>
-                                <button class="button-danger" type="submit">Delete</button>
-                            </div>
-                        </form>
-                    </div>
-                </section>
+                                <h3 id="reject-report-confirmation-title">Reject this report?</h3>
+                                <p>
+                                    It will leave the default report list, but remain available
+                                    with the <code>state:rejected</code> filter.
+                                </p>
+                                <div class="popover-actions">
+                                    <button
+                                        class="button-secondary"
+                                        type="button"
+                                        popovertarget="reject-report-confirmation"
+                                        popovertargetaction="hide"
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button class="button-danger" type="submit">Reject report</button>
+                                </div>
+                            </form>
+                        </div>
+                    </section>
+                {% endif %}
 
                 <section class="danger-zone">
                     {% if report.has_submission_source %}
@@ -396,7 +391,8 @@
                                     <h3 id="block-source-confirmation-title">Block this IP?</h3>
                                     <p>
                                         Future requests from this address will be rejected before
-                                        the server issues a proof-of-work challenge.
+                                        the server issues a proof-of-work challenge. This report
+                                        will also be rejected.
                                     </p>
                                     <label class="checkbox-row">
                                         <input
@@ -405,7 +401,7 @@
                                             value="true"
                                             checked
                                         >
-                                        <span>Remove all reports from this IP that are in triage</span>
+                                        <span>Reject other triage reports from this IP</span>
                                     </label>
                                     <div class="popover-actions">
                                         <button

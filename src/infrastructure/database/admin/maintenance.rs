@@ -29,7 +29,7 @@ impl AdminDatabase {
         sqlx::query(
             "UPDATE reports
              SET expires_at = created_at + make_interval(days => $1)
-             WHERE expires_at IS NULL AND deleted_at IS NULL",
+             WHERE expires_at IS NULL",
         )
         .bind(report_retention_days as i32)
         .execute(&mut *transaction)
@@ -45,29 +45,11 @@ impl AdminDatabase {
         .execute(&mut *transaction)
         .await?;
 
-        sqlx::query(
-            "UPDATE reports
-             SET deleted_at = now(), updated_at = now()
-             WHERE expires_at <= now() AND deleted_at IS NULL",
-        )
-        .execute(&mut *transaction)
-        .await?;
-
-        sqlx::query(
-            "UPDATE attachments
-             SET deleted_at = COALESCE(attachments.deleted_at, now())
-             FROM reports
-             WHERE attachments.report_id = reports.id
-                AND reports.deleted_at IS NOT NULL",
-        )
-        .execute(&mut *transaction)
-        .await?;
-
         let rows = sqlx::query(
             "SELECT id
              FROM reports
-             WHERE deleted_at IS NOT NULL
-             ORDER BY deleted_at, id
+             WHERE expires_at <= now()
+             ORDER BY expires_at, id
              LIMIT 100",
         )
         .fetch_all(&mut *transaction)
@@ -83,7 +65,7 @@ impl AdminDatabase {
     }
 
     pub async fn finish_report_purge(&self, report_id: ReportId) -> Result<bool> {
-        let result = sqlx::query("DELETE FROM reports WHERE id = $1 AND deleted_at IS NOT NULL")
+        let result = sqlx::query("DELETE FROM reports WHERE id = $1 AND expires_at <= now()")
             .bind(report_id)
             .execute(&self.pool)
             .await?;

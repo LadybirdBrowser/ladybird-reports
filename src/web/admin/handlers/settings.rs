@@ -203,8 +203,6 @@ pub async fn operations(
                     None
                 } else if is_issue {
                     Some(format!("/issues/{id}"))
-                } else if event.action == "report.update_visibility" {
-                    None
                 } else {
                     Some(format!("/reports/{id}"))
                 };

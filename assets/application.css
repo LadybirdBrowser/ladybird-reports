@@ -1388,6 +1388,12 @@ tbody tr:hover {
     color: var(--ink-soft);
 }
 
+.badge-rejected {
+    border-color: color-mix(in srgb, var(--danger) 24%, transparent);
+    background: var(--danger-soft);
+    color: var(--danger);
+}
+
 .definition-list {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1529,10 +1535,6 @@ tbody tr:hover {
 
 .action-card h2 {
     font-size: 1rem;
-}
-
-.report-state-form .custom-select {
-    margin-top: 0;
 }
 
 .action-group + .action-group {

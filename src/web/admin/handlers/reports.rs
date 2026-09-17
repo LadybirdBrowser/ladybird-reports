@@ -133,6 +133,7 @@ pub struct ReportView {
     is_assigned: bool,
     is_confirmed: bool,
     is_triage: bool,
+    is_rejected: bool,
     has_submission_source: bool,
     submission_source_is_blocked: bool,
 }
@@ -239,8 +240,7 @@ async fn load_report_list(
     let reports = reports
         .into_iter()
         .map(|report| {
-            let (state_label, state_tone) =
-                report_state(report.issue_id.is_some(), report.confirmed_at.is_some());
+            let (state_label, state_tone) = report_state(&report.state);
 
             ReportRow {
                 id: report.id,
@@ -276,11 +276,11 @@ pub async fn search_options(
         .await?
         .into_iter()
         .map(|report| {
-            let (badge, badge_tone) = match (report.issue_title, report.confirmed_at) {
-                (Some(issue_title), _) => (format!("Assigned · {issue_title}"), "assigned"),
-                (None, Some(_)) => ("Confirmed".into(), "confirmed"),
-                (None, None) => ("Needs triage".into(), "triage"),
-            };
+            let (state_label, badge_tone) = report_state(&report.state);
+            let badge = report
+                .issue_title
+                .map(|title| format!("{state_label} · {title}"))
+                .unwrap_or_else(|| state_label.into());
             let description = report_metadata(
                 report.platform.as_deref(),
                 report.architecture.as_deref(),
@@ -354,7 +354,7 @@ pub async fn search_completions(
     let key = key.to_ascii_lowercase();
     let prefix = value_prefix.trim_matches('"').to_ascii_lowercase();
     let values = match key.as_str() {
-        "state" => vec!["triage", "confirmed", "assigned", "all"]
+        "state" => vec!["triage", "confirmed", "rejected", "all"]
             .into_iter()
             .map(str::to_owned)
             .collect(),
@@ -521,8 +521,9 @@ pub async fn show(
         title,
         overview,
         is_assigned: details.report.issue_id.is_some(),
-        is_confirmed: details.report.confirmed_at.is_some(),
-        is_triage: details.report.issue_id.is_none() && details.report.confirmed_at.is_none(),
+        is_confirmed: details.report.state == "confirmed",
+        is_triage: details.report.state == "triage",
+        is_rejected: details.report.state == "rejected",
         has_submission_source: details.report.has_submission_source,
         submission_source_is_blocked: details.report.submission_source_is_blocked,
     };
@@ -715,6 +716,15 @@ pub enum ReportWorkflowState {
     Confirmed,
 }
 
+impl ReportWorkflowState {
+    fn as_str(&self) -> &'static str {
+        match self {
+            Self::Triage => "triage",
+            Self::Confirmed => "confirmed",
+        }
+    }
+}
+
 #[derive(Deserialize)]
 pub struct ReportStateForm {
     csrf: String,
@@ -728,17 +738,17 @@ pub async fn set_state(
     Form(form): Form<ReportStateForm>,
 ) -> Result<Redirect> {
     session.verify_csrf(&form.csrf)?;
-    let confirmed = matches!(form.state, ReportWorkflowState::Confirmed);
-    let changed = state
+    let target = form.state.as_str();
+    let previous = state
         .database
-        .set_report_confirmation(report_id, confirmed, session.github_id)
+        .set_report_state(report_id, target, session.github_id)
         .await?;
 
-    if changed {
+    if let Some(previous) = previous {
         tracing::info!(
             event = "report.update_state",
-            from = if confirmed { "triage" } else { "confirmed" },
-            to = if confirmed { "confirmed" } else { "triage" },
+            from = previous,
+            to = target,
             %report_id,
             actor = session.login,
         );
@@ -746,26 +756,28 @@ pub async fn set_state(
     Ok(Redirect::to(&format!("/reports/{report_id}")))
 }
 
-pub async fn hide(
+pub async fn reject(
     State(state): State<AdminState>,
     Extension(session): Extension<Session>,
     Path(report_id): Path<ReportId>,
     Form(form): Form<ReportActionForm>,
 ) -> Result<Redirect> {
     session.verify_csrf(&form.csrf)?;
-    state
+    let previous = state
         .database
-        .hide_report(report_id, session.github_id)
+        .set_report_state(report_id, "rejected", session.github_id)
         .await?;
 
-    tracing::warn!(
-        event = "report.update_visibility",
-        %report_id,
-        from = "visible",
-        to = "hidden",
-        actor = session.login,
-    );
-    Ok(Redirect::to("/"))
+    if let Some(previous) = previous {
+        tracing::warn!(
+            event = "report.update_state",
+            %report_id,
+            from = previous,
+            to = "rejected",
+            actor = session.login,
+        );
+    }
+    Ok(Redirect::to(&format!("/reports/{report_id}")))
 }
 
 #[derive(Deserialize)]
@@ -792,15 +804,11 @@ pub async fn block_ip(
         %report_id,
         from = "allowed",
         to = "blocked",
-        triage_reports_hidden = outcome.removed_triage_reports,
+        triage_reports_rejected = outcome.rejected_triage_reports,
         actor = session.login,
     );
 
-    if outcome.current_report_removed {
-        Ok(Redirect::to("/"))
-    } else {
-        Ok(Redirect::to(&format!("/reports/{report_id}")))
-    }
+    Ok(Redirect::to(&format!("/reports/{report_id}")))
 }
 
 pub async fn unblock_ip(
@@ -885,13 +893,12 @@ fn next_page_url(
     ))
 }
 
-fn report_state(is_assigned: bool, is_confirmed: bool) -> (&'static str, &'static str) {
-    if is_assigned {
-        ("Assigned", "assigned")
-    } else if is_confirmed {
-        ("Confirmed", "confirmed")
-    } else {
-        ("Needs triage", "triage")
+fn report_state(state: &str) -> (&'static str, &'static str) {
+    match state {
+        "triage" => ("Needs triage", "triage"),
+        "confirmed" => ("Confirmed", "confirmed"),
+        "rejected" => ("Rejected", "rejected"),
+        _ => ("Unknown state", "neutral"),
     }
 }
 

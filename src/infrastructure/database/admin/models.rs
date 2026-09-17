@@ -46,7 +46,7 @@ pub struct ReportSummary {
     pub platform: Option<String>,
     pub architecture: Option<String>,
     pub issue_id: Option<IssueId>,
-    pub confirmed_at: Option<DateTime<Utc>>,
+    pub state: String,
     pub created_at: DateTime<Utc>,
 }
 
@@ -86,7 +86,7 @@ pub struct ReportSearchResult {
     pub platform: Option<String>,
     pub architecture: Option<String>,
     pub issue_title: Option<String>,
-    pub confirmed_at: Option<DateTime<Utc>>,
+    pub state: String,
     pub created_at: DateTime<Utc>,
 }
 
@@ -99,7 +99,7 @@ pub struct ReportRecord {
     pub client_version: String,
     pub build: String,
     pub issue_id: Option<IssueId>,
-    pub confirmed_at: Option<DateTime<Utc>>,
+    pub state: String,
     pub source_ip: Option<String>,
     pub has_submission_source: bool,
     pub submission_source_is_blocked: bool,
@@ -150,8 +150,7 @@ pub struct SimilarReport {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct BlockReportSourceOutcome {
-    pub removed_triage_reports: u64,
-    pub current_report_removed: bool,
+    pub rejected_triage_reports: u64,
 }
 
 #[derive(Clone, Debug)]

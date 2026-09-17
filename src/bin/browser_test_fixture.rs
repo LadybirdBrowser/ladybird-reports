@@ -317,7 +317,7 @@ async fn insert_example_report(
             source_ip,
             issue_id,
             assigned_at,
-            confirmed_at,
+            state,
             created_at,
             updated_at
          )
@@ -334,7 +334,7 @@ async fn insert_example_report(
             '127.0.0.1'::inet,
             $7,
             CASE WHEN $7::uuid IS NULL THEN NULL ELSE now() END,
-            CASE WHEN $9 THEN now() ELSE NULL END,
+            CASE WHEN $7::uuid IS NOT NULL OR $9 THEN 'confirmed' ELSE 'triage' END,
             now() - make_interval(hours => $8),
             now() - make_interval(hours => $8)
          )",
