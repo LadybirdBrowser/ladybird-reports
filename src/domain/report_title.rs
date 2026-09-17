@@ -24,15 +24,15 @@ pub fn generate_report_title(input: ReportTitleInput<'_>) -> String {
             .take(REPORT_TITLE_STACK_CHARACTERS)
             .collect::<String>();
         let parsed = parse_stack_trace(&excerpt);
-        if let Some(symbol) = parsed
+        if let Some(name) = parsed
             .rows
             .iter()
-            .find_map(|row| row.number.map(|_| &row.symbol))
+            .filter(|row| row.relevant)
+            .find_map(|row| {
+                concise_function_name(&row.symbol, MAX_TITLE_CHARACTERS - kind.len() - 2)
+            })
         {
-            if let Some(name) = concise_function_name(symbol, MAX_TITLE_CHARACTERS - kind.len() - 2)
-            {
-                return format!("{kind}: {name}");
-            }
+            return format!("{kind}: {name}");
         }
     }
 
@@ -66,6 +66,16 @@ fn concise_function_name(symbol: &str, maximum_characters: usize) -> Option<Stri
         .split_once("::CallableWrapper<")
         .map(|(_, inner)| inner)
         .unwrap_or(symbol);
+
+    // ABI descriptions can precede the actual qualified function name. Find
+    // the first scope operator, then discard any words before its qualifier.
+    let candidate = if let Some(first_scope) = candidate.find("::") {
+        &candidate[candidate[..first_scope]
+            .rfind(char::is_whitespace)
+            .map_or(0, |index| index + 1)..]
+    } else {
+        candidate
+    };
 
     let mut without_templates = String::new();
     let mut depth = 0_u32;
@@ -145,6 +155,22 @@ mod tests {
             "Crash: WebContent::ConnectionFromClient::debug_request"
         );
         assert!(title.chars().count() <= MAX_TITLE_CHARACTERS);
+    }
+
+    #[test]
+    fn title_extracts_a_qualified_function_after_abi_description() {
+        let stack = "Native stack (binary build ID, object address):\n\
+            #0 4402e9f4aa8030998b5a8e8bab39a036 0x100028897 non-virtual thunk to Compositor::ConnectionFromClient::crash() at /bin/Compositor\n\
+            #1 4402e9f4aa8030998b5a8e8bab39a036 0x10002b943 CompositorControlServerStub::handle_crash() at /bin/Compositor";
+        let title = generate_report_title(ReportTitleInput {
+            kind: "crash",
+            client_version: "1.0",
+            stack_trace: Some(stack),
+            process: Some("Compositor"),
+            platform: Some("macOS"),
+        });
+
+        assert_eq!(title, "Crash: Compositor::ConnectionFromClient::crash");
     }
 
     #[test]
