@@ -133,15 +133,7 @@ test.describe("authenticated management UI", () => {
     await expect(page.locator(".stack-frame-table")).toBeVisible();
     await expect(page.getByText("macOS", { exact: true }).first()).toBeVisible();
     await expect(page.getByText("arm64", { exact: true }).first()).toBeVisible();
-    await expect(page.getByText("127.0.0.1", { exact: true })).toBeVisible();
-    const sourceAddress = page.locator(".definition-list > div").filter({
-      has: page.getByText("Source IP address", { exact: true }),
-    });
-    await sourceAddress.locator("code").evaluate((value) => {
-      value.textContent = "2001:9e0:862a:6201:d8fd:5d40:445d:4115";
-    });
-    expect(await sourceAddress.evaluate((field) => field.scrollWidth <= field.clientWidth))
-      .toBe(true);
+    await expect(page.locator(".definition-list > div")).toHaveCount(5);
     await expect(page.getByRole("heading", { name: "Additional fields" })).toBeVisible();
     await expect(page.locator(".report-field-value").filter({ hasText: "<script>" })).toBeVisible();
     await expect(page.getByRole("link", { name: "Filter reports by Stack trace" })).toHaveCount(0);
@@ -218,20 +210,16 @@ test.describe("authenticated management UI", () => {
     }).click();
 
     const fields = page.locator(".definition-list > div");
-    await expect(fields).toHaveCount(7);
+    await expect(fields).toHaveCount(6);
     await expect(fields.nth(4).locator("dt")).toHaveText("Submitted");
-    await expect(fields.nth(5).locator("dt")).toHaveText("Source IP address");
-    await expect(fields.nth(6).locator("dt")).toHaveText("Build");
+    await expect(fields.nth(5).locator("dt")).toHaveText("Build");
 
     const submitted = await fields.nth(4).boundingBox();
-    const sourceIp = await fields.nth(5).boundingBox();
-    const build = await fields.nth(6).boundingBox();
+    const build = await fields.nth(5).boundingBox();
     expect(submitted).not.toBeNull();
-    expect(sourceIp).not.toBeNull();
     expect(build).not.toBeNull();
-    expect(sourceIp!.x).toBeGreaterThan(submitted!.x);
-    expect(build!.width).toBeGreaterThan(submitted!.width + sourceIp!.width - 2);
-    expect(await fields.nth(5).evaluate((field) =>
+    expect(build!.width).toBeGreaterThanOrEqual(submitted!.width - 2);
+    expect(await fields.nth(4).evaluate((field) =>
       getComputedStyle(field).borderBottomWidth,
     )).toBe("1px");
 
@@ -482,6 +470,9 @@ test.describe("authenticated management UI", () => {
       ),
     ).toBe("blur(2px)");
     await expect(confirmation.getByRole("checkbox")).toBeChecked();
+    await expect(confirmation.getByRole("checkbox", {
+      name: "Reject all triage reports from this IP",
+    })).toBeVisible();
     await confirmation.getByRole("button", { name: "Cancel" }).click();
     await expect(confirmation).toBeHidden();
 
@@ -489,11 +480,10 @@ test.describe("authenticated management UI", () => {
     await confirmation.getByRole("checkbox").uncheck();
     await confirmation.getByRole("button", { name: "Block IP" }).click();
     await expect(page.getByText("IP is blocked indefinitely")).toBeVisible();
-    await expect(page.locator(".badge-rejected")).toHaveText("Rejected");
+    await expect(page.locator(".badge-triage")).toHaveText("Needs triage");
 
     await page.getByRole("button", { name: "Unblock submission IP" }).click();
     await expect(page.getByRole("button", { name: "Block submission IP" })).toBeVisible();
-    await page.getByRole("button", { name: "Restore report" }).click();
   });
 
   test("reorders recognized fields by dragging rows", async ({ page }) => {

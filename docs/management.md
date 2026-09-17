@@ -17,7 +17,7 @@ state:triage state:confirmed signal:sigabrt
 ```
 
 Built-in qualifiers are `state`, `kind`, `version`, `client_version`, `build`,
-`id`, `report`, `ip`, and `source_ip`. State values are `triage`, `confirmed`,
+`id` and `report`. State values are `triage`, `confirmed`,
 and `rejected`, or `all`. Repeating a qualifier matches any of its values, so
 `state:triage state:confirmed` includes both states. Different qualifiers are
 combined, so adding `platform:linux` restricts both states to Linux reports.

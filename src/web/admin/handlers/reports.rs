@@ -148,7 +148,7 @@ pub struct OverviewField {
     label: &'static str,
     value: String,
     filter_url: Option<String>,
-    monospace: bool,
+    full_width: bool,
 }
 
 pub struct FieldView {
@@ -329,7 +329,6 @@ pub async fn search_completions(
             ("version", "Browser version"),
             ("build", "Build description"),
             ("id", "Report ID"),
-            ("ip", "Source IP address"),
         ];
         let definitions = state.database.field_definitions().await?;
         for definition in &definitions {
@@ -368,7 +367,7 @@ pub async fn search_completions(
             .into_iter()
             .map(str::to_owned)
             .collect(),
-        "id" | "report" | "ip" | "source_ip" => Vec::new(),
+        "id" | "report" => Vec::new(),
         _ => {
             let values = state.database.report_search_values(&key).await?;
             if values.len() > 25 {
@@ -463,11 +462,6 @@ pub async fn show(
     let architecture =
         field_string(&details.fields, "architecture").unwrap_or_else(|| "Unknown".into());
 
-    let source_ip = details
-        .report
-        .source_ip
-        .clone()
-        .unwrap_or_else(|| "Unavailable".into());
     let mut overview = vec![
         OverviewField::searchable(
             "Report type",
@@ -485,30 +479,18 @@ pub async fn show(
         OverviewField::searchable("Architecture", &architecture, "architecture", &architecture),
     ];
 
-    overview.extend([
-        OverviewField {
-            label: "Submitted",
-            value: details
-                .report
-                .created_at
-                .format("%d %b %Y, %H:%M UTC")
-                .to_string(),
-            filter_url: Some(submitted_date_filter_url(
-                details.report.created_at.date_naive(),
-            )),
-            monospace: false,
-        },
-        OverviewField {
-            label: "Source IP address",
-            value: source_ip.clone(),
-            filter_url: details
-                .report
-                .source_ip
-                .as_deref()
-                .map(|address| field_filter_url("ip", address)),
-            monospace: true,
-        },
-    ]);
+    overview.push(OverviewField {
+        label: "Submitted",
+        value: details
+            .report
+            .created_at
+            .format("%d %b %Y, %H:%M UTC")
+            .to_string(),
+        filter_url: Some(submitted_date_filter_url(
+            details.report.created_at.date_naive(),
+        )),
+        full_width: true,
+    });
 
     // Older clients only supplied the combined build envelope. Put that long
     // value on its own row, after the shorter submission details. Newer clients
@@ -518,12 +500,14 @@ pub async fn show(
         .iter()
         .any(|field| field.key == "build_configuration")
     {
-        overview.push(OverviewField::searchable(
+        let mut build = OverviewField::searchable(
             "Build",
             &details.report.build,
             "build",
             &details.report.build,
-        ));
+        );
+        build.full_width = true;
+        overview.push(build);
     }
 
     let report_view = ReportView {
@@ -662,7 +646,7 @@ impl OverviewField {
             label,
             value: value.into(),
             filter_url: Some(field_filter_url(key, search_value)),
-            monospace: false,
+            full_width: false,
         }
     }
 }

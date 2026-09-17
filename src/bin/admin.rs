@@ -124,7 +124,10 @@ async fn run_maintenance(state: AdminState) {
             Ok(configuration) => {
                 let result = state
                     .database
-                    .begin_maintenance_sweep(configuration.maintenance.report_retention_days)
+                    .begin_maintenance_sweep(
+                        configuration.maintenance.report_retention_days,
+                        configuration.maintenance.submission_source_retention_days,
+                    )
                     .await;
 
                 match result {
@@ -153,12 +156,17 @@ async fn run_maintenance(state: AdminState) {
 
                         if result.sessions_deleted > 0
                             || result.oauth_states_deleted > 0
+                            || result.submission_sources_deleted > 0
+                            || result.inactive_source_blocks_deleted > 0
                             || reports_deleted > 0
                         {
                             tracing::info!(
                                 event = "maintenance.admin_sweep_completed",
                                 sessions_deleted = result.sessions_deleted,
                                 oauth_states_deleted = result.oauth_states_deleted,
+                                submission_sources_deleted = result.submission_sources_deleted,
+                                inactive_source_blocks_deleted =
+                                    result.inactive_source_blocks_deleted,
                                 reports_deleted,
                             );
                         }

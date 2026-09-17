@@ -1366,6 +1366,16 @@ tbody tr:hover {
     border-right: 0;
 }
 
+.definition-list div.overview-wide {
+    grid-column: 1 / -1;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+}
+
+.definition-list div.overview-wide:last-child {
+    border-bottom: 0;
+}
+
 .definition-list dt {
     margin-bottom: 0.2rem;
     color: var(--ink-faint);
@@ -1386,12 +1396,6 @@ tbody tr:hover {
     align-items: center;
     justify-content: space-between;
     gap: 0.75rem;
-}
-
-.overview-value code {
-    min-width: 0;
-    font-size: 0.84rem;
-    overflow-wrap: anywhere;
 }
 
 /* Reports and issue actions */

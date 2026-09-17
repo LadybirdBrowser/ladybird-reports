@@ -288,9 +288,17 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
     assert_eq!(report.fields.len(), 1);
     assert!(!report.fields[0].recognized_at_submission);
     assert!(report.report.has_submission_source);
-    assert_eq!(report.report.source_ip.as_deref(), Some("127.0.0.1"));
     assert!(!report.report.submission_source_is_blocked);
     assert!(report.report.expires_at.is_some());
+    let source_retention_is_one_month: bool = sqlx::query_scalar(
+        "SELECT source_client_key_expires_at = created_at + interval '30 days'
+         FROM reports WHERE id = $1",
+    )
+    .bind(report_id)
+    .fetch_one(&admin_pool)
+    .await
+    .expect("check submission source retention");
+    assert!(source_retention_is_one_month);
     assert!(
         report
             .events
@@ -501,7 +509,7 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
         .await
         .expect("expire accepted report");
     let admin_sweep = admin_database
-        .begin_maintenance_sweep(3_650)
+        .begin_maintenance_sweep(3_650, 30)
         .await
         .expect("begin admin maintenance sweep");
     assert_eq!(admin_sweep.sessions_deleted, 1);
@@ -560,7 +568,7 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
                 storage_state,
                 staging_id,
                 source_client_key,
-                source_ip,
+                source_client_key_expires_at,
                 issue_id,
                 state
              ) VALUES (
@@ -573,7 +581,7 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
                 'ready',
                 $3,
                 repeat('8', 64),
-                '203.0.113.10'::inet,
+                now() + interval '30 days',
                 $4,
                 CASE WHEN $4::uuid IS NULL THEN 'triage' ELSE 'confirmed' END
              )",
@@ -600,11 +608,27 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
         .await
         .expect("represent a previously confirmed unlinked report");
 
+    let block_without_rejection = admin_database
+        .block_report_source(other_triage_report, 999, false)
+        .await
+        .expect("block source without changing report states");
+    assert_eq!(block_without_rejection.rejected_triage_reports, 0);
+    let current_state: String = sqlx::query_scalar("SELECT state FROM reports WHERE id = $1")
+        .bind(other_triage_report)
+        .fetch_one(&admin_pool)
+        .await
+        .expect("read current report state");
+    assert_eq!(current_state, "triage");
+    admin_database
+        .unblock_report_source(other_triage_report, 999)
+        .await
+        .expect("unblock source");
+
     let block_outcome = admin_database
         .block_report_source(first_triage_report, 999, true)
         .await
         .expect("block source and reject its triage reports");
-    assert_eq!(block_outcome.rejected_triage_reports, 1);
+    assert_eq!(block_outcome.rejected_triage_reports, 2);
 
     let rejected_triage_reports: i64 = sqlx::query_scalar(
         "SELECT count(*)
@@ -661,6 +685,57 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
             .is_err(),
         "a linked report cannot return to triage"
     );
+
+    sqlx::query(
+        "UPDATE reports
+         SET source_client_key_expires_at = now() - interval '1 second'
+         WHERE id = $1",
+    )
+    .bind(first_triage_report)
+    .execute(&admin_pool)
+    .await
+    .expect("expire the report source identifier");
+    admin_database
+        .begin_maintenance_sweep(3_650, 30)
+        .await
+        .expect("sweep expired source identifiers");
+    let source_key: Option<String> =
+        sqlx::query_scalar("SELECT source_client_key FROM reports WHERE id = $1")
+            .bind(first_triage_report)
+            .fetch_one(&admin_pool)
+            .await
+            .expect("read expired source identifier");
+    assert!(source_key.is_none());
+    let blocked_report = admin_database
+        .report_details(first_triage_report)
+        .await
+        .expect("read report after source expiry")
+        .expect("report still exists");
+    assert!(blocked_report.report.submission_source_is_blocked);
+    admin_database
+        .unblock_report_source(first_triage_report, 999)
+        .await
+        .expect("unblock from the report after its source identifier expired");
+    sqlx::query(
+        "UPDATE source_rate_limits
+         SET lifted_at = now() - interval '31 days'
+         WHERE source_report_id = $1",
+    )
+    .bind(first_triage_report)
+    .execute(&admin_pool)
+    .await
+    .expect("age the lifted block");
+    admin_database
+        .begin_maintenance_sweep(3_650, 30)
+        .await
+        .expect("sweep inactive block records");
+    let inactive_block_count: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM source_rate_limits WHERE source_report_id = $1")
+            .bind(first_triage_report)
+            .fetch_one(&admin_pool)
+            .await
+            .expect("count inactive blocks");
+    assert_eq!(inactive_block_count, 0);
 
     let first_github_report = ReportId::new();
     let second_github_report = ReportId::new();

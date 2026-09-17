@@ -97,7 +97,6 @@ pub struct ReportRecord {
     pub build: String,
     pub issue_id: Option<IssueId>,
     pub state: String,
-    pub source_ip: Option<String>,
     pub has_submission_source: bool,
     pub submission_source_is_blocked: bool,
     pub created_at: DateTime<Utc>,

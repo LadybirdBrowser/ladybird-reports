@@ -6,6 +6,8 @@ use crate::{domain::ReportId, error::Result, infrastructure::database::AdminData
 pub struct AdminSweepResult {
     pub sessions_deleted: u64,
     pub oauth_states_deleted: u64,
+    pub submission_sources_deleted: u64,
+    pub inactive_source_blocks_deleted: u64,
     pub reports_ready_for_purge: Vec<ReportId>,
 }
 
@@ -13,6 +15,7 @@ impl AdminDatabase {
     pub async fn begin_maintenance_sweep(
         &self,
         report_retention_days: u32,
+        source_retention_days: u32,
     ) -> Result<AdminSweepResult> {
         let mut transaction = self.pool.begin().await?;
 
@@ -25,6 +28,28 @@ impl AdminDatabase {
                 .execute(&mut *transaction)
                 .await?
                 .rows_affected();
+
+        let submission_sources_deleted = sqlx::query(
+            "UPDATE reports
+             SET source_client_key = NULL,
+                 source_client_key_expires_at = NULL
+             WHERE source_client_key_expires_at <= now()",
+        )
+        .execute(&mut *transaction)
+        .await?
+        .rows_affected();
+
+        let inactive_source_blocks_deleted = sqlx::query(
+            "DELETE FROM source_rate_limits
+             WHERE (lifted_at IS NOT NULL
+                    AND lifted_at <= now() - make_interval(days => $1))
+                OR (expires_at IS NOT NULL
+                    AND expires_at <= now() - make_interval(days => $1))",
+        )
+        .bind(source_retention_days as i32)
+        .execute(&mut *transaction)
+        .await?
+        .rows_affected();
 
         sqlx::query(
             "UPDATE reports
@@ -60,6 +85,8 @@ impl AdminDatabase {
         Ok(AdminSweepResult {
             sessions_deleted,
             oauth_states_deleted,
+            submission_sources_deleted,
+            inactive_source_blocks_deleted,
             reports_ready_for_purge: rows.into_iter().map(|row| row.get("id")).collect(),
         })
     }

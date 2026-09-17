@@ -333,12 +333,19 @@ impl AdminDatabase {
                 build,
                 issue_id,
                 state,
-                host(source_ip) AS source_ip,
-                source_client_key IS NOT NULL AS has_submission_source,
+                ((source_client_key IS NOT NULL
+                    AND source_client_key_expires_at > now()) OR EXISTS (
+                    SELECT 1 FROM source_rate_limits
+                    WHERE source_rate_limits.source_report_id = reports.id
+                        AND source_rate_limits.lifted_at IS NULL
+                        AND (source_rate_limits.expires_at IS NULL
+                            OR source_rate_limits.expires_at > now())
+                )) AS has_submission_source,
                 EXISTS (
                     SELECT 1
                     FROM source_rate_limits
-                    WHERE source_rate_limits.client_key = reports.source_client_key
+                    WHERE (source_rate_limits.client_key = reports.source_client_key
+                        OR source_rate_limits.source_report_id = reports.id)
                         AND source_rate_limits.lifted_at IS NULL
                         AND (
                             source_rate_limits.expires_at IS NULL
@@ -364,7 +371,6 @@ impl AdminDatabase {
             build: row.get("build"),
             issue_id: row.get("issue_id"),
             state: row.get("state"),
-            source_ip: row.get("source_ip"),
             has_submission_source: row.get("has_submission_source"),
             submission_source_is_blocked: row.get("submission_source_is_blocked"),
             created_at: row.get("created_at"),
@@ -660,18 +666,19 @@ impl AdminDatabase {
         remove_triage_reports: bool,
     ) -> Result<BlockReportSourceOutcome> {
         let mut transaction = self.pool.begin().await?;
-        let source: (Option<String>, String) = sqlx::query_as(
-            "SELECT source_client_key, state
+        let source: Option<String> = sqlx::query_scalar(
+            "SELECT source_client_key
              FROM reports
              WHERE id = $1
                 AND storage_state = 'ready'
+                AND source_client_key_expires_at > now()
              FOR UPDATE",
         )
         .bind(report_id)
         .fetch_optional(&mut *transaction)
         .await?
         .ok_or(AppError::NotFound("Report not found"))?;
-        let client_key = source.0.ok_or(AppError::InvalidRequest(
+        let client_key = source.ok_or(AppError::InvalidRequest(
             "This report has no submission source identifier",
         ))?;
 
@@ -697,37 +704,16 @@ impl AdminDatabase {
         .execute(&mut *transaction)
         .await?;
 
-        sqlx::query(
-            "UPDATE reports
-             SET state = 'rejected', updated_at = now()
-             WHERE id = $1",
-        )
-        .bind(report_id)
-        .execute(&mut *transaction)
-        .await?;
-        if source.1 != "rejected" {
-            self.audit_report_state_change(
-                &mut transaction,
-                report_id,
-                actor,
-                &source.1,
-                "rejected",
-            )
-            .await?;
-        }
-
         let rejected_report_ids = if remove_triage_reports {
             sqlx::query_scalar::<_, ReportId>(
                 "UPDATE reports
                  SET state = 'rejected', updated_at = now()
                  WHERE source_client_key = $1
-                    AND id <> $2
                     AND state = 'triage'
                     AND storage_state = 'ready'
                  RETURNING id",
             )
             .bind(&client_key)
-            .bind(report_id)
             .fetch_all(&mut *transaction)
             .await?
         } else {
@@ -788,8 +774,10 @@ impl AdminDatabase {
         let result = sqlx::query(
             "UPDATE source_rate_limits
              SET lifted_by = $2, lifted_at = now()
-             WHERE client_key = (
-                SELECT source_client_key FROM reports WHERE id = $1
+             WHERE client_key = COALESCE(
+                (SELECT source_client_key FROM reports WHERE id = $1),
+                (SELECT client_key FROM source_rate_limits
+                 WHERE source_report_id = $1 AND lifted_at IS NULL)
              )
                 AND lifted_at IS NULL
                 AND (expires_at IS NULL OR expires_at > now())",
@@ -906,9 +894,6 @@ fn push_qualified_search_predicate(sql: &mut QueryBuilder<'_, Postgres>, key: &s
         "build" => push_report_column_filter_predicate(sql, "reports.build", value),
         "id" | "report" => {
             push_report_column_filter_predicate(sql, "reports.id::text", value);
-        }
-        "ip" | "source_ip" => {
-            push_report_column_filter_predicate(sql, "host(reports.source_ip)", value);
         }
         _ => {
             sql.push(

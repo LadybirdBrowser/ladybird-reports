@@ -28,14 +28,10 @@
                 </div>
                 <dl class="definition-list">
                     {% for field in report.overview %}
-                        <div>
+                        <div{% if field.full_width %} class="overview-wide"{% endif %}>
                             <dt>{{ field.label }}</dt>
                             <dd class="overview-value">
-                                {% if field.monospace %}
-                                    <code>{{ field.value }}</code>
-                                {% else %}
-                                    {{ field.value }}
-                                {% endif %}
+                                {{ field.value }}
                                 {% if let Some(filter_url) = field.filter_url %}
                                     <a
                                         class="field-filter-button"
@@ -341,8 +337,7 @@
                                     <h3 id="block-source-confirmation-title">Block this IP?</h3>
                                     <p>
                                         Future requests from this address will be rejected before
-                                        the server issues a proof-of-work challenge. This report
-                                        will also be rejected.
+                                        the server issues a proof-of-work challenge.
                                     </p>
                                     <label class="checkbox-row">
                                         <input
@@ -351,7 +346,7 @@
                                             value="true"
                                             checked
                                         >
-                                        <span>Reject other triage reports from this IP</span>
+                                        <span>Reject all triage reports from this IP</span>
                                     </label>
                                     <div class="popover-actions">
                                         <button

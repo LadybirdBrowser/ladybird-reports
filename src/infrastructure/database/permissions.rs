@@ -154,7 +154,7 @@ pub async fn apply_ingest_permissions(admin_pool: &PgPool, ingest_role: &str) ->
         "acquire_upload_lease(uuid, text, integer, integer, integer)",
         "release_upload_lease(uuid)",
         "find_report_receipt(uuid, text)",
-        "accept_report(uuid, text, text, uuid, uuid, text, text, text, uuid, text, inet, jsonb, jsonb)",
+        "accept_report(uuid, text, text, uuid, uuid, text, text, text, uuid, text, integer, jsonb, jsonb)",
         "mark_report_storage_ready(uuid, uuid)",
         "pending_report_storage()",
         "staging_upload_is_referenced(uuid)",

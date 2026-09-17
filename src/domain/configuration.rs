@@ -67,6 +67,7 @@ pub struct MaintenanceConfiguration {
     pub sweep_interval_seconds: u64,
     pub staging_retention_seconds: u64,
     pub report_retention_days: u32,
+    pub submission_source_retention_days: u32,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -99,6 +100,7 @@ impl Default for RuntimeConfiguration {
                 sweep_interval_seconds: 900,
                 staging_retention_seconds: 3_600,
                 report_retention_days: 3_650,
+                submission_source_retention_days: 30,
             },
             discord: DiscordConfiguration::default(),
             membership_recheck_seconds: 300,
@@ -341,6 +343,13 @@ pub const SETTING_DEFINITIONS: &[SettingDefinition] = &[
         "Days from report creation before deletion is scheduled.",
     ),
     setting(
+        "submission_source_retention_days",
+        "maintenance.submission_source_retention_days",
+        "Submission source retention",
+        "Keeps a report's keyed source identifier available for blocking and clears inactive block records. Changing it affects new report identifiers and the cleanup of inactive blocks.",
+        "Days from submission or when a block ended; the default is 30 days.",
+    ),
+    setting(
         "webhook_url",
         "discord.webhook_url",
         "Discord webhook",
@@ -580,7 +589,8 @@ impl RuntimeConfiguration {
             || !(60..=86_400).contains(&maintenance.sweep_interval_seconds)
             || maintenance.staging_retention_seconds < limits.upload_timeout_seconds + 60
             || maintenance.staging_retention_seconds > 604_800
-            || !(30..=36_500).contains(&maintenance.report_retention_days);
+            || !(30..=36_500).contains(&maintenance.report_retention_days)
+            || !(1..=365).contains(&maintenance.submission_source_retention_days);
 
         if invalid {
             return Err(AppError::InvalidRequest("Unsafe operational limits"));

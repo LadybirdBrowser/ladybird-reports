@@ -43,5 +43,9 @@ runtime configuration and are editable in the management UI. New reports and
 attachments receive expiry timestamps when accepted. The maintenance loop also
 backfills expiry timestamps for records created before retention was enabled.
 
-The default report retention is ten years. Review that setting as the operational
+The default report retention is ten years. The keyed submission source identifier
+on a report expires after 30 days by default, independently of report retention.
+Both periods are configurable in the management UI. Active source blocks retain
+their own keyed identifier; lifted or expired blocks are removed after the source
+retention period. Review retention settings as operational
 and privacy requirements become clearer.

@@ -1,4 +1,4 @@
-use std::{collections::HashMap, net::IpAddr, sync::Arc};
+use std::{collections::HashMap, sync::Arc};
 
 use chrono::{Duration, Utc};
 
@@ -143,7 +143,6 @@ impl ReportIngestionService {
         &self,
         mut prepared: PreparedSubmission,
         source_client_key: &str,
-        source_ip: IpAddr,
     ) -> Result<ReportId> {
         let configuration = self.database.configuration().await?;
 
@@ -160,7 +159,7 @@ impl ReportIngestionService {
                 manifest: &prepared.manifest,
                 upload_id: prepared.upload_id,
                 source_client_key,
-                source_ip,
+                source_retention_days: configuration.maintenance.submission_source_retention_days,
                 definitions: &prepared.definitions,
                 retention_days: configuration.maintenance.report_retention_days,
             })

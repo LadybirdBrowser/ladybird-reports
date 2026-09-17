@@ -11,11 +11,14 @@ Proof of work raises the cost of bulk submissions but does not establish authent
 IP rate limits and global capacity limits remain necessary.
 
 The server HMACs normalized client addresses for rate-limit buckets and source blocks.
-Reports retain that keyed identifier so an administrator can impose an indefinite rate
-limit from the report action panel. They also retain the source address for triage until
-the report expires. The address is visible only in the management interface and is never
-written to application logs. Rotating `CLIENT_ADDRESS_HMAC_KEY` intentionally breaks
-matching against earlier blocks, so the key must remain stable during normal operation.
+Reports retain that keyed identifier for the configured submission source retention
+period (30 days by default), so an administrator can block abusive sources from the
+report action panel. The maintenance sweep clears expired identifiers from reports.
+Active blocks keep their own keyed identifiers. Lifted or expired blocks are removed
+after the configured retention period. Raw source addresses are
+not stored on reports or written to application logs. Rotating
+`CLIENT_ADDRESS_HMAC_KEY` intentionally breaks matching against earlier blocks, so
+the key must remain stable during normal operation.
 
 The ingestion database role cannot read report bodies, attachments, sessions, audit
 events, or GitHub tokens. It can execute narrowly scoped functions for challenges,

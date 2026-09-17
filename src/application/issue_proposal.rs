@@ -130,7 +130,6 @@ mod tests {
                 build: "Release".into(),
                 issue_id: None,
                 state: "triage".into(),
-                source_ip: Some("192.0.2.1".into()),
                 has_submission_source: true,
                 submission_source_is_blocked: false,
                 created_at: Utc::now(),

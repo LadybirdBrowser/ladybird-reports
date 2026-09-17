@@ -226,7 +226,7 @@ async fn receive_and_accept(
 
     state
         .ingestion
-        .accept_submission(prepared, &source.key, source.ip)
+        .accept_submission(prepared, &source.key)
         .await
 }
 
