@@ -3,7 +3,7 @@ use sqlx::{PgPool, Row, postgres::PgPoolOptions};
 
 use crate::{
     error::{AppError, Result},
-    infrastructure::{SecretCipher, random_token},
+    infrastructure::{SecretCipher, database::migrate_database, random_token},
 };
 
 pub struct DatabaseBootstrap {
@@ -20,11 +20,7 @@ pub async fn initialize_database(
         .connect(admin_database_url)
         .await?;
 
-    sqlx::migrate!("./migrations")
-        .run(&admin_pool)
-        .await
-        .map_err(|error| AppError::Internal(error.into()))?;
-    tracing::info!(event = "database.migrations_complete");
+    migrate_database(&admin_pool).await?;
 
     let generated_reporting_database_url = match reporting_database_url {
         Some(database_url) => {
