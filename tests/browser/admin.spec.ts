@@ -60,6 +60,24 @@ test.describe("authenticated management UI", () => {
     storageState: "target/browser-test-storage-state.json",
   });
 
+  test("issue pages do not wait for GitHub to respond", async ({ page }) => {
+    await page.goto("/issues");
+    const issuePath = await page.getByRole("link", {
+      name: "Intermittent navigation timeout",
+    }).getAttribute("href");
+
+    const fakeGithub = "http://127.0.0.1:3101/test/issue-response-delay";
+    await page.request.post(`${fakeGithub}?milliseconds=1000`);
+    try {
+      const started = Date.now();
+      const response = await page.request.get(issuePath!);
+      expect(response.status()).toBe(200);
+      expect(Date.now() - started).toBeLessThan(700);
+    } finally {
+      await page.request.post(`${fakeGithub}?milliseconds=0`);
+    }
+  });
+
   test("expired sessions do not download the login page as an attachment", async ({ page }) => {
     await page.goto(`/reports/${reportId}`);
     const attachment = page.locator('.attachment-table a[href^="/attachments/"]').first();

@@ -53,7 +53,6 @@ pub struct IssueTemplate {
     potential_matches: Vec<ReportView>,
     merge_destinations: Vec<IssueOption>,
     events: Vec<EventView>,
-    sync_warning: bool,
     github_field_warning: bool,
 }
 
@@ -235,24 +234,6 @@ pub async fn show(
         .ok_or_else(|| not_found("Issue not found"))?
         .state;
 
-    let sync_warning = if issue_state == "rejected" {
-        false
-    } else {
-        match refresh_tracked_issue(&state, &session, issue_id).await {
-            Ok(_) => false,
-            Err(
-                AppError::Unavailable
-                | AppError::RateLimited
-                | AppError::PermissionDenied(_)
-                | AppError::Conflict(_),
-            ) => {
-                tracing::warn!(event = "github.issue_refresh_failed", %issue_id);
-                true
-            }
-            Err(error) => return Err(error),
-        }
-    };
-
     let github_field_warning = if issue_state == "rejected" {
         false
     } else {
@@ -353,7 +334,6 @@ pub async fn show(
         potential_matches,
         merge_destinations: destinations,
         events,
-        sync_warning,
         github_field_warning,
     }))
 }

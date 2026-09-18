@@ -5,6 +5,7 @@ const issueStates = new Map();
 let latestCreatedIssue;
 const issueFieldValues = new Map();
 let issueFieldVisibility = "organization_members_only";
+let issueResponseDelayMs = 0;
 
 function sendJson(response, status, value) {
   response.writeHead(status, { "content-type": "application/json" });
@@ -57,6 +58,15 @@ const server = createServer((request, response) => {
 
   if (request.method === "GET" && url.pathname === "/test/latest-created-issue") {
     sendJson(response, 200, latestCreatedIssue ?? {});
+    return;
+  }
+
+  if (request.method === "POST" && url.pathname === "/test/issue-response-delay") {
+    const milliseconds = Number(url.searchParams.get("milliseconds"));
+    issueResponseDelayMs = Number.isFinite(milliseconds) && milliseconds >= 0
+      ? milliseconds
+      : 0;
+    sendJson(response, 200, { milliseconds: issueResponseDelayMs });
     return;
   }
 
@@ -145,7 +155,7 @@ const server = createServer((request, response) => {
   const issueMatch = url.pathname.match(/^\/repos\/[^/]+\/[^/]+\/issues\/(\d+)$/);
   if (request.method === "GET" && issueMatch) {
     const number = Number(issueMatch[1]);
-    sendJson(response, 200, {
+    const issue = {
       id: number + 90000,
       number,
       title: number === 6200
@@ -161,7 +171,8 @@ const server = createServer((request, response) => {
       html_url: `https://github.com/LadybirdBrowser/ladybird/issues/${number}`,
       state: issueStates.get(number) ?? "open",
       updated_at: new Date().toISOString(),
-    });
+    };
+    setTimeout(() => sendJson(response, 200, issue), issueResponseDelayMs);
     return;
   }
 
