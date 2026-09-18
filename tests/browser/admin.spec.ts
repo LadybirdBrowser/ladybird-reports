@@ -717,24 +717,6 @@ test.describe("authenticated management UI", () => {
     await expect(page.locator(`a[href="/reports/${reportId}"]`)).toBeVisible();
   });
 
-  test("merges tracked issues without changing GitHub state", async ({ page }) => {
-    await page.goto("/issues");
-    await page.getByRole("link", { name: "Renderer overlap on test page" }).click();
-    await page.locator('form[action$="/merge"] select[name="destination"]').selectOption({
-      label: "Intermittent navigation timeout",
-    });
-    await page.getByRole("button", { name: "Merge this issue" }).click();
-
-    await expect(page.getByRole("heading", { name: "Intermittent navigation timeout" }))
-      .toBeVisible();
-    await expect(page.locator(`a[href="/reports/${reportId}"]`)).toBeVisible();
-
-    const githubIssue = await page.request.get(
-      "http://127.0.0.1:3101/repos/LadybirdBrowser/ladybird/issues/7300",
-    );
-    expect((await githubIssue.json()).state).toBe("open");
-  });
-
   test("shows the audit log", async ({ page }) => {
     await page.goto("/operations");
 
@@ -842,7 +824,8 @@ test.describe("authenticated management UI", () => {
     issue.updated_at = new Date(Date.now() + 40_000).toISOString();
     expect((await deliverWebhook("reopened")).status()).toBe(204);
     await page.goto("/issues");
-    await expect(page.getByText("Unresolved", { exact: true })).toBeVisible();
+    await expect(page.locator(`tr:has(a[href="/issues/${trackedIssueId}"])`)
+      .getByText("Unresolved", { exact: true })).toBeVisible();
 
     issue.state = "closed";
     expect((await deliverWebhook("deleted")).status()).toBe(204);
@@ -938,7 +921,7 @@ test.describe("authenticated management UI", () => {
     const linkedIssue = page.locator(".report-linked-issue");
     const issueLink = linkedIssue.locator('a[href^="/issues/"]');
     await expect(issueLink).toBeVisible();
-    await expect(linkedIssue.getByRole("link", { name: "Issue #6200" }))
+    await expect(linkedIssue.getByRole("link", { name: "Issue #7300" }))
       .toBeVisible();
 
     await issueLink.click();
@@ -958,9 +941,6 @@ test.describe("authenticated management UI", () => {
     await expect(page.locator(".report-linked-issue")).toHaveCount(0);
 
     await page.goto(issueUrl);
-    const remainingReport = await page.locator('a[href^="/reports/"]').first()
-      .getAttribute("href");
-    expect(remainingReport).not.toBeNull();
     await page.getByRole("button", { name: "Reject issue" }).first().click();
     const confirmation = page.getByRole("dialog", { name: "Reject this issue?" });
     await expect(confirmation).toBeVisible();
@@ -974,10 +954,10 @@ test.describe("authenticated management UI", () => {
     await page.goto("/issues?q=state%3Arejected");
     await expect(page.locator(`a[href="${new URL(issueUrl).pathname}"]`)).toBeVisible();
 
-    await page.goto(remainingReport!);
+    await page.goto(`/reports/${reportId}`);
     await expect(page.locator(".report-linked-issue")).toHaveCount(0);
     const githubIssue = await page.request.get(
-      "http://127.0.0.1:3101/repos/LadybirdBrowser/ladybird/issues/6200",
+      "http://127.0.0.1:3101/repos/LadybirdBrowser/ladybird/issues/7300",
     );
     expect((await githubIssue.json()).state).toBe("open");
   });

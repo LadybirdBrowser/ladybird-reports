@@ -272,31 +272,6 @@
             {% if issue.state != "rejected" %}
             <section class="card">
                 <div class="card-header">
-                    <h2>Merge issue</h2>
-                </div>
-                <form class="card-body" method="post" action="/issues/{{ issue.id }}/merge">
-                    <input
-                        type="hidden"
-                        name="csrf"
-                        value="{{ navigation.as_ref().unwrap().csrf_token }}"
-                    >
-                    <p class="form-note">
-                        Move assigned reports into another issue. Update the source issue on GitHub separately.
-                    </p>
-                    <label>
-                        Destination issue
-                        <select name="destination" required>
-                            {% for destination in merge_destinations %}
-                                <option value="{{ destination.id }}">{{ destination.title }}</option>
-                            {% endfor %}
-                        </select>
-                    </label>
-                    <button class="button-secondary" type="submit">Merge this issue</button>
-                </form>
-            </section>
-
-            <section class="card">
-                <div class="card-header">
                     <h2>Actions</h2>
                 </div>
                 <div class="card-body">

@@ -88,7 +88,6 @@ pub fn router(state: AdminState) -> Router {
             "/issues/{id}/github/new",
             post(handlers::issues::create_replacement),
         )
-        .route("/issues/{id}/merge", post(handlers::issues::merge))
         .route("/settings", get(handlers::settings::show))
         .route("/settings", post(handlers::settings::update))
         .route("/settings/fields", post(handlers::settings::update_field))

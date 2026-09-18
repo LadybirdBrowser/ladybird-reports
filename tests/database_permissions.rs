@@ -991,89 +991,37 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
             .any(|issue| issue.id == created_issue.issue_id)
     );
 
-    admin_database
-        .merge_issue(created_issue.issue_id, issue_id, 999)
-        .await
-        .expect("merge issues with per-report audits");
-    let merged_report_audits: i64 = sqlx::query_scalar(
-        "SELECT count(*)
-         FROM audit_events
-         WHERE action = 'report.update_issue'
-            AND entity_id = ANY($1::uuid[])
-            AND details->>'from' = $2
-            AND details->>'to' = $3",
-    )
-    .bind(vec![second_github_report.0, third_github_report.0])
-    .bind(created_issue.issue_id.to_string())
-    .bind(issue_id.to_string())
-    .fetch_one(&admin_pool)
-    .await
-    .expect("count report reassignment audits from merge");
-    assert_eq!(merged_report_audits, 2);
-
-    let merge_audit: serde_json::Value = sqlx::query_scalar(
-        "SELECT details
-         FROM audit_events
-         WHERE entity_id = $1 AND action = 'issue.merge'",
-    )
-    .bind(created_issue.issue_id)
-    .fetch_one(&admin_pool)
-    .await
-    .expect("read issue merge audit");
-    assert_eq!(merge_audit["into"], issue_id.to_string());
-    assert_eq!(merge_audit["reports_moved"], 2);
-
-    let merged_github_link = admin_database
-        .issues_linked_to_github_numbers("LadybirdBrowser/ladybird", &[4813, 4814])
-        .await
-        .expect("resolve both historical links after merge");
-    assert_eq!(merged_github_link.len(), 2);
-    assert!(
-        merged_github_link
-            .iter()
-            .all(|link| link.issue_id == issue_id)
-    );
-
-    let linked_before_delete: i64 =
+    let linked_before_rejection: i64 =
         sqlx::query_scalar("SELECT count(*) FROM reports WHERE issue_id = $1")
-            .bind(issue_id)
+            .bind(created_issue.issue_id)
             .fetch_one(&admin_pool)
             .await
-            .expect("count reports linked to issue before deletion");
-    assert!(linked_before_delete > 1);
+            .expect("count reports linked to issue before rejection");
+    assert_eq!(linked_before_rejection, 2);
 
     admin_database
-        .unlink_report_from_issue(issue_id, first_github_report, 999)
+        .unlink_report_from_issue(created_issue.issue_id, second_github_report, 999)
         .await
         .expect("unlink one report from its issue");
     let unlinked_assignment: Option<IssueId> =
         sqlx::query_scalar("SELECT issue_id FROM reports WHERE id = $1")
-            .bind(first_github_report)
+            .bind(second_github_report)
             .fetch_one(&admin_pool)
             .await
             .expect("check unlinked report");
     assert_eq!(unlinked_assignment, None);
     let unlinked_state: String = sqlx::query_scalar("SELECT state FROM reports WHERE id = $1")
-        .bind(first_github_report)
+        .bind(second_github_report)
         .fetch_one(&admin_pool)
         .await
         .expect("check unlinked report state");
     assert_eq!(unlinked_state, "triage");
 
     let reports_unlinked = admin_database
-        .reject_issue(issue_id, 999, false)
+        .reject_issue(created_issue.issue_id, 999, false)
         .await
         .expect("reject tracked issue and unlink its reports");
-    assert_eq!(reports_unlinked as i64, linked_before_delete - 1);
-    assert_eq!(
-        admin_database
-            .find_issue(issue_id)
-            .await
-            .unwrap()
-            .unwrap()
-            .state,
-        "rejected"
-    );
+    assert_eq!(reports_unlinked as i64, linked_before_rejection - 1);
     assert_eq!(
         admin_database
             .find_issue(created_issue.issue_id)
@@ -1085,32 +1033,32 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
     );
     let remaining_assignments: i64 =
         sqlx::query_scalar("SELECT count(*) FROM reports WHERE issue_id = $1")
-            .bind(issue_id)
+            .bind(created_issue.issue_id)
             .fetch_one(&admin_pool)
             .await
-            .expect("count assignments to hidden issue");
+            .expect("count assignments to rejected issue");
     assert_eq!(remaining_assignments, 0);
-    let hide_audit: serde_json::Value = sqlx::query_scalar(
+    let rejection_audit: serde_json::Value = sqlx::query_scalar(
         "SELECT details FROM audit_events
          WHERE entity_id = $1 AND action = 'issue.update_state'",
     )
-    .bind(issue_id)
+    .bind(created_issue.issue_id)
     .fetch_one(&admin_pool)
     .await
-    .expect("read issue deletion audit");
-    assert_eq!(hide_audit["reports_updated"], reports_unlinked);
+    .expect("read issue rejection audit");
+    assert_eq!(rejection_audit["reports_updated"], reports_unlinked);
 
     let retracked = admin_database
         .assign_report_to_github_issue(
-            &github_issue(4812, "Re-tracked GitHub issue"),
-            first_github_report,
+            &github_issue(4814, "Re-tracked GitHub issue"),
+            second_github_report,
             "LadybirdBrowser/ladybird",
             999,
         )
         .await
         .expect("track the same GitHub issue after hiding its old record");
     assert!(retracked.created);
-    assert_ne!(retracked.issue_id, issue_id);
+    assert_ne!(retracked.issue_id, created_issue.issue_id);
 
     sqlx::query("DELETE FROM discord_report_notifications")
         .execute(&admin_pool)

@@ -8,7 +8,7 @@ use axum::{
 use crate::{
     domain::IssueId,
     error::{AppError, Result},
-    infrastructure::{database::IssueRecord, github::GithubIssueState},
+    infrastructure::github::GithubIssueState,
 };
 
 use super::super::{AdminState, session::Session};
@@ -116,65 +116,6 @@ pub async fn issue_options(
     results.sort_by_key(|option| option.group != Some("Tracked issues"));
 
     Ok(Json(EntitySearchResponse { results }))
-}
-
-pub(super) async fn refresh_tracked_issue(
-    state: &AdminState,
-    session: &Session,
-    issue_id: IssueId,
-) -> Result<IssueRecord> {
-    let current = state
-        .database
-        .find_issue(issue_id)
-        .await?
-        .ok_or(AppError::NotFound("Issue not found"))?;
-
-    if current.github_state != "missing" && current.github_state != "moved" {
-        let token = session.github_access_token(state)?;
-        match state
-            .github
-            .issue(&token, &current.github_repository, current.github_number)
-            .await
-        {
-            Ok(issue) => {
-                state
-                    .database
-                    .sync_github_issue(&current.github_repository, &issue, None, "refresh")
-                    .await?;
-            }
-            Err(AppError::Gone(_)) => {
-                state
-                    .database
-                    .mark_github_issue_unavailable(
-                        &current.github_repository,
-                        current.github_number,
-                        current.github_issue_id,
-                        "missing",
-                        "refresh",
-                    )
-                    .await?;
-            }
-            Err(AppError::NotFound(_)) => {
-                state
-                    .database
-                    .mark_github_issue_unavailable(
-                        &current.github_repository,
-                        current.github_number,
-                        current.github_issue_id,
-                        "unavailable",
-                        "refresh",
-                    )
-                    .await?;
-            }
-            Err(error) => return Err(error),
-        }
-    }
-
-    state
-        .database
-        .find_issue(issue_id)
-        .await?
-        .ok_or(AppError::NotFound("Issue not found"))
 }
 
 pub(super) async fn ensure_github_reports_link(

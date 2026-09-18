@@ -17,7 +17,7 @@ use super::super::{
     AdminState, TemplateResponse, authentication::Navigation, session::Session,
     templates::not_found,
 };
-use super::github::{ensure_github_reports_link, refresh_tracked_issue};
+use super::github::ensure_github_reports_link;
 
 #[derive(Deserialize)]
 pub struct IssueFilters {
@@ -74,7 +74,6 @@ pub struct IssueTemplate {
     issue: IssueView,
     reports: Vec<ReportView>,
     potential_matches: Vec<ReportView>,
-    merge_destinations: Vec<IssueOption>,
     events: Vec<EventView>,
     github_field_warning: bool,
 }
@@ -96,11 +95,6 @@ pub struct ReportView {
     title: String,
     client_version: String,
     created_at: DateTime<Utc>,
-}
-
-pub struct IssueOption {
-    id: IssueId,
-    title: String,
 }
 
 pub struct EventView {
@@ -355,24 +349,6 @@ pub async fn show(
         Vec::new()
     };
 
-    let destinations = state
-        .database
-        .list_issues(&IssueSearch::parse(&default_issue_search())?)
-        .await?
-        .into_iter()
-        .filter(|issue| {
-            issue.id != issue_id
-                && !matches!(
-                    issue.github_state.as_str(),
-                    "missing" | "moved" | "unavailable"
-                )
-        })
-        .map(|issue| IssueOption {
-            id: issue.id,
-            title: issue.title,
-        })
-        .collect();
-
     let description_html = render_issue_description(&details.issue.description);
     let issue = IssueView {
         id: details.issue.id,
@@ -414,7 +390,6 @@ pub async fn show(
         issue,
         reports,
         potential_matches,
-        merge_destinations: destinations,
         events,
         github_field_warning,
     }))
@@ -595,48 +570,4 @@ fn issue_number_from_url(url: &str, repository: &str) -> Result<i64> {
         return Err(AppError::InvalidRequest("Enter a GitHub issue URL"));
     }
     Ok(number)
-}
-
-#[derive(Deserialize)]
-pub struct MergeIssueForm {
-    csrf: String,
-    destination: IssueId,
-}
-
-pub async fn merge(
-    State(state): State<AdminState>,
-    Extension(session): Extension<Session>,
-    Path(issue_id): Path<IssueId>,
-    Form(form): Form<MergeIssueForm>,
-) -> Result<Redirect> {
-    session.verify_csrf(&form.csrf)?;
-
-    if issue_id == form.destination {
-        return Err(AppError::InvalidRequest(
-            "An issue cannot be merged into itself",
-        ));
-    }
-
-    let source = refresh_tracked_issue(&state, &session, issue_id).await?;
-    let destination = refresh_tracked_issue(&state, &session, form.destination).await?;
-    if destination.github_state != "open" || destination.merged_into.is_some() {
-        return Err(AppError::Conflict("Destination GitHub issue is not open"));
-    }
-    if source.merged_into.is_some() {
-        return Err(AppError::Conflict("Source issue was already merged"));
-    }
-
-    state
-        .database
-        .merge_issue(issue_id, form.destination, session.github_id)
-        .await?;
-
-    tracing::info!(
-        event = "issue.merge",
-        source_issue_id = %issue_id,
-        destination_issue_id = %form.destination,
-        actor = session.login,
-    );
-
-    Ok(Redirect::to(&format!("/issues/{}", form.destination)))
 }
