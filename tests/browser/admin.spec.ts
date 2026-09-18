@@ -60,6 +60,19 @@ test.describe("authenticated management UI", () => {
     storageState: "target/browser-test-storage-state.json",
   });
 
+  test("expired sessions do not download the login page as an attachment", async ({ page }) => {
+    await page.goto(`/reports/${reportId}`);
+    const attachment = page.locator('.attachment-table a[href^="/attachments/"]').first();
+    await expect(attachment).not.toHaveAttribute("download");
+    await page.context().clearCookies();
+
+    let downloaded = false;
+    page.on("download", () => { downloaded = true; });
+    await attachment.click();
+    await expect(page).toHaveURL(/\/login\?next=%2Fattachments%2F/);
+    expect(downloaded).toBe(false);
+  });
+
   test("shows setup credentials and escapes unknown report fields", async ({ page }) => {
     const response = await page.goto("/");
 

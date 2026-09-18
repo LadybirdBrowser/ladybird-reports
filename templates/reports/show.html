@@ -87,17 +87,17 @@
                                 {% for attachment in attachments %}
                                     <tr>
                                         <td>
-                                            <a href="/attachments/{{ attachment.id }}" download="{{ attachment.name }}">
+                                            <a href="/attachments/{{ attachment.id }}">
                                                 {{ attachment.name }}
                                             </a>
                                         </td>
                                         <td>
-                                            <a href="/attachments/{{ attachment.id }}" download="{{ attachment.name }}" aria-label="Download {{ attachment.name }}">
+                                            <a href="/attachments/{{ attachment.id }}" aria-label="Download {{ attachment.name }}">
                                                 {{ attachment.media_type }}
                                             </a>
                                         </td>
                                         <td>
-                                            <a href="/attachments/{{ attachment.id }}" download="{{ attachment.name }}" aria-label="Download {{ attachment.name }}">
+                                            <a href="/attachments/{{ attachment.id }}" aria-label="Download {{ attachment.name }}">
                                                 {{ attachment.size }}
                                             </a>
                                         </td>
