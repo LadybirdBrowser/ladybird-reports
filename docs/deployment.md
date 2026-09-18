@@ -21,8 +21,17 @@ its user authorization as follows:
 
 Install the app on the organization and grant it access only to the repository used
 for issue tracking. The default runtime configuration uses
-`LadybirdBrowser/ladybird`. The app does not need a private key because the server
-uses user access tokens rather than installation access tokens.
+`LadybirdBrowser/ladybird`. The server uses user access tokens for maintainer
+actions. To follow GitHub duplicate
+closures automatically, generate a private key for the same GitHub App and set
+`GITHUB_APP_PRIVATE_KEY_BASE64` on the admin service. This enables short-lived
+installation tokens for reading the duplicate target through GitHub GraphQL.
+Without the key, duplicate closures remain queued until the key is configured.
+Encode the downloaded PEM file before adding it as a deployment secret:
+
+```sh
+base64 < path/to/github-app-private-key.pem | tr -d '\n'
+```
 
 The production callback URL is:
 
@@ -37,8 +46,8 @@ Set the GitHub App webhook URL to `https://<admin-host>/webhooks/github`.
 Generate a random webhook secret of at least 32 characters, configure it in
 GitHub, and provide it to the admin service as `GITHUB_WEBHOOK_SECRET`. The
 admin service verifies each webhook signature before processing it. Until this
-secret is configured, issue state is refreshed when a maintainer opens an
-issue, but GitHub changes will not appear immediately in the issue list.
+secret is configured, GitHub changes will not appear in the issue list
+automatically.
 
 To show a backlink in the GitHub issue sidebar, create an organization issue
 field such as `Reports issue`. Use the **Text** type and **Organization only**
@@ -117,6 +126,7 @@ the UTC build date and the first eight characters of the Git commit identifier.
 | `GITHUB_CLIENT_ID` | admin | GitHub App client ID. |
 | `GITHUB_CLIENT_SECRET` | admin | GitHub App client secret used for the user authorization flow. |
 | `GITHUB_WEBHOOK_SECRET` | admin | Secret for verifying signed GitHub issue events. Set the same value in the GitHub App. |
+| `GITHUB_APP_PRIVATE_KEY_BASE64` | admin | Base64-encoded GitHub App private key (PEM), used only to read duplicate issue targets. |
 | `POW_HMAC_KEY` | public API | Base64-encoded 32-byte challenge-signing key. |
 | `CLIENT_ADDRESS_HMAC_KEY` | public API | Base64-encoded 32-byte key for pseudonymous rate limits and source blocks. Keep it stable so existing blocks continue to match. |
 | `ATTACHMENT_ROOT` | both | Shared persistent directory; defaults to `./data/attachments` locally and `/data/attachments` in the image. |

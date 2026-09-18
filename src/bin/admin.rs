@@ -79,6 +79,7 @@ async fn run() -> Result<()> {
     let discord_notifications = tokio::spawn(discord_notifications.run());
     let stack_indexer = tokio::spawn(run_stack_indexer(state.database.clone()));
     let failure_reason_backfill = tokio::spawn(run_failure_reason_backfill(state.clone()));
+    let github_duplicates = tokio::spawn(run_github_duplicates(state.clone()));
 
     let address = listen_address("ADMIN_LISTEN_ADDRESS", "0.0.0.0:3000")?;
     let listener = tokio::net::TcpListener::bind(address).await?;
@@ -96,11 +97,72 @@ async fn run() -> Result<()> {
     let _ = stack_indexer.await;
     failure_reason_backfill.abort();
     let _ = failure_reason_backfill.await;
+    github_duplicates.abort();
+    let _ = github_duplicates.await;
     configuration_listener.abort();
     let _ = configuration_listener.await;
 
     tracing::info!(event = "shutdown.complete", service = "admin");
     Ok(())
+}
+
+async fn run_github_duplicates(state: AdminState) {
+    if !state.github.has_installation_credentials() {
+        tracing::warn!(
+            event = "github.duplicate_processing_disabled",
+            "Configure GITHUB_APP_PRIVATE_KEY_BASE64 to process duplicate closures"
+        );
+        return;
+    }
+
+    loop {
+        let delay = match state.database.claim_github_duplicate().await {
+            Ok(Some(job)) => {
+                let result = async {
+                    let canonical = state
+                        .github
+                        .duplicate_of(job.installation_id, &job.repository, job.number)
+                        .await?;
+                    state
+                        .database
+                        .finish_github_duplicate(&job, canonical.as_ref())
+                        .await
+                }
+                .await;
+
+                match result {
+                    Ok(Some(destination)) => tracing::info!(
+                        event = "github.duplicate_processed",
+                        source = %job.source_issue_id,
+                        %destination,
+                    ),
+                    Ok(None) => tracing::info!(
+                        event = "github.duplicate_no_target",
+                        source = %job.source_issue_id,
+                    ),
+                    Err(error) => {
+                        tracing::warn!(
+                            event = "github.duplicate_processing_failed",
+                            source = %job.source_issue_id,
+                            attempt = job.attempt_count,
+                            ?error,
+                        );
+                        if let Err(retry_error) = state.database.retry_github_duplicate(&job).await
+                        {
+                            tracing::warn!(event = "github.duplicate_retry_failed", ?retry_error);
+                        }
+                    }
+                }
+                std::time::Duration::from_millis(100)
+            }
+            Ok(None) => std::time::Duration::from_secs(5),
+            Err(error) => {
+                tracing::warn!(event = "github.duplicate_claim_failed", ?error);
+                std::time::Duration::from_secs(30)
+            }
+        };
+        tokio::time::sleep(delay).await;
+    }
 }
 
 async fn run_stack_indexer(database: AdminDatabase) {

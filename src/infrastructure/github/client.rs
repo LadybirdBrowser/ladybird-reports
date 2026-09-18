@@ -1,7 +1,10 @@
 use chrono::{DateTime, Utc};
+use jsonwebtoken::{Algorithm, EncodingKey, Header, encode};
 use reqwest::{Client, Method, StatusCode};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
+
+use base64::Engine;
 
 use crate::error::{AppError, Result};
 
@@ -12,6 +15,7 @@ pub struct GithubClient {
     client_secret: String,
     api_base_url: reqwest::Url,
     oauth_base_url: reqwest::Url,
+    app_private_key: Option<Arc<EncodingKey>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -35,6 +39,62 @@ pub struct GithubIssue {
     pub html_url: String,
     pub state: GithubIssueState,
     pub updated_at: DateTime<Utc>,
+    #[serde(default)]
+    pub state_reason: Option<String>,
+}
+
+#[derive(Serialize)]
+struct AppJwtClaims<'a> {
+    iat: i64,
+    exp: i64,
+    iss: &'a str,
+}
+
+#[derive(Deserialize)]
+struct InstallationToken {
+    token: String,
+}
+
+#[derive(Deserialize)]
+struct GraphqlResponse<T> {
+    data: Option<T>,
+    errors: Option<Vec<GraphqlError>>,
+}
+
+#[derive(Deserialize)]
+struct GraphqlError {
+    message: String,
+}
+
+#[derive(Deserialize)]
+struct DuplicateLookup {
+    repository: Option<DuplicateRepository>,
+}
+
+#[derive(Deserialize)]
+struct DuplicateRepository {
+    issue: Option<DuplicateSource>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DuplicateSource {
+    state_reason: Option<String>,
+    duplicate_of: Option<CanonicalIssue>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CanonicalIssue {
+    #[serde(rename = "__typename")]
+    type_name: String,
+    database_id: Option<i64>,
+    number: Option<i64>,
+    title: Option<String>,
+    body: Option<String>,
+    url: Option<String>,
+    state: Option<String>,
+    updated_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
@@ -135,13 +195,123 @@ impl GithubClient {
             ));
         }
 
+        let app_private_key = std::env::var("GITHUB_APP_PRIVATE_KEY_BASE64")
+            .ok()
+            .map(|encoded| {
+                let pem = base64::engine::general_purpose::STANDARD
+                    .decode(encoded)
+                    .map_err(|error| AppError::Internal(error.into()))?;
+                let key = EncodingKey::from_rsa_pem(&pem)
+                    .map_err(|error| AppError::Internal(error.into()))?;
+                Ok::<_, AppError>(Arc::new(key))
+            })
+            .transpose()?;
+
         Ok(Self {
             http,
             client_id,
             client_secret,
             api_base_url,
             oauth_base_url,
+            app_private_key,
         })
+    }
+
+    pub fn has_installation_credentials(&self) -> bool {
+        self.app_private_key.is_some()
+    }
+
+    async fn installation_token(&self, installation_id: i64) -> Result<String> {
+        let key = self.app_private_key.as_ref().ok_or(AppError::Unavailable)?;
+        let now = Utc::now().timestamp();
+        let jwt = encode(
+            &Header::new(Algorithm::RS256),
+            &AppJwtClaims {
+                iat: now - 60,
+                exp: now + 540,
+                iss: &self.client_id,
+            },
+            key,
+        )
+        .map_err(|error| AppError::Internal(error.into()))?;
+        let path = format!("/app/installations/{installation_id}/access_tokens");
+        let result: InstallationToken = self
+            .request_json(
+                Method::POST,
+                &path,
+                &jwt,
+                Some(&serde_json::json!({ "permissions": { "issues": "read" } })),
+            )
+            .await?;
+        Ok(result.token)
+    }
+
+    pub async fn duplicate_of(
+        &self,
+        installation_id: i64,
+        repository: &str,
+        number: i64,
+    ) -> Result<Option<GithubIssue>> {
+        let (owner, name) = repository
+            .split_once('/')
+            .ok_or(AppError::InvalidRequest("Invalid GitHub repository"))?;
+        let token = self.installation_token(installation_id).await?;
+        let query = serde_json::json!({
+            "query": r#"
+                query($owner: String!, $name: String!, $number: Int!) {
+                    repository(owner: $owner, name: $name) {
+                        issue(number: $number) {
+                            stateReason
+                            duplicateOf {
+                                __typename
+                                ... on Issue {
+                                    databaseId number title body url state updatedAt
+                                }
+                            }
+                        }
+                    }
+                }
+            "#,
+            "variables": { "owner": owner, "name": name, "number": number },
+        });
+        let url = self.api_url("/graphql")?;
+        let response: GraphqlResponse<DuplicateLookup> = self
+            .request_json_url(Method::POST, url, &token, Some(&query))
+            .await?;
+        if let Some(errors) = response.errors {
+            tracing::warn!(
+                event = "github.duplicate_lookup_failed",
+                errors = ?errors.iter().map(|error| &error.message).collect::<Vec<_>>()
+            );
+            return Err(AppError::Unavailable);
+        }
+        let source = response
+            .data
+            .and_then(|data| data.repository)
+            .and_then(|repository| repository.issue)
+            .ok_or(AppError::NotFound("GitHub issue not found"))?;
+        if source.state_reason.as_deref() != Some("DUPLICATE") {
+            return Ok(None);
+        }
+        let canonical = source.duplicate_of.ok_or(AppError::Unavailable)?;
+        if canonical.type_name != "Issue" {
+            return Err(AppError::Conflict("Duplicate target is not a GitHub issue"));
+        }
+        let state = match canonical.state.as_deref() {
+            Some("OPEN") => GithubIssueState::Open,
+            Some("CLOSED") => GithubIssueState::Closed,
+            _ => return Err(AppError::Unavailable),
+        };
+        Ok(Some(GithubIssue {
+            id: canonical.database_id.ok_or(AppError::Unavailable)?,
+            number: canonical.number.ok_or(AppError::Unavailable)?,
+            title: canonical.title.ok_or(AppError::Unavailable)?,
+            body: canonical.body,
+            html_url: canonical.url.ok_or(AppError::Unavailable)?,
+            state,
+            updated_at: canonical.updated_at.ok_or(AppError::Unavailable)?,
+            state_reason: None,
+        }))
     }
 
     pub fn authorization_url(&self, redirect_uri: &str, state: &str) -> Result<String> {
@@ -411,7 +581,38 @@ async fn decode_github_response<T: DeserializeOwned>(response: reqwest::Response
 mod tests {
     use std::collections::HashMap;
 
-    use super::{GithubClient, team_membership_path};
+    use super::{DuplicateLookup, GithubClient, GraphqlResponse, team_membership_path};
+
+    #[test]
+    fn github_duplicate_lookup_includes_the_canonical_issue() {
+        let response: GraphqlResponse<DuplicateLookup> =
+            serde_json::from_value(serde_json::json!({
+                "data": {
+                    "repository": {
+                        "issue": {
+                            "stateReason": "DUPLICATE",
+                            "duplicateOf": {
+                                "__typename": "Issue",
+                                "databaseId": 123,
+                                "number": 42,
+                                "title": "Canonical issue",
+                                "body": "Details",
+                                "url": "https://github.com/LadybirdBrowser/ladybird/issues/42",
+                                "state": "OPEN",
+                                "updatedAt": "2026-09-18T08:00:00Z"
+                            }
+                        }
+                    }
+                }
+            }))
+            .expect("decode GitHub GraphQL response");
+
+        let source = response.data.unwrap().repository.unwrap().issue.unwrap();
+        assert_eq!(source.state_reason.as_deref(), Some("DUPLICATE"));
+        let target = source.duplicate_of.unwrap();
+        assert_eq!(target.number, Some(42));
+        assert_eq!(target.title.as_deref(), Some("Canonical issue"));
+    }
 
     #[test]
     fn membership_path_uses_the_configured_team() {

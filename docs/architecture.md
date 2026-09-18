@@ -23,9 +23,10 @@ The infrastructure layer implements PostgreSQL access, attachment storage, and t
 GitHub API. SQL and filesystem recovery behavior live here.
 
 The admin service authenticates with GitHub App user access tokens. The app requests
-only read-only organization membership and read-write issue permissions. Every
-GitHub API action is therefore limited by both the app's permissions and the signed-in
-user's permissions. The login flow separately verifies active membership in the
+only read-only organization membership and read-write issue permissions.
+Maintainer actions are limited by both the app's permissions and the signed-in
+user's permissions. Duplicate lookups use a read-only installation token instead.
+The login flow separately verifies active membership in the
 configured authorization team.
 The team is stored as `github_authorization_team` in the database-backed runtime
 configuration, using an `organization/team-slug` value. Its initial value is
@@ -45,6 +46,11 @@ it is opened in the management UI. Reports owns assignment and visibility:
 closing or deleting a GitHub issue never removes its linked reports. A missing
 or moved GitHub issue stays visible as needing attention until a maintainer
 links a replacement. Old GitHub links remain searchable through aliases.
+When a tracked GitHub issue closes as a duplicate, the webhook queues a job.
+The admin worker uses a short-lived installation token to read GitHub's
+`duplicateOf` relationship, creates the target Reports issue if needed, and
+moves the linked reports in one database transaction. The source issue remains
+resolved as history. Failed lookups retry without delaying webhook delivery.
 
 The web layer translates requests into application calls. Public handlers return
 JSON. Admin handlers construct typed view models rendered by Askama templates.

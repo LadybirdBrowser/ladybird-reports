@@ -25,6 +25,12 @@ struct IssueEvent {
     action: String,
     issue: GithubIssue,
     repository: Repository,
+    installation: Option<Installation>,
+}
+
+#[derive(Deserialize)]
+struct Installation {
+    id: i64,
 }
 
 pub async fn receive(
@@ -86,13 +92,28 @@ pub async fn receive(
         "opened" | "edited" | "closed" | "reopened" => {
             state
                 .database
-                .sync_github_issue(&event.repository.full_name, &event.issue, None, "webhook")
+                .sync_github_issue_with_installation(
+                    &event.repository.full_name,
+                    &event.issue,
+                    None,
+                    "webhook",
+                    event
+                        .installation
+                        .as_ref()
+                        .map(|installation| installation.id),
+                )
                 .await?
         }
         _ => None,
     };
 
     if let Some(issue_id) = linked_issue {
+        if event.action == "closed"
+            && event.issue.state_reason.as_deref() == Some("duplicate")
+            && event.installation.is_none()
+        {
+            tracing::warn!(event = "github.duplicate_missing_installation", %issue_id);
+        }
         tracing::info!(
             event = "github.issue_synchronized",
             %issue_id,

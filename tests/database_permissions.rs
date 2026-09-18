@@ -1548,6 +1548,120 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
             .state,
         "rejected"
     );
+
+    let duplicate_report =
+        insert_stack_report_for_matching(&admin_pool, "#0 in Duplicate::crash() at liblagom.so", 0)
+            .await;
+    let duplicate_source = github_issue(10_001, "Duplicate source");
+    let source_assignment = admin_database
+        .assign_report_to_github_issue(
+            &duplicate_source,
+            duplicate_report,
+            "LadybirdBrowser/ladybird",
+            999,
+        )
+        .await
+        .expect("create issue for duplicate source");
+    let mut closed_duplicate = duplicate_source.clone();
+    closed_duplicate.state = GithubIssueState::Closed;
+    closed_duplicate.state_reason = Some("duplicate".into());
+    admin_database
+        .sync_github_issue_with_installation(
+            "LadybirdBrowser/ladybird",
+            &closed_duplicate,
+            None,
+            "webhook",
+            Some(42),
+        )
+        .await
+        .expect("mark duplicate resolved and queue move");
+    let job = admin_database
+        .claim_github_duplicate()
+        .await
+        .expect("claim duplicate job")
+        .expect("duplicate job exists");
+    let destination = admin_database
+        .finish_github_duplicate(&job, Some(&github_issue(10_002, "Canonical issue")))
+        .await
+        .expect("move duplicate reports")
+        .expect("canonical issue was created");
+    let source: (String, Option<IssueId>) =
+        sqlx::query_as("SELECT state, merged_into FROM issues WHERE id = $1")
+            .bind(source_assignment.issue_id)
+            .fetch_one(&admin_pool)
+            .await
+            .expect("read duplicate source");
+    assert_eq!(source, ("resolved".into(), Some(destination)));
+    let moved_report: (String, Option<IssueId>) =
+        sqlx::query_as("SELECT state, issue_id FROM reports WHERE id = $1")
+            .bind(duplicate_report)
+            .fetch_one(&admin_pool)
+            .await
+            .expect("read moved report");
+    assert_eq!(moved_report, ("confirmed".into(), Some(destination)));
+    let canonical_number: i64 =
+        sqlx::query_scalar("SELECT github_number FROM issues WHERE id = $1")
+            .bind(destination)
+            .fetch_one(&admin_pool)
+            .await
+            .expect("read canonical issue");
+    assert_eq!(canonical_number, 10_002);
+    assert_eq!(
+        admin_database
+            .finish_github_duplicate(&job, Some(&github_issue(10_002, "Canonical issue")))
+            .await
+            .expect("duplicate job is idempotent"),
+        None
+    );
+
+    let another_report = insert_stack_report_for_matching(
+        &admin_pool,
+        "#0 in AnotherDuplicate::crash() at liblagom.so",
+        0,
+    )
+    .await;
+    let another_source = admin_database
+        .assign_report_to_github_issue(
+            &github_issue(10_003, "Another duplicate"),
+            another_report,
+            "LadybirdBrowser/ladybird",
+            999,
+        )
+        .await
+        .expect("create another source issue");
+    let mut another_closure = github_issue(10_003, "Another duplicate");
+    another_closure.state = GithubIssueState::Closed;
+    another_closure.state_reason = Some("duplicate".into());
+    admin_database
+        .sync_github_issue_with_installation(
+            "LadybirdBrowser/ladybird",
+            &another_closure,
+            None,
+            "webhook",
+            Some(42),
+        )
+        .await
+        .expect("queue another duplicate");
+    let job = admin_database
+        .claim_github_duplicate()
+        .await
+        .expect("claim another duplicate")
+        .expect("another job exists");
+    assert_eq!(job.source_issue_id, another_source.issue_id);
+    assert_eq!(
+        admin_database
+            .finish_github_duplicate(&job, Some(&github_issue(10_002, "Canonical issue")))
+            .await
+            .expect("reuse canonical issue"),
+        Some(destination)
+    );
+    let destination_count: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM issues WHERE github_number = 10002 AND merged_into IS NULL",
+    )
+    .fetch_one(&admin_pool)
+    .await
+    .expect("count canonical issues");
+    assert_eq!(destination_count, 1);
 }
 
 async fn insert_stack_report_for_matching(
@@ -1594,5 +1708,6 @@ fn github_issue(number: i64, title: &str) -> GithubIssue {
         html_url: format!("https://github.com/LadybirdBrowser/ladybird/issues/{number}"),
         state: GithubIssueState::Open,
         updated_at: Utc::now(),
+        state_reason: None,
     }
 }

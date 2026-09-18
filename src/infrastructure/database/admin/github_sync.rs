@@ -158,6 +158,18 @@ impl AdminDatabase {
         actor: Option<i64>,
         source: &str,
     ) -> Result<Option<IssueId>> {
+        self.sync_github_issue_with_installation(repository, issue, actor, source, None)
+            .await
+    }
+
+    pub async fn sync_github_issue_with_installation(
+        &self,
+        repository: &str,
+        issue: &GithubIssue,
+        actor: Option<i64>,
+        source: &str,
+        installation_id: Option<i64>,
+    ) -> Result<Option<IssueId>> {
         let description = issue.body.as_deref().unwrap_or_default();
         validate_issue_text(&issue.title, description)?;
         let current_repository = issue.repository().ok_or(AppError::InvalidRequest(
@@ -206,6 +218,41 @@ impl AdminDatabase {
         if source == "webhook" && matches!(previous_state.as_str(), "missing" | "moved") {
             transaction.commit().await?;
             return Ok(Some(issue_id));
+        }
+        if source == "webhook" {
+            if issue.state.as_str() == "closed"
+                && issue.state_reason.as_deref() == Some("duplicate")
+            {
+                if let Some(installation_id) = installation_id {
+                    sqlx::query(
+                        "INSERT INTO github_duplicate_jobs (
+                            source_issue_id, github_issue_id, github_repository,
+                            github_number, installation_id
+                         ) VALUES ($1, $2, $3, $4, $5)
+                         ON CONFLICT (source_issue_id) DO UPDATE SET
+                            github_issue_id = excluded.github_issue_id,
+                            github_repository = excluded.github_repository,
+                            github_number = excluded.github_number,
+                            installation_id = excluded.installation_id,
+                            lease_id = NULL,
+                            lease_expires_at = NULL,
+                            attempt_count = 0,
+                            next_attempt_at = now()",
+                    )
+                    .bind(issue_id)
+                    .bind(issue.id)
+                    .bind(repository)
+                    .bind(issue.number)
+                    .bind(installation_id)
+                    .execute(&mut *transaction)
+                    .await?;
+                }
+            } else if matches!(issue.state.as_str(), "open" | "closed") {
+                sqlx::query("DELETE FROM github_duplicate_jobs WHERE source_issue_id = $1")
+                    .bind(issue_id)
+                    .execute(&mut *transaction)
+                    .await?;
+            }
         }
         let previous_title: String = row.get("title");
         let previous_description: String = row.get("description");
