@@ -1,4 +1,5 @@
 mod authentication;
+mod failure_reasons;
 mod github_sync;
 mod issues;
 mod maintenance;

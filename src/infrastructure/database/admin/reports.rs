@@ -18,6 +18,7 @@ use super::{
 
 #[derive(Default)]
 struct TitleFields {
+    failure_reason: Option<String>,
     stack_trace: Option<String>,
     process: Option<String>,
     platform: Option<String>,
@@ -29,6 +30,7 @@ impl TitleFields {
         generate_report_title(ReportTitleInput {
             kind,
             client_version,
+            failure_reason: self.failure_reason.as_deref(),
             stack_trace: self.stack_trace.as_deref(),
             process: self.process.as_deref(),
             platform: self.platform.as_deref(),
@@ -230,6 +232,8 @@ impl AdminDatabase {
         let rows = sqlx::query(
             "SELECT fields.report_id, fields.key, fields.kind,
                 CASE
+                    WHEN fields.key = 'failure_reason'
+                    THEN left(fields.value #>> '{}', 4096)
                     WHEN fields.kind = 'stack_trace'
                         OR (fields.kind = 'multiline' AND
                             (fields.key = 'stack' OR definitions.kind = 'stack_trace'))
@@ -240,7 +244,7 @@ impl AdminDatabase {
              FROM report_fields AS fields
              LEFT JOIN field_definitions AS definitions ON definitions.key = fields.key
              WHERE fields.report_id = ANY($1)
-                AND (fields.key IN ('platform', 'architecture', 'process', 'stack')
+                AND (fields.key IN ('platform', 'architecture', 'process', 'stack', 'failure_reason')
                     OR fields.kind = 'stack_trace'
                     OR definitions.kind = 'stack_trace')",
         )
@@ -259,6 +263,7 @@ impl AdminDatabase {
             let entry = fields.entry(report_id).or_default();
 
             match key.as_str() {
+                "failure_reason" => entry.failure_reason = text,
                 "platform" => entry.platform = text,
                 "architecture" => entry.architecture = text,
                 "process" => entry.process = text,

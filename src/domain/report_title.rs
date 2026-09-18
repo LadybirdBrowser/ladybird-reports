@@ -6,6 +6,7 @@ pub const REPORT_TITLE_STACK_CHARACTERS: usize = 8192;
 pub struct ReportTitleInput<'a> {
     pub kind: &'a str,
     pub client_version: &'a str,
+    pub failure_reason: Option<&'a str>,
     pub stack_trace: Option<&'a str>,
     pub process: Option<&'a str>,
     pub platform: Option<&'a str>,
@@ -17,6 +18,12 @@ pub fn generate_report_title(input: ReportTitleInput<'_>) -> String {
         "web_compat" => "Web compatibility",
         _ => "Diagnostic",
     };
+
+    if input.kind == "crash" {
+        if let Some(location) = input.failure_reason.and_then(source_location_from_failure) {
+            return format!("{kind}: {location}");
+        }
+    }
 
     if let Some(stack) = input.stack_trace {
         let excerpt = stack
@@ -57,6 +64,29 @@ pub fn generate_report_title(input: ReportTitleInput<'_>) -> String {
     }
 
     title
+}
+
+fn source_location_from_failure(reason: &str) -> Option<String> {
+    let (_, location) = reason.rsplit_once(" at ")?;
+    let (path, line) = location.rsplit_once(':')?;
+    if line.parse::<u32>().ok()? == 0 {
+        return None;
+    }
+    let file = path.rsplit('/').next()?;
+    if ![".cpp", ".h", ".mm", ".rs", ".c"]
+        .iter()
+        .any(|extension| file.ends_with(extension))
+        || !file.chars().all(|character| {
+            character.is_ascii_alphanumeric() || matches!(character, '.' | '_' | '-')
+        })
+        || path.starts_with('/')
+        || path.contains("../")
+        || path.contains('\\')
+    {
+        return None;
+    }
+
+    Some(format!("{file}:{line}"))
 }
 
 pub fn concise_function_name(symbol: &str, maximum_characters: usize) -> Option<String> {
@@ -139,12 +169,41 @@ mod tests {
     use super::*;
 
     #[test]
+    fn source_location_takes_priority_over_a_generic_verification_expression() {
+        let title = generate_report_title(ReportTitleInput {
+            kind: "crash",
+            client_version: "1.0",
+            failure_reason: Some(
+                "Verification failed: false at Libraries/LibMedia/FFmpeg/FFmpegVideoDecoder.cpp:235",
+            ),
+            stack_trace: Some("#0 0x123 Media::FFmpeg::FFmpegVideoDecoder::take_next_output()"),
+            process: Some("WebContent"),
+            platform: Some("macOS"),
+        });
+        assert_eq!(title, "Crash: FFmpegVideoDecoder.cpp:235");
+
+        let fallback = generate_report_title(ReportTitleInput {
+            kind: "crash",
+            client_version: "1.0",
+            failure_reason: Some("Verification failed: false"),
+            stack_trace: Some("#0 0x123 Media::FFmpeg::FFmpegVideoDecoder::take_next_output()"),
+            process: Some("WebContent"),
+            platform: Some("macOS"),
+        });
+        assert_eq!(
+            fallback,
+            "Crash: FFmpeg::FFmpegVideoDecoder::take_next_output"
+        );
+    }
+
+    #[test]
     fn title_unwraps_ladybird_callback_symbol() {
         let symbol = "AK::Function<void ()>::CallableWrapper<WebContent::ConnectionFromClient::debug_request(AK::DistinctNumeric<unsigned long long, Web::__PageId_tag, AK::DistinctNumericFeature::Comparison, AK::DistinctNumericFeature::CastToBool>, AK::ByteString, AK::ByteString)::$_2>::call()";
         let stack = format!("#0 abcdef1234567890 0x123 {symbol} at /bin/WebContent");
         let title = generate_report_title(ReportTitleInput {
             kind: "crash",
             client_version: "1.0",
+            failure_reason: None,
             stack_trace: Some(&stack),
             process: Some("WebContent"),
             platform: Some("macOS"),
@@ -165,6 +224,7 @@ mod tests {
         let title = generate_report_title(ReportTitleInput {
             kind: "crash",
             client_version: "1.0",
+            failure_reason: None,
             stack_trace: Some(stack),
             process: Some("Compositor"),
             platform: Some("macOS"),
@@ -178,6 +238,7 @@ mod tests {
         let title = generate_report_title(ReportTitleInput {
             kind: "crash",
             client_version: "1.0",
+            failure_reason: None,
             stack_trace: Some("Native stack (binary build ID, object address):"),
             process: Some("WebContent"),
             platform: Some("macOS"),
@@ -187,6 +248,7 @@ mod tests {
         let title = generate_report_title(ReportTitleInput {
             kind: "web_compat",
             client_version: "Ladybird Nightly 2026.09.17",
+            failure_reason: None,
             stack_trace: None,
             process: None,
             platform: None,
@@ -199,6 +261,7 @@ mod tests {
         let title = generate_report_title(ReportTitleInput {
             kind: "future_kind",
             client_version: "1.0",
+            failure_reason: None,
             stack_trace: None,
             process: None,
             platform: None,
@@ -212,6 +275,7 @@ mod tests {
         let title = generate_report_title(ReportTitleInput {
             kind: "crash",
             client_version: "1.0",
+            failure_reason: None,
             stack_trace: Some(stack),
             process: None,
             platform: Some("macOS"),
@@ -226,6 +290,7 @@ mod tests {
         let title = generate_report_title(ReportTitleInput {
             kind: "crash",
             client_version: "1.0",
+            failure_reason: None,
             stack_trace: Some(&stack),
             process: None,
             platform: None,

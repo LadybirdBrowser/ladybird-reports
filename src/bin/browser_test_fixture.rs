@@ -1,8 +1,10 @@
 use ladybird_reports::{
+    application::backfill_failure_reasons,
     domain::{AttachmentId, IssueId, ReportId, SubmissionId, UploadId},
     error::Result,
     infrastructure::{
-        SecretCipher, database::AdminDatabase, hash_secret, random_token, read_secret,
+        SecretCipher, attachments::FileAttachmentStore, database::AdminDatabase, hash_secret,
+        random_token, read_secret,
     },
     runtime::required_environment,
 };
@@ -160,7 +162,12 @@ async fn main() -> Result<()> {
     .await?;
 
     let attachment_id = AttachmentId::new();
-    let attachment_bytes = vec![b'x'; 3756];
+    let mut attachment_bytes = b"Ladybird crash report, format 1\n\
+        Process: WebContent\n\
+        Verification failed: false at Libraries/LibMedia/FFmpeg/FFmpegVideoDecoder.cpp:235\n\
+        Native stack (binary build ID, object address):\n#0 unavailable\n"
+        .to_vec();
+    attachment_bytes.resize(3756, b'x');
     let storage_key = format!("reports/{REPORT_ID}/{attachment_id}");
     let attachment_directory = std::path::PathBuf::from(required_environment("ATTACHMENT_ROOT")?)
         .join("reports")
@@ -328,6 +335,8 @@ async fn main() -> Result<()> {
     // Exercise the same backfill used for reports submitted before deployment.
     let database = AdminDatabase::from_pool(pool);
     while database.index_pending_stack_traces().await? == 50 {}
+    let attachments = FileAttachmentStore::open(required_environment("ATTACHMENT_ROOT")?).await?;
+    while backfill_failure_reasons(&database, &attachments).await? == 50 {}
 
     println!("{session_token}");
     Ok(())

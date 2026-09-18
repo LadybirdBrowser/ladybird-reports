@@ -85,6 +85,9 @@ test.describe("authenticated management UI", () => {
       .toBeVisible();
     await expect(page.getByRole("rowheader", { name: /Build configuration/ })).toBeVisible();
     await expect(page.getByText("AppleClang 21.0.0.21000101")).toBeVisible();
+    await expect(page.getByText(
+      "Verification failed: false at Libraries/LibMedia/FFmpeg/FFmpegVideoDecoder.cpp:235",
+    )).toBeVisible();
     const diagnosticTable = page.locator(".report-field-table").first();
     await expect(diagnosticTable.getByRole("rowheader", { name: /Git commit/ }))
       .toBeVisible();
@@ -493,13 +496,15 @@ test.describe("authenticated management UI", () => {
     await stackRow.locator(".drag-handle").dispatchEvent("dragend", { dataTransfer });
 
     const orderedRows = page.locator("[data-field-row]");
-    await expect(orderedRows.nth(0)).toContainText("signal");
-    await expect(orderedRows.nth(1)).toContainText("stack");
+    await expect(orderedRows.nth(0)).toContainText("failure_reason");
+    await expect(orderedRows.nth(1)).toContainText("signal");
+    await expect(orderedRows.nth(2)).toContainText("stack");
 
-    await expect(page.getByText("Stack trace is now at position 2.")).toBeVisible();
+    await expect(page.getByText("Stack trace is now at position 3.")).toBeVisible();
     await page.reload();
-    await expect(orderedRows.nth(0)).toContainText("signal");
-    await expect(orderedRows.nth(1)).toContainText("stack");
+    await expect(orderedRows.nth(0)).toContainText("failure_reason");
+    await expect(orderedRows.nth(1)).toContainText("signal");
+    await expect(orderedRows.nth(2)).toContainText("stack");
   });
 
   test("explains the runtime setting under the caret", async ({ page }) => {

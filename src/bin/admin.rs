@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use ladybird_reports::{
-    application::DiscordNotificationService,
+    application::{DiscordNotificationService, backfill_failure_reasons},
     error::Result,
     infrastructure::{
         SecretCipher,
@@ -78,6 +78,7 @@ async fn run() -> Result<()> {
     let maintenance = tokio::spawn(run_maintenance(state.clone()));
     let discord_notifications = tokio::spawn(discord_notifications.run());
     let stack_indexer = tokio::spawn(run_stack_indexer(state.database.clone()));
+    let failure_reason_backfill = tokio::spawn(run_failure_reason_backfill(state.clone()));
 
     let address = listen_address("ADMIN_LISTEN_ADDRESS", "0.0.0.0:3000")?;
     let listener = tokio::net::TcpListener::bind(address).await?;
@@ -93,6 +94,8 @@ async fn run() -> Result<()> {
     let _ = discord_notifications.await;
     stack_indexer.abort();
     let _ = stack_indexer.await;
+    failure_reason_backfill.abort();
+    let _ = failure_reason_backfill.await;
     configuration_listener.abort();
     let _ = configuration_listener.await;
 
@@ -111,6 +114,24 @@ async fn run_stack_indexer(database: AdminDatabase) {
             }
             Err(error) => {
                 tracing::warn!(event = "stack_index.failed", ?error);
+                std::time::Duration::from_secs(30)
+            }
+        };
+        tokio::time::sleep(delay).await;
+    }
+}
+
+async fn run_failure_reason_backfill(state: AdminState) {
+    loop {
+        let delay = match backfill_failure_reasons(&state.database, &state.attachments).await {
+            Ok(50) => std::time::Duration::from_millis(100),
+            Ok(0) => std::time::Duration::from_secs(30),
+            Ok(count) => {
+                tracing::info!(event = "failure_reason.backfill_batch_complete", count);
+                std::time::Duration::from_secs(1)
+            }
+            Err(error) => {
+                tracing::warn!(event = "failure_reason.backfill_failed", ?error);
                 std::time::Duration::from_secs(30)
             }
         };

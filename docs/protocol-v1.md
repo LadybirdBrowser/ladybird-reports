@@ -38,6 +38,7 @@ The initial client uses these conventional diagnostic fields:
 | Key | Type | Meaning |
 | --- | --- | --- |
 | `stack` | `stack_trace` | Client-symbolicated native stack trace, one frame per line. Legacy clients may keep using `multiline`. |
+| `failure_reason` | `text` | Sanitized verification failure, assertion, or panic message, including a repository-relative source location when available. |
 | `signal` | `text` | Terminating signal name or equivalent exception name, such as `SIGSEGV`. |
 | `signal_number` | `number` | Numeric termination signal, such as `11`. Omitted when unavailable. |
 | `process` | `text` | Optional executable or process name. |

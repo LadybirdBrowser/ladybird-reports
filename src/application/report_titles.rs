@@ -10,6 +10,7 @@ pub fn title_for_report(details: &ReportDetails) -> String {
     generate_report_title(ReportTitleInput {
         kind: &details.report.kind,
         client_version: &details.report.client_version,
+        failure_reason: text_field("failure_reason"),
         stack_trace,
         process: text_field("process"),
         platform: text_field("platform"),
