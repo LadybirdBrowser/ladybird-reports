@@ -1,6 +1,5 @@
 use ladybird_reports::{
-    error::Result,
-    infrastructure::database::migrate_database,
+    error::{AppError, Result},
     runtime::{initialize_tracing, required_environment},
 };
 use sqlx::postgres::PgPoolOptions;
@@ -21,6 +20,11 @@ async fn run() -> Result<()> {
         .connect(&required_environment("ADMIN_DATABASE_URL")?)
         .await?;
 
-    migrate_database(&pool).await?;
+    sqlx::migrate!("./migrations")
+        .run(&pool)
+        .await
+        .map_err(|error| AppError::Internal(error.into()))?;
+
+    tracing::info!(event = "database.migrations_complete", service = "migrate");
     Ok(())
 }
