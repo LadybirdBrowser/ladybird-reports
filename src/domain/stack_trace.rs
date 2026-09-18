@@ -103,16 +103,7 @@ fn parse_frame(line: &str) -> Option<StackTraceRow> {
     let mut rest = rest.get(number_length..)?.trim_start();
 
     if rest.eq_ignore_ascii_case("unavailable") {
-        return Some(StackTraceRow {
-            number: Some(number),
-            top: number == 0,
-            symbol: "Unavailable".into(),
-            module: "—".into(),
-            address: "—".into(),
-            build_id: String::new(),
-            raw: String::new(),
-            relevant: false,
-        });
+        return Some(unavailable_frame(number, "—".into(), String::new()));
     }
 
     let first = rest.split_whitespace().next()?;
@@ -128,6 +119,9 @@ fn parse_frame(line: &str) -> Option<StackTraceRow> {
         return None;
     }
     rest = rest.get(address.len()..)?.trim_start();
+    if rest.is_empty() {
+        return Some(unavailable_frame(number, address.to_owned(), build_id));
+    }
     let (symbol, module) = match rest.rsplit_once(" at ") {
         Some((symbol, module)) => (symbol.trim(), module.trim()),
         None => (rest.trim(), ""),
@@ -147,6 +141,19 @@ fn parse_frame(line: &str) -> Option<StackTraceRow> {
         raw: String::new(),
         relevant: !is_generic_frame(symbol),
     })
+}
+
+fn unavailable_frame(number: u32, address: String, build_id: String) -> StackTraceRow {
+    StackTraceRow {
+        number: Some(number),
+        top: number == 0,
+        symbol: "Unavailable".into(),
+        module: "—".into(),
+        address,
+        build_id,
+        raw: String::new(),
+        relevant: false,
+    }
 }
 
 fn normalize_symbol(symbol: &str) -> String {
@@ -201,5 +208,25 @@ mod tests {
             stack_fingerprint("crash", None, Some("SIGSEGV"), &first.frame_keys),
             stack_fingerprint("crash", None, Some("SIGABRT"), &second.frame_keys)
         );
+    }
+
+    #[test]
+    fn parses_numbered_frames_without_symbols() {
+        let parsed = parse_stack_trace(
+            "#58 07de8215b79e3ecbb77386b53a7117e7 0x24523 Core::EventLoopImplementationUnix::exec() + 0x57\n\
+             #59 3c66d912e69f3437bc0fbb00f7d342e9 0x10000a2c7\n\
+             #60 3c66d912e69f3437bc0fbb00f7d342e9 0x100124f3f\n\
+             #61 unavailable",
+        );
+
+        assert_eq!(parsed.frame_count, 4);
+        for (number, address) in [(59, "0x10000a2c7"), (60, "0x100124f3f")] {
+            let row = &parsed.rows[(number - 58) as usize];
+            assert_eq!(row.number, Some(number));
+            assert_eq!(row.symbol, "Unavailable");
+            assert_eq!(row.address, address);
+            assert_eq!(row.build_id, "3c66d912e69f3437bc0fbb00f7d342e9");
+            assert!(!row.relevant);
+        }
     }
 }
