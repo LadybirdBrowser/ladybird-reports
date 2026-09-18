@@ -49,6 +49,32 @@ test("sign-in returns to the requested report and preserves its query", async ({
     .toBe(false);
 });
 
+test("refreshes GitHub tokens and keeps an active session for 24 hours", async ({ page }) => {
+  const fakeGithub = "http://127.0.0.1:3101";
+  const before = await (await page.request.get(`${fakeGithub}/test/token-refresh-count`)).json();
+
+  await page.goto("/login");
+  await page.getByRole("link", { name: "Continue with GitHub" }).click();
+  await expect(page).toHaveURL(/127\.0\.0\.1:3100\/$/);
+
+  const after = await (await page.request.get(`${fakeGithub}/test/token-refresh-count`)).json();
+  expect(after.count).toBeGreaterThan(before.count);
+
+  const sessionCookie = (await page.context().cookies()).find((cookie) => cookie.name === "session");
+  expect(sessionCookie).toBeDefined();
+  expect(sessionCookie!.expires - Date.now() / 1000).toBeGreaterThan(23 * 60 * 60);
+
+  await page.reload();
+  await expect(page).toHaveURL(/127\.0\.0\.1:3100\/$/);
+  const rotatedAgain = await (await page.request.get(`${fakeGithub}/test/token-refresh-count`)).json();
+  expect(rotatedAgain.count).toBeGreaterThan(after.count);
+
+  await page.getByRole("button", { name: "Open account menu for browser-tester" }).click();
+  await page.getByRole("button", { name: "Sign out" }).click();
+  await expect(page).toHaveURL(/\/login$/);
+  expect((await page.context().cookies()).some((cookie) => cookie.name === "session")).toBe(false);
+});
+
 test("sign-in ignores an external return destination", async ({ page }) => {
   await page.goto("/login?next=%2F%2Fevil.example%2Fpath");
   await expect(page.getByRole("link", { name: "Continue with GitHub" }))

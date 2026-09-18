@@ -153,12 +153,23 @@ pub async fn github_callback(
 
     let session_token = random_token();
     let csrf_token = random_token();
-    let lifetime_seconds = token
-        .expires_in
-        .unwrap_or(8 * 60 * 60)
-        .clamp(60, 8 * 60 * 60);
+    let (Some(access_lifetime), Some(refresh_token), Some(refresh_lifetime)) = (
+        token.expires_in,
+        token.refresh_token.as_deref(),
+        token.refresh_token_expires_in,
+    ) else {
+        return Err(AppError::Unavailable);
+    };
+
+    if access_lifetime <= 0 || refresh_lifetime <= 0 {
+        return Err(AppError::Unavailable);
+    }
+
+    let now = chrono::Utc::now();
+    let lifetime_seconds = configuration.session_lifetime_seconds as i64;
     let session_token_hash = hash_secret(&session_token);
     let encrypted_access_token = state.secret_cipher.encrypt(&token.access_token)?;
+    let encrypted_refresh_token = state.secret_cipher.encrypt(refresh_token)?;
 
     state
         .database
@@ -168,6 +179,9 @@ pub async fn github_callback(
             authorized_team: &configuration.github_authorization_team,
             token_hash: &session_token_hash,
             encrypted_access_token: &encrypted_access_token,
+            encrypted_refresh_token: Some(&encrypted_refresh_token),
+            access_token_expires_at: Some(now + Duration::seconds(access_lifetime)),
+            refresh_token_expires_at: Some(now + Duration::seconds(refresh_lifetime)),
             csrf_token: &csrf_token,
             lifetime: Duration::seconds(lifetime_seconds),
         })
@@ -223,7 +237,12 @@ pub async fn logout(
     Ok(response)
 }
 
-fn session_cookie(name: &str, value: &str, max_age_seconds: i64, secure: bool) -> String {
+pub(super) fn session_cookie(
+    name: &str,
+    value: &str,
+    max_age_seconds: i64,
+    secure: bool,
+) -> String {
     let secure_attribute = if secure { "; Secure" } else { "" };
 
     format!(

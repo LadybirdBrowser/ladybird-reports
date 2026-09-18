@@ -22,6 +22,8 @@ pub struct GithubClient {
 pub struct GithubAccessToken {
     pub access_token: String,
     pub expires_in: Option<i64>,
+    pub refresh_token: Option<String>,
+    pub refresh_token_expires_in: Option<i64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -351,6 +353,42 @@ impl GithubClient {
             .map_err(|error| AppError::Internal(error.into()))?;
 
         decode_github_response(response).await
+    }
+
+    pub async fn refresh_user_token(&self, refresh_token: &str) -> Result<GithubAccessToken> {
+        let response = self
+            .http
+            .post(
+                self.oauth_base_url
+                    .join("/login/oauth/access_token")
+                    .expect("OAuth base URL is valid"),
+            )
+            .header("accept", "application/json")
+            .form(&[
+                ("client_id", self.client_id.as_str()),
+                ("client_secret", self.client_secret.as_str()),
+                ("grant_type", "refresh_token"),
+                ("refresh_token", refresh_token),
+            ])
+            .send()
+            .await
+            .map_err(|error| AppError::Internal(error.into()))?;
+
+        let status = response.status();
+        let body: serde_json::Value = response
+            .json()
+            .await
+            .map_err(|error| AppError::Internal(error.into()))?;
+
+        if body.get("error").and_then(serde_json::Value::as_str) == Some("bad_refresh_token") {
+            return Err(AppError::AuthenticationRequired);
+        }
+
+        if !status.is_success() || body.get("error").is_some() {
+            return Err(AppError::Unavailable);
+        }
+
+        serde_json::from_value(body).map_err(|error| AppError::Internal(error.into()))
     }
 
     pub async fn current_user(&self, token: &str) -> Result<GithubUser> {

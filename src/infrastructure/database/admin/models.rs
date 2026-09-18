@@ -12,6 +12,9 @@ pub struct SessionRecord {
     pub csrf_token: String,
     pub token_hash: String,
     pub encrypted_access_token: String,
+    pub encrypted_refresh_token: Option<String>,
+    pub access_token_expires_at: Option<DateTime<Utc>>,
+    pub refresh_token_expires_at: Option<DateTime<Utc>>,
     pub membership_verified_at: DateTime<Utc>,
     pub expires_at: DateTime<Utc>,
 }
@@ -22,6 +25,9 @@ pub struct NewSession<'a> {
     pub authorized_team: &'a str,
     pub token_hash: &'a str,
     pub encrypted_access_token: &'a str,
+    pub encrypted_refresh_token: Option<&'a str>,
+    pub access_token_expires_at: Option<DateTime<Utc>>,
+    pub refresh_token_expires_at: Option<DateTime<Utc>>,
     pub csrf_token: &'a str,
     pub lifetime: Duration,
 }

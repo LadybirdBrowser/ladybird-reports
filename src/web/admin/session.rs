@@ -1,6 +1,6 @@
 use axum::{
     extract::{Request, State},
-    http::HeaderMap,
+    http::{HeaderMap, header::SET_COOKIE},
     middleware::Next,
     response::Response,
 };
@@ -9,9 +9,12 @@ use cookie::Cookie;
 use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
 
-use crate::{error::Result, infrastructure::hash_secret};
+use crate::{
+    error::{AppError, Result},
+    infrastructure::hash_secret,
+};
 
-use super::{AdminState, templates::redirect_to_login};
+use super::{AdminState, authentication::session_cookie, templates::redirect_to_login};
 
 #[derive(Clone, Debug)]
 pub struct Session {
@@ -54,12 +57,40 @@ pub async fn require_session(
         return Ok(redirect_to_login(request.method(), request.uri()));
     }
 
-    let token_hash = hash_secret(session_token);
-    let Some(record) = state.database.find_session(&token_hash).await? else {
+    let token_hash = hash_secret(&session_token);
+    let Some(mut record) = state.database.find_session(&token_hash).await? else {
         return Ok(redirect_to_login(request.method(), request.uri()));
     };
 
     let configuration = state.database.configuration().await?;
+    let refresh_before = Duration::seconds(configuration.token_refresh_before_seconds as i64);
+
+    if record
+        .access_token_expires_at
+        .is_some_and(|expiry| expiry <= Utc::now() + refresh_before)
+    {
+        match state
+            .database
+            .refresh_session_token(
+                &token_hash,
+                refresh_before,
+                &state.github,
+                &state.secret_cipher,
+            )
+            .await
+        {
+            Ok(Some(encrypted_access_token)) => {
+                record.encrypted_access_token = encrypted_access_token
+            }
+            Ok(None) => return Ok(redirect_to_login(request.method(), request.uri())),
+            Err(AppError::AuthenticationRequired) => {
+                state.database.revoke_session(&token_hash).await?;
+                return Ok(redirect_to_login(request.method(), request.uri()));
+            }
+            Err(error) => return Err(error),
+        }
+    }
+
     let verification_age = Utc::now() - record.membership_verified_at;
 
     if verification_age >= Duration::seconds(configuration.membership_recheck_seconds as i64) {
@@ -82,6 +113,18 @@ pub async fn require_session(
             .await?;
     }
 
+    let extended = state
+        .database
+        .extend_session(
+            &token_hash,
+            Duration::seconds(configuration.session_lifetime_seconds as i64),
+        )
+        .await?;
+
+    if record.encrypted_refresh_token.is_some() && !extended {
+        return Ok(redirect_to_login(request.method(), request.uri()));
+    }
+
     request.extensions_mut().insert(Session {
         github_id: record.github_id,
         login: record.login,
@@ -90,7 +133,30 @@ pub async fn require_session(
         encrypted_access_token: record.encrypted_access_token,
     });
 
-    Ok(next.run(request).await)
+    let mut response = next.run(request).await;
+
+    if extended
+        && !response.headers().get_all(SET_COOKIE).iter().any(|cookie| {
+            cookie
+                .to_str()
+                .is_ok_and(|cookie| cookie.starts_with("session="))
+        })
+    {
+        let secure = configuration.admin_base_url.starts_with("https:");
+        response.headers_mut().append(
+            SET_COOKIE,
+            session_cookie(
+                "session",
+                &session_token,
+                configuration.session_lifetime_seconds as i64,
+                secure,
+            )
+            .parse()
+            .expect("generated cookie is valid"),
+        );
+    }
+
+    Ok(response)
 }
 
 pub fn request_cookie(request: &Request, name: &str) -> Option<String> {

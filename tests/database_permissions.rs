@@ -311,11 +311,14 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
         .await
         .expect("create maintainer for moderation action");
 
-    let original_team = admin_database
+    let configuration = admin_database
         .configuration()
         .await
-        .expect("load original access team")
-        .github_authorization_team;
+        .expect("load runtime configuration");
+    assert_eq!(configuration.membership_recheck_seconds, 600);
+    assert_eq!(configuration.session_lifetime_seconds, 24 * 60 * 60);
+    assert_eq!(configuration.token_refresh_before_seconds, 15 * 60);
+    let original_team = configuration.github_authorization_team;
 
     let integration_session_hash = "9".repeat(64);
     admin_database
@@ -325,6 +328,9 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
             authorized_team: &original_team,
             token_hash: &integration_session_hash,
             encrypted_access_token: "encrypted-token",
+            encrypted_refresh_token: None,
+            access_token_expires_at: None,
+            refresh_token_expires_at: None,
             csrf_token: "integration-csrf",
             lifetime: Duration::minutes(5),
         })
@@ -354,11 +360,29 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
             authorized_team: &original_team,
             token_hash: &team_change_session_hash,
             encrypted_access_token: "encrypted-token",
+            encrypted_refresh_token: Some("encrypted-refresh-token"),
+            access_token_expires_at: Some(Utc::now() + Duration::hours(8)),
+            refresh_token_expires_at: Some(Utc::now() + Duration::days(180)),
             csrf_token: "integration-csrf",
             lifetime: Duration::minutes(5),
         })
         .await
         .expect("create session under original team policy");
+    assert!(
+        admin_database
+            .extend_session(&team_change_session_hash, Duration::hours(24))
+            .await
+            .expect("extend active session")
+    );
+    let extended_lifetime: f64 = sqlx::query_scalar(
+        "SELECT extract(epoch FROM expires_at - now())::double precision
+         FROM sessions WHERE token_hash = $1",
+    )
+    .bind(&team_change_session_hash)
+    .fetch_one(&admin_pool)
+    .await
+    .expect("read extended session expiry");
+    assert!(extended_lifetime > 23.0 * 60.0 * 60.0);
 
     let mut configuration = admin_database
         .configuration()
@@ -417,6 +441,9 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
                 authorized_team: &original_team,
                 token_hash: &"7".repeat(64),
                 encrypted_access_token: "encrypted-token",
+                encrypted_refresh_token: None,
+                access_token_expires_at: None,
+                refresh_token_expires_at: None,
                 csrf_token: "integration-csrf",
                 lifetime: Duration::minutes(5),
             })

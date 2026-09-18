@@ -65,14 +65,20 @@ impl AdminDatabase {
                 token_hash,
                 github_id,
                 encrypted_access_token,
+                encrypted_refresh_token,
+                access_token_expires_at,
+                refresh_token_expires_at,
                 csrf_token,
                 expires_at
              )
-             VALUES ($1, $2, $3, $4, $5)",
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
         )
         .bind(session.token_hash)
         .bind(session.github_id)
         .bind(session.encrypted_access_token)
+        .bind(session.encrypted_refresh_token)
+        .bind(session.access_token_expires_at)
+        .bind(session.refresh_token_expires_at)
         .bind(session.csrf_token)
         .bind(expires_at)
         .execute(&mut *transaction)
@@ -98,6 +104,9 @@ impl AdminDatabase {
                 sessions.csrf_token,
                 sessions.token_hash,
                 sessions.encrypted_access_token,
+                sessions.encrypted_refresh_token,
+                sessions.access_token_expires_at,
+                sessions.refresh_token_expires_at,
                 sessions.membership_verified_at,
                 sessions.expires_at
              FROM sessions
@@ -114,9 +123,110 @@ impl AdminDatabase {
             csrf_token: row.get("csrf_token"),
             token_hash: row.get("token_hash"),
             encrypted_access_token: row.get("encrypted_access_token"),
+            encrypted_refresh_token: row.get("encrypted_refresh_token"),
+            access_token_expires_at: row.get("access_token_expires_at"),
+            refresh_token_expires_at: row.get("refresh_token_expires_at"),
             membership_verified_at: row.get("membership_verified_at"),
             expires_at: row.get("expires_at"),
         }))
+    }
+
+    pub async fn extend_session(
+        &self,
+        token_hash: &str,
+        lifetime: chrono::Duration,
+    ) -> Result<bool> {
+        let expires_at = Utc::now() + lifetime;
+        let result = sqlx::query(
+            "UPDATE sessions SET expires_at = $2
+             WHERE token_hash = $1 AND expires_at > now() AND encrypted_refresh_token IS NOT NULL",
+        )
+        .bind(token_hash)
+        .bind(expires_at)
+        .execute(&self.pool)
+        .await?;
+
+        Ok(result.rows_affected() == 1)
+    }
+
+    pub async fn refresh_session_token(
+        &self,
+        token_hash: &str,
+        refresh_before: chrono::Duration,
+        github: &crate::infrastructure::github::GithubClient,
+        cipher: &crate::infrastructure::SecretCipher,
+    ) -> Result<Option<String>> {
+        let mut transaction = self.pool.begin().await?;
+        let row = sqlx::query(
+            "SELECT encrypted_access_token, encrypted_refresh_token,
+                    access_token_expires_at, refresh_token_expires_at
+             FROM sessions WHERE token_hash = $1 AND expires_at > now() FOR UPDATE",
+        )
+        .bind(token_hash)
+        .fetch_optional(&mut *transaction)
+        .await?;
+
+        let Some(row) = row else {
+            return Ok(None);
+        };
+
+        let encrypted_access_token: String = row.get("encrypted_access_token");
+        let access_expires_at: Option<chrono::DateTime<Utc>> = row.get("access_token_expires_at");
+        let Some(access_expires_at) = access_expires_at else {
+            return Ok(Some(encrypted_access_token));
+        };
+
+        if access_expires_at > Utc::now() + refresh_before {
+            return Ok(Some(encrypted_access_token));
+        }
+
+        let encrypted_refresh_token: Option<String> = row.get("encrypted_refresh_token");
+        let refresh_expires_at: Option<chrono::DateTime<Utc>> = row.get("refresh_token_expires_at");
+        let (Some(encrypted_refresh_token), Some(refresh_expires_at)) =
+            (encrypted_refresh_token, refresh_expires_at)
+        else {
+            return Ok(Some(encrypted_access_token));
+        };
+
+        if refresh_expires_at <= Utc::now() {
+            return Err(crate::error::AppError::AuthenticationRequired);
+        }
+
+        let refresh_token = cipher.decrypt(&encrypted_refresh_token)?;
+        let tokens = github.refresh_user_token(&refresh_token).await?;
+        let (Some(new_refresh_token), Some(access_lifetime), Some(refresh_lifetime)) = (
+            tokens.refresh_token,
+            tokens.expires_in,
+            tokens.refresh_token_expires_in,
+        ) else {
+            return Err(crate::error::AppError::Unavailable);
+        };
+
+        if access_lifetime <= 0 || refresh_lifetime <= 0 {
+            return Err(crate::error::AppError::Unavailable);
+        }
+
+        let now = Utc::now();
+        let encrypted_access_token = cipher.encrypt(&tokens.access_token)?;
+        let encrypted_refresh_token = cipher.encrypt(&new_refresh_token)?;
+
+        sqlx::query(
+            "UPDATE sessions SET encrypted_access_token = $2,
+                    encrypted_refresh_token = $3, access_token_expires_at = $4,
+                    refresh_token_expires_at = $5
+             WHERE token_hash = $1",
+        )
+        .bind(token_hash)
+        .bind(&encrypted_access_token)
+        .bind(encrypted_refresh_token)
+        .bind(now + chrono::Duration::seconds(access_lifetime))
+        .bind(now + chrono::Duration::seconds(refresh_lifetime))
+        .execute(&mut *transaction)
+        .await?;
+
+        transaction.commit().await?;
+        tracing::info!(event = "session.github_token_refreshed");
+        Ok(Some(encrypted_access_token))
     }
 
     pub async fn refresh_membership_verification(&self, token_hash: &str) -> Result<()> {
@@ -146,6 +256,14 @@ impl AdminDatabase {
 
         transaction.commit().await?;
 
+        Ok(())
+    }
+
+    pub async fn revoke_session(&self, token_hash: &str) -> Result<()> {
+        sqlx::query("DELETE FROM sessions WHERE token_hash = $1")
+            .bind(token_hash)
+            .execute(&self.pool)
+            .await?;
         Ok(())
     }
 }

@@ -6,6 +6,9 @@ let latestCreatedIssue;
 const issueFieldValues = new Map();
 let issueFieldVisibility = "organization_members_only";
 let issueResponseDelayMs = 0;
+let refreshCount = 0;
+let issuedTokenCount = 0;
+const activeRefreshTokens = new Set();
 
 function sendJson(response, status, value) {
   response.writeHead(status, { "content-type": "application/json" });
@@ -36,10 +39,45 @@ const server = createServer((request, response) => {
   }
 
   if (request.method === "POST" && url.pathname === "/login/oauth/access_token") {
-    sendJson(response, 200, {
-      access_token: "browser-test-token",
-      expires_in: 3600,
+    let body = "";
+    request.setEncoding("utf8");
+    request.on("data", (chunk) => { body += chunk; });
+    request.on("end", () => {
+      const parameters = new URLSearchParams(body);
+      if (parameters.get("grant_type") === "refresh_token") {
+        const refreshToken = parameters.get("refresh_token");
+        if (!activeRefreshTokens.delete(refreshToken)) {
+          sendJson(response, 400, { error: "bad_refresh_token" });
+          return;
+        }
+
+        refreshCount += 1;
+        const rotatedRefreshToken = `browser-test-refresh-rotated-${refreshCount}`;
+        activeRefreshTokens.add(rotatedRefreshToken);
+        sendJson(response, 200, {
+          access_token: `browser-test-token-${refreshCount}`,
+          expires_in: 1,
+          refresh_token: rotatedRefreshToken,
+          refresh_token_expires_in: 3600,
+        });
+        return;
+      }
+
+      issuedTokenCount += 1;
+      const issuedRefreshToken = `browser-test-refresh-${issuedTokenCount}`;
+      activeRefreshTokens.add(issuedRefreshToken);
+      sendJson(response, 200, {
+        access_token: "browser-test-token",
+        expires_in: 1,
+        refresh_token: issuedRefreshToken,
+        refresh_token_expires_in: 3600,
+      });
     });
+    return;
+  }
+
+  if (request.method === "GET" && url.pathname === "/test/token-refresh-count") {
+    sendJson(response, 200, { count: refreshCount });
     return;
   }
 

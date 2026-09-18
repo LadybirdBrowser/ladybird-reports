@@ -25,6 +25,10 @@ pub struct RuntimeConfiguration {
     pub maintenance: MaintenanceConfiguration,
     #[serde(default)]
     pub discord: DiscordConfiguration,
+    #[serde(default = "default_session_lifetime_seconds")]
+    pub session_lifetime_seconds: u64,
+    #[serde(default = "default_token_refresh_before_seconds")]
+    pub token_refresh_before_seconds: u64,
     pub membership_recheck_seconds: u64,
 }
 
@@ -103,7 +107,9 @@ impl Default for RuntimeConfiguration {
                 submission_source_retention_days: 30,
             },
             discord: DiscordConfiguration::default(),
-            membership_recheck_seconds: 300,
+            session_lifetime_seconds: default_session_lifetime_seconds(),
+            token_refresh_before_seconds: default_token_refresh_before_seconds(),
+            membership_recheck_seconds: 600,
         }
     }
 }
@@ -399,6 +405,20 @@ pub const SETTING_DEFINITIONS: &[SettingDefinition] = &[
         "Maximum Unicode characters in the stack excerpt.",
     ),
     setting(
+        "session_lifetime_seconds",
+        "session_lifetime_seconds",
+        "Session lifetime",
+        "An authenticated request extends the session by this much time.",
+        "Seconds of inactivity before sign-in is required again.",
+    ),
+    setting(
+        "token_refresh_before_seconds",
+        "token_refresh_before_seconds",
+        "GitHub token refresh window",
+        "Rotates a GitHub user token before it expires, using its stored refresh token.",
+        "Seconds before access-token expiry at which to refresh it.",
+    ),
+    setting(
         "membership_recheck_seconds",
         "membership_recheck_seconds",
         "Membership recheck",
@@ -583,7 +603,9 @@ impl RuntimeConfiguration {
             || !(5..=300).contains(&limits.upload_timeout_seconds)
             || !(1..=1_000_000_000).contains(&proof.expected_work)
             || !(30..=3600).contains(&proof.challenge_lifetime_seconds)
-            || !(30..=900).contains(&self.membership_recheck_seconds);
+            || !(3600..=2_592_000).contains(&self.session_lifetime_seconds)
+            || !(60..=3600).contains(&self.token_refresh_before_seconds)
+            || !(30..=3600).contains(&self.membership_recheck_seconds);
 
         let invalid = invalid
             || !(60..=86_400).contains(&maintenance.sweep_interval_seconds)
@@ -641,6 +663,14 @@ impl RuntimeConfiguration {
 
         Ok(())
     }
+}
+
+const fn default_session_lifetime_seconds() -> u64 {
+    24 * 60 * 60
+}
+
+const fn default_token_refresh_before_seconds() -> u64 {
+    15 * 60
 }
 
 fn default_github_authorization_team() -> String {

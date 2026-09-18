@@ -33,6 +33,14 @@ configuration, using an `organization/team-slug` value. Its initial value is
 `LadybirdBrowser/maintainers`. Updating the team revokes current sessions; users
 must sign in again and pass the new team's membership check.
 
+The app encrypts both the GitHub access token and its rotating refresh token in
+the session record. A request refreshes the access token shortly before it
+expires, then extends the session expiry and cookie to 24 hours from that
+request. Team membership is rechecked every 10 minutes. These intervals are
+runtime settings: `token_refresh_before_seconds`, `session_lifetime_seconds`,
+and `membership_recheck_seconds`. Sessions created before refresh-token storage
+was introduced keep their original expiry and require a new sign-in.
+
 Each process keeps a validated runtime configuration in memory. The admin
 process updates the database and emits a PostgreSQL notification in the same
 transaction; both services reload after receiving it. They also reload once a
