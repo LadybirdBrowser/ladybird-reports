@@ -1,15 +1,15 @@
 use askama::Template;
 use axum::{
-    Extension, Form,
+    Extension, Form, Json,
     extract::{Path, Query, State},
     response::Redirect,
 };
 use chrono::{DateTime, Utc};
 use comrak::{Options, markdown_to_html};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::{
-    domain::{IssueId, ReportId},
+    domain::{IssueId, IssueSearch, ReportId},
     error::{AppError, Result},
 };
 
@@ -21,19 +21,40 @@ use super::github::{ensure_github_reports_link, refresh_tracked_issue};
 
 #[derive(Deserialize)]
 pub struct IssueFilters {
-    #[serde(default)]
-    resolved: bool,
-    #[serde(default)]
-    rejected: bool,
+    #[serde(default = "default_issue_search")]
+    q: String,
 }
 
 #[derive(Template)]
 #[template(path = "issues/index.html")]
 pub struct IssuesTemplate {
     navigation: Option<Navigation>,
-    include_resolved: bool,
-    include_rejected: bool,
+    search: String,
     issues: Vec<IssueRow>,
+}
+
+#[derive(Template)]
+#[template(path = "issues/_list.html")]
+pub struct IssueListTemplate {
+    issues: Vec<IssueRow>,
+}
+
+#[derive(Deserialize)]
+pub struct IssueCompletionQuery {
+    #[serde(default)]
+    token: String,
+}
+
+#[derive(Serialize)]
+pub struct IssueCompletionResponse {
+    results: Vec<IssueCompletion>,
+}
+
+#[derive(Serialize)]
+pub struct IssueCompletion {
+    replacement: String,
+    label: String,
+    description: String,
 }
 
 pub struct IssueRow {
@@ -141,9 +162,26 @@ pub async fn index(
     Extension(session): Extension<Session>,
     Query(filters): Query<IssueFilters>,
 ) -> Result<TemplateResponse<IssuesTemplate>> {
+    let issues = load_issue_list(&state, &filters).await?.issues;
+
+    Ok(TemplateResponse(IssuesTemplate {
+        navigation: Some(Navigation::for_session(&state, &session)),
+        search: filters.q,
+        issues,
+    }))
+}
+
+pub async fn list(
+    State(state): State<AdminState>,
+    Query(filters): Query<IssueFilters>,
+) -> Result<TemplateResponse<IssueListTemplate>> {
+    Ok(TemplateResponse(load_issue_list(&state, &filters).await?))
+}
+
+async fn load_issue_list(state: &AdminState, filters: &IssueFilters) -> Result<IssueListTemplate> {
     let issues = state
         .database
-        .list_issues(filters.resolved, filters.rejected)
+        .list_issues(&IssueSearch::parse(&filters.q)?)
         .await?
         .into_iter()
         .map(|issue| IssueRow {
@@ -155,12 +193,58 @@ pub async fn index(
         })
         .collect();
 
-    Ok(TemplateResponse(IssuesTemplate {
-        navigation: Some(Navigation::for_session(&state, &session)),
-        include_resolved: filters.resolved,
-        include_rejected: filters.rejected,
-        issues,
-    }))
+    Ok(IssueListTemplate { issues })
+}
+
+pub async fn search_completions(
+    Query(parameters): Query<IssueCompletionQuery>,
+) -> Result<Json<IssueCompletionResponse>> {
+    let token = parameters.token.trim();
+    if token.len() > 128 {
+        return Err(AppError::InvalidRequest("Search token is too long"));
+    }
+
+    let results = if let Some((key, prefix)) = token.split_once(':') {
+        if !key.eq_ignore_ascii_case("state") {
+            Vec::new()
+        } else {
+            [
+                "unresolved",
+                "needs_attention",
+                "resolved",
+                "rejected",
+                "all",
+            ]
+            .into_iter()
+            .filter(|value| value.starts_with(&prefix.to_ascii_lowercase()))
+            .map(|value| IssueCompletion {
+                replacement: format!("state:{value}"),
+                label: value.replace('_', " "),
+                description: "Issue state".into(),
+            })
+            .collect()
+        }
+    } else {
+        [
+            ("state", "Workflow state"),
+            ("github", "GitHub issue number"),
+            ("id", "Reports issue ID"),
+        ]
+        .into_iter()
+        .filter(|(key, _)| key.starts_with(&token.to_ascii_lowercase()))
+        .map(|(key, description)| IssueCompletion {
+            replacement: format!("{key}:"),
+            label: format!("{key}:"),
+            description: description.into(),
+        })
+        .collect()
+    };
+
+    Ok(Json(IssueCompletionResponse { results }))
+}
+
+fn default_issue_search() -> String {
+    "state:unresolved state:needs_attention".into()
 }
 
 #[derive(Deserialize)]
@@ -276,7 +360,7 @@ pub async fn show(
 
     let destinations = state
         .database
-        .list_issues(false, false)
+        .list_issues(&IssueSearch::parse(&default_issue_search())?)
         .await?
         .into_iter()
         .filter(|issue| {

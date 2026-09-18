@@ -65,6 +65,11 @@ pub fn router(state: AdminState) -> Router {
         )
         .route("/attachments/{id}", get(handlers::reports::attachment))
         .route("/issues", get(handlers::issues::index))
+        .route("/api/issue-list", get(handlers::issues::list))
+        .route(
+            "/api/issue-search-completions",
+            get(handlers::issues::search_completions),
+        )
         .route(
             "/reports/{id}/issues",
             post(handlers::issues::create_from_report),
@@ -112,6 +117,10 @@ pub fn router(state: AdminState) -> Router {
         .route(
             "/assets/reports.js",
             get(handlers::assets::reports_javascript),
+        )
+        .route(
+            "/assets/list-search.js",
+            get(handlers::assets::list_search_javascript),
         )
         .route(
             "/assets/github-icon.svg",

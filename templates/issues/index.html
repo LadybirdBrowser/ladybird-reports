@@ -2,6 +2,8 @@
 
 {% block title %}Issues{% endblock %}
 
+{% block scripts %}<script src="/assets/list-search.js" defer></script>{% endblock %}
+
 {% block content %}
     <header class="page-header">
         <div>
@@ -13,80 +15,57 @@
         </div>
     </header>
 
+    <section class="filter-panel" aria-label="Issue filters">
+        <form
+            class="filters"
+            method="get"
+            data-list-search
+            data-list-url="/api/issue-list"
+            data-completions-url="/api/issue-search-completions"
+            data-list-label="issues"
+        >
+            <label class="report-search-filter">
+                Search issues
+                <span class="search-input-wrap">
+                    <span class="search-glyph" aria-hidden="true"></span>
+                    <input
+                        type="search"
+                        name="q"
+                        value="{{ search }}"
+                        placeholder="state:unresolved github:4812"
+                        autocomplete="off"
+                        role="combobox"
+                        aria-autocomplete="list"
+                        aria-expanded="false"
+                        aria-controls="issue-search-completions"
+                        data-list-search-input
+                    >
+                </span>
+                <div
+                    id="issue-search-completions"
+                    class="search-completions"
+                    role="listbox"
+                    aria-label="Search suggestions"
+                    popover="manual"
+                    data-list-search-completions
+                ></div>
+            </label>
+        </form>
+        <p class="filter-hint">
+            Search titles or issue numbers, and use <code>state:resolved</code>,
+            <code>state:rejected</code>, or <code>github:4812</code> to narrow results.
+        </p>
+    </section>
+
     <div>
         <section class="card" aria-labelledby="issue-list-title">
             <div class="card-header">
                 <h2 id="issue-list-title">Tracked issues</h2>
-                <form class="inline-form" method="get" data-auto-filter>
-                    <label class="checkbox-label">
-                        <input
-                            type="checkbox"
-                            name="resolved"
-                            value="true"
-                            {% if include_resolved %}checked{% endif %}
-                        >
-                        Include resolved
-                    </label>
-                    <label class="checkbox-label">
-                        <input
-                            type="checkbox"
-                            name="rejected"
-                            value="true"
-                            {% if include_rejected %}checked{% endif %}
-                        >
-                        Include rejected
-                    </label>
-                </form>
             </div>
-
-            {% if issues.is_empty() %}
-                <div class="empty-state">
-                    <strong>No issues yet</strong>
-                    Create an issue from a report that needs triage.
-                </div>
-            {% else %}
-                <div class="table-scroll">
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Issue</th>
-                                <th>Reports</th>
-                                <th>GitHub</th>
-                                <th>Status</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for issue in issues %}
-                                <tr>
-                                    <td>
-                                        <a class="primary-link" href="/issues/{{ issue.id }}">
-                                            {{ issue.title }}
-                                        </a>
-                                    </td>
-                                    <td>{{ issue.report_count }}</td>
-                                    <td>
-                                        <span class="badge badge-neutral">
-                                            #{{ issue.github_number }}
-                                        </span>
-                                    </td>
-                                    <td>
-                                        {% if issue.state == "rejected" %}
-                                            <span class="badge badge-rejected">Rejected</span>
-                                        {% else if issue.state == "needs_attention" %}
-                                            <span class="badge badge-warning">Needs attention</span>
-                                        {% else if issue.state == "resolved" %}
-                                            <span class="badge badge-success">Resolved</span>
-                                        {% else %}
-                                            <span class="badge badge-triage">Unresolved</span>
-                                        {% endif %}
-                                    </td>
-                                </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-            {% endif %}
+            <div data-list-results>
+                {% include "issues/_list.html" %}
+            </div>
         </section>
-
     </div>
+    <p class="visually-hidden" aria-live="polite" data-list-search-status></p>
 {% endblock %}

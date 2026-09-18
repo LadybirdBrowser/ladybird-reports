@@ -55,7 +55,7 @@ pub fn filter_expression(key: &str, value: &str) -> String {
     format!("{key}:\"{escaped}\"")
 }
 
-fn tokenize(input: &str) -> Result<Vec<String>> {
+pub(crate) fn tokenize(input: &str) -> Result<Vec<String>> {
     let mut tokens = Vec::new();
     let mut token = String::new();
     let mut quoted = false;

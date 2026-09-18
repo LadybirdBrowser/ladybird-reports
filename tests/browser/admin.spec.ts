@@ -262,7 +262,7 @@ test.describe("authenticated management UI", () => {
     expect(pageHeaders["x-content-type-options"]).toBe("nosniff");
     expect(pageHeaders["x-frame-options"]).toBe("DENY");
 
-    for (const asset of ["application.css", "application.js", "reports.js"]) {
+    for (const asset of ["application.css", "application.js", "reports.js", "list-search.js"]) {
       const firstResponse = await request.get(`/assets/${asset}`);
       const etag = firstResponse.headers()["etag"];
 
@@ -301,10 +301,6 @@ test.describe("authenticated management UI", () => {
   test("searches tracked and GitHub issues in one selector", async ({ page }) => {
     await page.goto("/issues");
     await expect(page.getByText("Intermittent navigation timeout")).toBeVisible();
-
-    await page.getByLabel("Include resolved").check();
-    await expect.poll(() => new URL(page.url()).searchParams.get("resolved"))
-      .toBe("true");
 
     await page.goto(`/reports/${reportId}`);
     await page.getByRole("button", { name: "Add report to issue" }).click();
@@ -366,6 +362,42 @@ test.describe("authenticated management UI", () => {
       .toHaveValue(/## Stack trace\n\n```text\n[\s\S]*Core::ThreadEventQueue::process\(\)/);
     await expect(page.getByText("Review this public GitHub issue"))
       .toBeVisible();
+  });
+
+  test("filters issues with the shared query interaction", async ({ page }) => {
+    await page.goto("/issues");
+    const search = page.getByLabel("Search issues");
+    await expect(search).toHaveValue("state:unresolved state:needs_attention");
+    await page.evaluate(() => ((window as any).issuePageStayedLoaded = true));
+
+    await search.fill("state:resolved");
+    await page.waitForTimeout(800);
+    await expect(search).toHaveValue("state:resolved");
+    expect(new URL(page.url()).searchParams.has("q")).toBe(false);
+    await search.press("Enter");
+
+    await expect.poll(() => new URL(page.url()).searchParams.get("q"))
+      .toBe("state:resolved");
+    expect(await page.evaluate(() => (window as any).issuePageStayedLoaded)).toBe(true);
+    await expect(page.getByText("No matching issues")).toBeVisible();
+
+    await search.fill("state:unresolved github:4812");
+    await search.press("Enter");
+    await expect(page.getByRole("link", { name: "Intermittent navigation timeout" }))
+      .toBeVisible();
+    await expect(page.locator("[data-list-results] tbody tr")).toHaveCount(1);
+
+    await search.fill("state:unresolved state:needs_attention");
+    await search.press("Enter");
+    await expect.poll(() => new URL(page.url()).searchParams.get("q"))
+      .toBe("state:unresolved state:needs_attention");
+
+    await search.fill("sta");
+    await expect(page.getByRole("option", { name: /^state:/ })).toBeVisible();
+    await search.press("ArrowDown");
+    await search.press("Enter");
+    await expect(search).toHaveValue("state:");
+    await expect(page.getByRole("option", { name: /unresolved/ })).toBeVisible();
   });
 
   test("searches existing internal issues in the issue workflow", async ({ page }) => {
@@ -778,7 +810,7 @@ test.describe("authenticated management UI", () => {
     issue.state = "closed";
     issue.updated_at = new Date(Date.now() + 20_000).toISOString();
     expect((await deliverWebhook("closed")).status()).toBe(204);
-    await page.goto("/issues?resolved=true");
+    await page.goto("/issues?q=state%3Aresolved");
     await expect(page.getByText("Resolved", { exact: true })).toBeVisible();
 
     issue.state = "open";
@@ -913,6 +945,9 @@ test.describe("authenticated management UI", () => {
     await confirmation.getByRole("button", { name: "Reject issue" }).click();
     await expect(page).toHaveURL(issueUrl);
     await expect(page.locator(".page-header .badge-rejected")).toHaveText("Rejected");
+
+    await page.goto("/issues?q=state%3Arejected");
+    await expect(page.locator(`a[href="${new URL(issueUrl).pathname}"]`)).toBeVisible();
 
     await page.goto(remainingReport!);
     await expect(page.locator(".report-linked-issue")).toHaveCount(0);

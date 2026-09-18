@@ -1,7 +1,7 @@
-use sqlx::Row;
+use sqlx::{Postgres, QueryBuilder, Row};
 
 use crate::{
-    domain::{IssueId, ReportId},
+    domain::{IssueId, IssueSearch, ReportId},
     error::{AppError, Result},
     infrastructure::{
         database::AdminDatabase,
@@ -14,12 +14,8 @@ use super::{
 };
 
 impl AdminDatabase {
-    pub async fn list_issues(
-        &self,
-        include_resolved: bool,
-        include_rejected: bool,
-    ) -> Result<Vec<IssueSummary>> {
-        let rows = sqlx::query(
+    pub async fn list_issues(&self, search: &IssueSearch) -> Result<Vec<IssueSummary>> {
+        let mut sql = QueryBuilder::<Postgres>::new(
             "SELECT
                 issues.id,
                 issues.title,
@@ -33,19 +29,51 @@ impl AdminDatabase {
              LEFT JOIN reports
                 ON reports.issue_id = issues.id
                 AND reports.storage_state = 'ready'
-             WHERE issues.merged_into IS NULL
-                AND ($2 OR issues.state <> 'rejected')
-                AND (
-                    $1 OR issues.state <> 'resolved'
+             WHERE issues.merged_into IS NULL",
+        );
+
+        if !search.states.is_empty() && !search.states.iter().any(|state| state == "all") {
+            sql.push(" AND issues.state = ANY(")
+                .push_bind(&search.states)
+                .push(")");
+        }
+        if !search.github_numbers.is_empty() {
+            sql.push(" AND (issues.github_number = ANY(")
+                .push_bind(&search.github_numbers)
+                .push(
+                    ") OR EXISTS (
+                    SELECT 1 FROM issue_github_aliases AS aliases
+                    WHERE aliases.issue_id = issues.id
+                        AND aliases.github_number = ANY(",
                 )
-             GROUP BY issues.id
-             ORDER BY issues.updated_at DESC
-             LIMIT 200",
-        )
-        .bind(include_resolved)
-        .bind(include_rejected)
-        .fetch_all(&self.pool)
-        .await?;
+                .push_bind(&search.github_numbers)
+                .push(")))");
+        }
+        if !search.ids.is_empty() {
+            sql.push(" AND (");
+            for (index, id) in search.ids.iter().enumerate() {
+                if index > 0 {
+                    sql.push(" OR ");
+                }
+                sql.push("position(")
+                    .push_bind(id)
+                    .push(" in lower(issues.id::text)) > 0");
+            }
+            sql.push(")");
+        }
+        for term in &search.terms {
+            let number = term.trim_start_matches('#');
+            sql.push(" AND (position(lower(")
+                .push_bind(term)
+                .push(") in lower(issues.title)) > 0 OR position(")
+                .push_bind(number)
+                .push(" in issues.github_number::text) > 0 OR position(lower(")
+                .push_bind(term)
+                .push(") in lower(issues.id::text)) > 0)");
+        }
+
+        sql.push(" GROUP BY issues.id ORDER BY issues.updated_at DESC LIMIT 200");
+        let rows = sql.build().fetch_all(&self.pool).await?;
 
         Ok(rows
             .into_iter()

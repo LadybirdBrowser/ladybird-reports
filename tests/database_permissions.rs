@@ -9,8 +9,8 @@ use chrono::{Duration, Utc};
 use ladybird_reports::{
     application::ReportIngestionService,
     domain::{
-        DiagnosticField, FieldValue, IssueId, ReportId, ReportKind, ReportManifest, SubmissionId,
-        UploadId, proof_is_valid, sha256_hex,
+        DiagnosticField, FieldValue, IssueId, IssueSearch, ReportId, ReportKind, ReportManifest,
+        SubmissionId, UploadId, proof_is_valid, sha256_hex,
     },
     infrastructure::{
         SecretCipher,
@@ -981,6 +981,15 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
         .expect("resolve historical GitHub link");
     assert_eq!(old_github_link.len(), 1);
     assert_eq!(old_github_link[0].issue_id, created_issue.issue_id);
+    let matching_issues = admin_database
+        .list_issues(&IssueSearch::parse("state:all github:4813").unwrap())
+        .await
+        .expect("find issue by its previous GitHub number");
+    assert!(
+        matching_issues
+            .iter()
+            .any(|issue| issue.id == created_issue.issue_id)
+    );
 
     admin_database
         .merge_issue(created_issue.issue_id, issue_id, 999)

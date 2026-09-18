@@ -2,7 +2,7 @@
 
 {% block title %}Reports{% endblock %}
 
-{% block scripts %}<script src="/assets/reports.js" defer></script>{% endblock %}
+{% block scripts %}<script src="/assets/list-search.js" defer></script>{% endblock %}
 
 {% block content %}
     <header class="page-header">
@@ -16,7 +16,14 @@
     </header>
 
     <section class="filter-panel" aria-label="Report filters">
-        <form class="filters" method="get" data-report-search>
+        <form
+            class="filters"
+            method="get"
+            data-list-search
+            data-list-url="/api/report-list"
+            data-completions-url="/api/report-search-completions"
+            data-list-label="reports"
+        >
             <label class="report-search-filter">
                 Search reports
                 <span class="search-input-wrap">
@@ -31,7 +38,7 @@
                         aria-autocomplete="list"
                         aria-expanded="false"
                         aria-controls="report-search-completions"
-                        data-report-search-input
+                        data-list-search-input
                     >
                 </span>
                 <div
@@ -40,7 +47,7 @@
                     role="listbox"
                     aria-label="Search suggestions"
                     popover="manual"
-                    data-report-search-completions
+                    data-list-search-completions
                 ></div>
             </label>
         </form>
@@ -51,8 +58,8 @@
         </p>
     </section>
 
-    <section class="card report-list-card" aria-label="Reports" data-report-list>
+    <section class="card report-list-card" aria-label="Reports" data-list-results>
         {% include "reports/_list.html" %}
     </section>
-    <p class="visually-hidden" aria-live="polite" data-report-search-status></p>
+    <p class="visually-hidden" aria-live="polite" data-list-search-status></p>
 {% endblock %}

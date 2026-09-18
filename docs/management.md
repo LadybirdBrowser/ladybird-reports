@@ -52,7 +52,15 @@ service as one operation. The editable draft uses the report type, selected
 environment fields, and the raw stack trace in a code block. It omits URL fields,
 attachments, and unknown fields. Maintainers can review and edit the public
 draft before creating it. Every issue in the service has a GitHub issue at creation.
-The resolved-issue filter applies as soon as it changes. GitHub controls the
+The issue list uses the same search interaction as the report list: Enter or
+leaving the field updates results without reloading the page. Its default
+query is `state:unresolved state:needs_attention`; clearing the query shows
+all states. Plain words search titles, issue IDs, and GitHub issue numbers.
+Use `state:resolved`, `state:rejected`, `github:4812`, or an `id:` prefix to
+narrow results. Repeating `state:` includes either state, and GitHub-number
+search also recognizes previous links kept as aliases.
+
+GitHub controls the
 issue's title, description, and open or closed state. Signed GitHub webhooks
 update those cached values in Reports. Report assignments remain intact when
 an issue is closed, deleted, or transferred. A deleted or moved link is flagged for

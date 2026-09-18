@@ -14,6 +14,7 @@ use super::super::AdminState;
 const STYLESHEET: &str = include_str!("../../../../assets/application.css");
 const JAVASCRIPT: &str = include_str!("../../../../assets/application.js");
 const REPORTS_JAVASCRIPT: &str = include_str!("../../../../assets/reports.js");
+const LIST_SEARCH_JAVASCRIPT: &str = include_str!("../../../../assets/list-search.js");
 const GITHUB_ICON: &str = include_str!("../../../../assets/github-icon.svg");
 const LADYBIRD_MARK: &[u8] = include_bytes!("../../../../assets/ladybird-mark.png");
 
@@ -21,6 +22,8 @@ static STYLESHEET_ETAG: LazyLock<HeaderValue> = LazyLock::new(|| asset_etag(STYL
 static JAVASCRIPT_ETAG: LazyLock<HeaderValue> = LazyLock::new(|| asset_etag(JAVASCRIPT));
 static REPORTS_JAVASCRIPT_ETAG: LazyLock<HeaderValue> =
     LazyLock::new(|| asset_etag(REPORTS_JAVASCRIPT));
+static LIST_SEARCH_JAVASCRIPT_ETAG: LazyLock<HeaderValue> =
+    LazyLock::new(|| asset_etag(LIST_SEARCH_JAVASCRIPT));
 static GITHUB_ICON_ETAG: LazyLock<HeaderValue> = LazyLock::new(|| asset_etag(GITHUB_ICON));
 static LADYBIRD_MARK_ETAG: LazyLock<HeaderValue> = LazyLock::new(|| asset_etag(LADYBIRD_MARK));
 
@@ -48,6 +51,15 @@ pub async fn reports_javascript(headers: HeaderMap) -> Response {
         REPORTS_JAVASCRIPT,
         "text/javascript; charset=utf-8",
         &REPORTS_JAVASCRIPT_ETAG,
+    )
+}
+
+pub async fn list_search_javascript(headers: HeaderMap) -> Response {
+    static_asset(
+        &headers,
+        LIST_SEARCH_JAVASCRIPT,
+        "text/javascript; charset=utf-8",
+        &LIST_SEARCH_JAVASCRIPT_ETAG,
     )
 }
 
