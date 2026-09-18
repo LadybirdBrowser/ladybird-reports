@@ -80,7 +80,7 @@ test.describe("authenticated management UI", () => {
 
   test("expired sessions do not download the login page as an attachment", async ({ page }) => {
     await page.goto(`/reports/${reportId}`);
-    const attachment = page.locator('.attachment-table a[href^="/attachments/"]').first();
+    const attachment = page.getByRole("link", { name: "Download crash-diagnostics.txt" });
     await expect(attachment).not.toHaveAttribute("download");
     await page.context().clearCookies();
 
@@ -162,13 +162,21 @@ test.describe("authenticated management UI", () => {
     await expect(attachmentRow).toContainText("crash-diagnostics.txt");
     await expect(attachmentRow).toContainText("text/plain");
     await expect(attachmentRow).toContainText("3.7 KiB");
-    const downloadLink = attachmentRow.locator("td:nth-child(2) a");
+    await expect(attachmentRow.locator("td:nth-child(-n+3) a")).toHaveCount(0);
+    const viewLink = attachmentRow.getByRole("link", { name: "View crash-diagnostics.txt" });
+    const downloadLink = attachmentRow.getByRole("link", { name: "Download crash-diagnostics.txt" });
+    const viewResponse = await page.request.get(await viewLink.getAttribute("href")!);
+    expect(viewResponse.headers()["content-disposition"])
+      .toContain('inline; filename="crash-diagnostics.txt"');
     const attachmentResponse = await page.request.get(await downloadLink.getAttribute("href")!);
     expect(attachmentResponse.headers()["content-disposition"])
       .toContain('attachment; filename="crash-diagnostics.txt"');
     const download = page.waitForEvent("download");
     await downloadLink.click();
     expect((await download).suggestedFilename()).toBe("crash-diagnostics.txt");
+    await viewLink.click();
+    await expect(page).toHaveURL(/\/attachments\/.*\?inline=true/);
+    await page.goBack();
     expect(await page.getByRole("heading", { name: "Attachments" }).evaluate((attachments) => {
       const additionalFields = document.querySelector("#additional-fields-title");
       return Boolean(additionalFields &&

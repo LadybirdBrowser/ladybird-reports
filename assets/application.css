@@ -2244,37 +2244,49 @@ pre {
 }
 
 .attachment-table td {
-    padding: 0;
-}
-
-.attachment-table td a {
-    display: block;
     padding: 0.85rem 1rem;
     color: var(--ink-soft);
-    text-decoration: none;
     white-space: nowrap;
 }
 
-.attachment-table td:first-child a {
+.attachment-table .attachment-name {
     color: var(--ink);
     font-weight: 650;
     overflow-wrap: anywhere;
     white-space: normal;
 }
 
-.attachment-table tbody tr:not(.attachment-preview-row):hover {
+.attachment-table tbody tr:hover {
     background: var(--surface-subtle);
 }
 
-.attachment-preview-row td {
-    padding: 0.8rem 1rem;
+.attachment-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.35rem;
 }
 
-.attachment-preview-row img {
-    max-width: 100%;
-    margin-top: 0.8rem;
+.attachment-actions a {
+    display: grid;
+    place-items: center;
+    width: 2rem;
+    height: 2rem;
+    color: var(--ink-soft);
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);
+    text-decoration: none;
+}
+
+.attachment-actions a:hover,
+.attachment-actions a:focus-visible {
+    color: var(--ink);
+    background: var(--surface-raised);
+    border-color: var(--brand);
+}
+
+.attachment-actions svg {
+    width: 1rem;
+    height: 1rem;
 }
 
 .history {

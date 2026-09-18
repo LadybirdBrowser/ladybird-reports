@@ -81,41 +81,31 @@
                                     <th scope="col">File</th>
                                     <th scope="col">Type</th>
                                     <th scope="col">Size</th>
+                                    <th scope="col">Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 {% for attachment in attachments %}
                                     <tr>
+                                        <td class="attachment-name">{{ attachment.name }}</td>
+                                        <td>{{ attachment.media_type }}</td>
+                                        <td>{{ attachment.size }}</td>
                                         <td>
-                                            <a href="/attachments/{{ attachment.id }}">
-                                                {{ attachment.name }}
-                                            </a>
-                                        </td>
-                                        <td>
-                                            <a href="/attachments/{{ attachment.id }}" aria-label="Download {{ attachment.name }}">
-                                                {{ attachment.media_type }}
-                                            </a>
-                                        </td>
-                                        <td>
-                                            <a href="/attachments/{{ attachment.id }}" aria-label="Download {{ attachment.name }}">
-                                                {{ attachment.size }}
-                                            </a>
+                                            <div class="attachment-actions">
+                                                <a href="/attachments/{{ attachment.id }}?inline=true" aria-label="View {{ attachment.name }}" title="View">
+                                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                                        <path d="M2 12s3.6-6 10-6 10 6 10 6-3.6 6-10 6S2 12 2 12Z"/>
+                                                        <circle cx="12" cy="12" r="3"/>
+                                                    </svg>
+                                                </a>
+                                                <a href="/attachments/{{ attachment.id }}" aria-label="Download {{ attachment.name }}" title="Download">
+                                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                                        <path d="M12 3v12m-4-4 4 4 4-4M4 17v3h16v-3"/>
+                                                    </svg>
+                                                </a>
+                                            </div>
                                         </td>
                                     </tr>
-                                    {% if attachment.is_png %}
-                                        <tr class="attachment-preview-row">
-                                            <td colspan="3">
-                                                <details>
-                                                    <summary>Preview image</summary>
-                                                    <img
-                                                        loading="lazy"
-                                                        src="/attachments/{{ attachment.id }}"
-                                                        alt="Report attachment"
-                                                    >
-                                                </details>
-                                            </td>
-                                        </tr>
-                                    {% endif %}
                                 {% endfor %}
                             </tbody>
                         </table>

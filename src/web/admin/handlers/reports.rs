@@ -184,7 +184,6 @@ pub struct AttachmentView {
     name: String,
     media_type: String,
     size: String,
-    is_png: bool,
 }
 
 pub struct EventView {
@@ -577,7 +576,6 @@ pub async fn show(
         .map(|attachment| AttachmentView {
             id: attachment.id,
             name: attachment.name,
-            is_png: attachment.media_type == "image/png",
             media_type: attachment.media_type,
             size: format_attachment_size(attachment.size),
         })
@@ -867,6 +865,7 @@ pub async fn unblock_ip(
 pub async fn attachment(
     State(state): State<AdminState>,
     Path(attachment_id): Path<AttachmentId>,
+    Query(display): Query<AttachmentDisplay>,
 ) -> Result<Response> {
     let attachment = state
         .database
@@ -880,7 +879,7 @@ pub async fn attachment(
     } else {
         "text/plain; charset=utf-8"
     };
-    let disposition = attachment_disposition(&attachment.name);
+    let disposition = attachment_disposition(&attachment.name, display.inline);
 
     Ok((
         [
@@ -892,7 +891,13 @@ pub async fn attachment(
         .into_response())
 }
 
-fn attachment_disposition(name: &str) -> String {
+#[derive(Deserialize)]
+pub struct AttachmentDisplay {
+    #[serde(default)]
+    inline: bool,
+}
+
+fn attachment_disposition(name: &str, inline: bool) -> String {
     let fallback = name
         .chars()
         .map(|character| {
@@ -914,7 +919,8 @@ fn attachment_disposition(name: &str) -> String {
         })
         .collect::<String>();
 
-    format!("attachment; filename=\"{fallback}\"; filename*=UTF-8''{encoded}")
+    let kind = if inline { "inline" } else { "attachment" };
+    format!("{kind}; filename=\"{fallback}\"; filename*=UTF-8''{encoded}")
 }
 
 fn format_attachment_size(bytes: i64) -> String {
@@ -1020,8 +1026,12 @@ mod tests {
     #[test]
     fn attachment_names_are_safe_in_download_headers() {
         assert_eq!(
-            attachment_disposition("crash notes-ä.txt"),
+            attachment_disposition("crash notes-ä.txt", false),
             "attachment; filename=\"crash_notes-_.txt\"; filename*=UTF-8''crash%20notes-%C3%A4.txt"
+        );
+        assert_eq!(
+            attachment_disposition("crash notes-ä.txt", true),
+            "inline; filename=\"crash_notes-_.txt\"; filename*=UTF-8''crash%20notes-%C3%A4.txt"
         );
     }
 }
