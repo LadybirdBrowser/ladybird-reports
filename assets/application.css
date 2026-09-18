@@ -253,7 +253,7 @@ nav a:hover {
     height: 1.15rem;
     flex: 0 0 auto;
     background-color: currentColor;
-    mask: url("/assets/github-icon.svg") center / contain no-repeat;
+    mask: url("github-icon.svg") center / contain no-repeat;
 }
 
 .account-popover {

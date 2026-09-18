@@ -112,23 +112,10 @@ pub fn router(state: AdminState) -> Router {
             "/webhooks/github",
             post(handlers::github_webhook::receive).layer(DefaultBodyLimit::max(256 * 1024)),
         )
-        .route("/assets/application.css", get(handlers::assets::stylesheet))
-        .route("/assets/application.js", get(handlers::assets::javascript))
+        .route("/assets/{name}", get(handlers::assets::unversioned_asset))
         .route(
-            "/assets/reports.js",
-            get(handlers::assets::reports_javascript),
-        )
-        .route(
-            "/assets/list-search.js",
-            get(handlers::assets::list_search_javascript),
-        )
-        .route(
-            "/assets/github-icon.svg",
-            get(handlers::assets::github_icon),
-        )
-        .route(
-            "/assets/ladybird-mark.png",
-            get(handlers::assets::ladybird_mark),
+            "/assets/{version}/{name}",
+            get(handlers::assets::versioned_asset),
         )
         .route("/health/live", get(handlers::assets::live))
         .route("/health/ready", get(handlers::assets::ready))

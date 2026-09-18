@@ -1,13 +1,14 @@
 use std::sync::LazyLock;
 
 use axum::{
-    extract::State,
+    extract::{Path, State},
     http::{HeaderMap, HeaderValue, StatusCode, header},
     response::{IntoResponse, Response},
 };
 
 use crate::domain::sha256_hex;
 use crate::error::Result;
+use sha2::{Digest, Sha256};
 
 use super::super::AdminState;
 
@@ -26,58 +27,77 @@ static LIST_SEARCH_JAVASCRIPT_ETAG: LazyLock<HeaderValue> =
     LazyLock::new(|| asset_etag(LIST_SEARCH_JAVASCRIPT));
 static GITHUB_ICON_ETAG: LazyLock<HeaderValue> = LazyLock::new(|| asset_etag(GITHUB_ICON));
 static LADYBIRD_MARK_ETAG: LazyLock<HeaderValue> = LazyLock::new(|| asset_etag(LADYBIRD_MARK));
+static ASSET_VERSION: LazyLock<String> = LazyLock::new(|| {
+    let mut digest = Sha256::new();
+    for asset in [
+        STYLESHEET.as_bytes(),
+        JAVASCRIPT.as_bytes(),
+        REPORTS_JAVASCRIPT.as_bytes(),
+        LIST_SEARCH_JAVASCRIPT.as_bytes(),
+        GITHUB_ICON.as_bytes(),
+        LADYBIRD_MARK,
+    ] {
+        digest.update((asset.len() as u64).to_be_bytes());
+        digest.update(asset);
+    }
+    hex::encode(digest.finalize())
+});
 
-pub async fn stylesheet(headers: HeaderMap) -> Response {
-    static_asset(
-        &headers,
-        STYLESHEET,
-        "text/css; charset=utf-8",
-        &STYLESHEET_ETAG,
-    )
+pub fn asset_version() -> &'static str {
+    ASSET_VERSION.as_str()
 }
 
-pub async fn javascript(headers: HeaderMap) -> Response {
-    static_asset(
-        &headers,
-        JAVASCRIPT,
-        "text/javascript; charset=utf-8",
-        &JAVASCRIPT_ETAG,
-    )
+pub async fn versioned_asset(Path((version, name)): Path<(String, String)>) -> Response {
+    if version != asset_version() {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+
+    let Some((body, content_type, etag)) = asset(&name) else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+
+    let mut response = ([(header::CONTENT_TYPE, content_type)], body).into_response();
+    response.headers_mut().insert(
+        header::CACHE_CONTROL,
+        HeaderValue::from_static("public, max-age=31536000, immutable"),
+    );
+    response.headers_mut().insert(header::ETAG, etag.clone());
+    response
 }
 
-pub async fn reports_javascript(headers: HeaderMap) -> Response {
-    static_asset(
-        &headers,
-        REPORTS_JAVASCRIPT,
-        "text/javascript; charset=utf-8",
-        &REPORTS_JAVASCRIPT_ETAG,
-    )
+pub async fn unversioned_asset(Path(name): Path<String>, headers: HeaderMap) -> Response {
+    let Some((body, content_type, etag)) = asset(&name) else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    static_asset_bytes(&headers, body, content_type, etag)
 }
 
-pub async fn list_search_javascript(headers: HeaderMap) -> Response {
-    static_asset(
-        &headers,
-        LIST_SEARCH_JAVASCRIPT,
-        "text/javascript; charset=utf-8",
-        &LIST_SEARCH_JAVASCRIPT_ETAG,
-    )
-}
-
-pub async fn github_icon(headers: HeaderMap) -> Response {
-    static_asset(&headers, GITHUB_ICON, "image/svg+xml", &GITHUB_ICON_ETAG)
-}
-
-pub async fn ladybird_mark(headers: HeaderMap) -> Response {
-    static_asset_bytes(&headers, LADYBIRD_MARK, "image/png", &LADYBIRD_MARK_ETAG)
-}
-
-fn static_asset(
-    request_headers: &HeaderMap,
-    body: &'static str,
-    content_type: &'static str,
-    etag: &HeaderValue,
-) -> Response {
-    static_asset_bytes(request_headers, body.as_bytes(), content_type, etag)
+fn asset(name: &str) -> Option<(&'static [u8], &'static str, &'static HeaderValue)> {
+    Some(match name {
+        "application.css" => (
+            STYLESHEET.as_bytes(),
+            "text/css; charset=utf-8",
+            &STYLESHEET_ETAG,
+        ),
+        "application.js" => (
+            JAVASCRIPT.as_bytes(),
+            "text/javascript; charset=utf-8",
+            &JAVASCRIPT_ETAG,
+        ),
+        "reports.js" => (
+            REPORTS_JAVASCRIPT.as_bytes(),
+            "text/javascript; charset=utf-8",
+            &REPORTS_JAVASCRIPT_ETAG,
+        ),
+        "list-search.js" => (
+            LIST_SEARCH_JAVASCRIPT.as_bytes(),
+            "text/javascript; charset=utf-8",
+            &LIST_SEARCH_JAVASCRIPT_ETAG,
+        ),
+        "github-icon.svg" => (GITHUB_ICON.as_bytes(), "image/svg+xml", &GITHUB_ICON_ETAG),
+        "ladybird-mark.png" => (LADYBIRD_MARK, "image/png", &LADYBIRD_MARK_ETAG),
+        _ => return None,
+    })
 }
 
 fn static_asset_bytes(

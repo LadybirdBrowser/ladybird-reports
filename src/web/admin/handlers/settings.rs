@@ -14,6 +14,7 @@ use super::super::{AdminState, TemplateResponse, authentication::Navigation, ses
 #[template(path = "settings/show.html")]
 pub struct SettingsTemplate {
     navigation: Option<Navigation>,
+    asset_version: &'static str,
     configuration: String,
     updated_at: DateTime<Utc>,
     fields: Vec<FieldView>,
@@ -38,6 +39,7 @@ pub struct SettingDefinitionView {
 #[template(path = "settings/operations.html")]
 pub struct OperationsTemplate {
     navigation: Option<Navigation>,
+    asset_version: &'static str,
     events: Vec<EventView>,
 }
 
@@ -72,6 +74,7 @@ pub async fn show(
 
     Ok(TemplateResponse(SettingsTemplate {
         navigation: Some(Navigation::for_session(&state, &session)),
+        asset_version: super::assets::asset_version(),
         configuration: configuration_json,
         updated_at: configuration.updated_at,
         fields,
@@ -222,6 +225,7 @@ pub async fn operations(
 
     Ok(TemplateResponse(OperationsTemplate {
         navigation: Some(Navigation::for_session(&state, &session)),
+        asset_version: super::assets::asset_version(),
         events,
     }))
 }

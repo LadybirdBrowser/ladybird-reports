@@ -29,6 +29,7 @@ pub struct IssueFilters {
 #[template(path = "issues/index.html")]
 pub struct IssuesTemplate {
     navigation: Option<Navigation>,
+    asset_version: &'static str,
     search: String,
     issues: Vec<IssueRow>,
 }
@@ -69,6 +70,7 @@ pub struct IssueRow {
 #[template(path = "issues/show.html")]
 pub struct IssueTemplate {
     navigation: Option<Navigation>,
+    asset_version: &'static str,
     issue: IssueView,
     reports: Vec<ReportView>,
     potential_matches: Vec<ReportView>,
@@ -166,6 +168,7 @@ pub async fn index(
 
     Ok(TemplateResponse(IssuesTemplate {
         navigation: Some(Navigation::for_session(&state, &session)),
+        asset_version: super::assets::asset_version(),
         search: filters.q,
         issues,
     }))
@@ -407,6 +410,7 @@ pub async fn show(
 
     Ok(TemplateResponse(IssueTemplate {
         navigation: Some(Navigation::for_session(&state, &session)),
+        asset_version: super::assets::asset_version(),
         issue,
         reports,
         potential_matches,

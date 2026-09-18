@@ -27,10 +27,11 @@ Dynamic management pages use `Cache-Control: private, no-store`. Public API
 responses use `Cache-Control: no-store`. Both services add a restrictive content
 security policy and browser security headers to every response.
 
-The embedded admin stylesheet and JavaScript use content-derived ETags with
-mandatory revalidation. Browsers can reuse unchanged assets with a `304 Not
-Modified` response. Changing an embedded asset changes its ETag when a new image is
-deployed.
+Management pages reference embedded assets through a content-versioned URL.
+These assets use `Cache-Control: public, max-age=31536000, immutable`, so a
+browser can reuse them without a network request. A change to any embedded
+asset changes the URL in newly rendered pages. Unversioned asset URLs remain
+available for older pages and use ETags with mandatory revalidation.
 
 ## Retention and maintenance
 

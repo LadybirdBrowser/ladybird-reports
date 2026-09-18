@@ -22,6 +22,7 @@ use super::{
 #[template(path = "login.html")]
 pub struct LoginTemplate {
     navigation: Option<Navigation>,
+    asset_version: &'static str,
     application_version: &'static str,
     github_login_url: String,
 }
@@ -63,6 +64,7 @@ pub async fn login(Query(query): Query<ReturnToQuery>) -> TemplateResponse<Login
 
     TemplateResponse(LoginTemplate {
         navigation: None,
+        asset_version: super::handlers::assets::asset_version(),
         application_version: crate::runtime::APPLICATION_VERSION,
         github_login_url,
     })

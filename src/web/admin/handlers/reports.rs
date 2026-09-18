@@ -50,6 +50,7 @@ impl Default for ReportFilters {
 #[template(path = "reports/index.html")]
 pub struct ReportsTemplate {
     navigation: Option<Navigation>,
+    asset_version: &'static str,
     search: String,
     reports: Vec<ReportRow>,
     next_page: Option<String>,
@@ -116,6 +117,7 @@ pub struct EntitySearchOption {
 #[template(path = "reports/show.html")]
 pub struct ReportTemplate {
     navigation: Option<Navigation>,
+    asset_version: &'static str,
     report: ReportView,
     linked_issue: Option<LinkedIssueView>,
     potential_issues: Vec<PotentialIssueView>,
@@ -202,6 +204,7 @@ pub async fn index(
 
     Ok(TemplateResponse(ReportsTemplate {
         navigation: Some(Navigation::for_session(&state, &session)),
+        asset_version: super::assets::asset_version(),
         search: filters.q,
         reports: list.reports,
         next_page: list.next_page,
@@ -594,6 +597,7 @@ pub async fn show(
 
     Ok(TemplateResponse(ReportTemplate {
         navigation: Some(Navigation::for_session(&state, &session)),
+        asset_version: super::assets::asset_version(),
         report: report_view,
         linked_issue,
         potential_issues,

@@ -16,7 +16,7 @@ test("unauthenticated visitors can only reach the sign-in page", async ({ page }
   await expect(page.getByText("REPORTING_DATABASE_URL")).toHaveCount(0);
   await expect(page.locator(".login-emblem img")).toHaveAttribute(
     "src",
-    "/assets/ladybird-mark.png",
+    /\/assets\/[0-9a-f]{64}\/ladybird-mark\.png/,
   );
   expect(
     await page.locator(".login-emblem img").evaluate(
@@ -255,7 +255,7 @@ test.describe("authenticated management UI", () => {
       .toBeLessThanOrEqual(390);
   });
 
-  test("sets security headers and revalidates static assets", async ({ page, request }) => {
+  test("sets security headers and caches versioned assets", async ({ page, request }) => {
     const pageResponse = await page.goto("/settings");
     const pageHeaders = pageResponse?.headers() ?? {};
 
@@ -270,40 +270,57 @@ test.describe("authenticated management UI", () => {
     expect(pageHeaders["x-content-type-options"]).toBe("nosniff");
     expect(pageHeaders["x-frame-options"]).toBe("DENY");
 
-    for (const asset of ["application.css", "application.js", "reports.js", "list-search.js"]) {
-      const firstResponse = await request.get(`/assets/${asset}`);
+    const stylesheetUrl = await page.locator('link[rel="stylesheet"]').getAttribute("href");
+    expect(stylesheetUrl).toMatch(/^\/assets\/[0-9a-f]{64}\/application\.css$/);
+    const assetBase = stylesheetUrl!.slice(0, -"application.css".length);
+    await expect(page.locator(".brand-mark img"))
+      .toHaveAttribute("src", `${assetBase}ladybird-mark.png`);
+
+    for (const asset of ["application.css", "application.js", "reports.js", "list-search.js", "github-icon.svg"]) {
+      const firstResponse = await request.get(`${assetBase}${asset}`);
       const etag = firstResponse.headers()["etag"];
 
       expect(firstResponse.status()).toBe(200);
       expect(firstResponse.headers()["cache-control"]).toBe(
-        "public, max-age=0, must-revalidate",
+        "public, max-age=31536000, immutable",
       );
       expect(etag).toMatch(/^\"[0-9a-f]{64}\"$/);
-
-      const revalidatedResponse = await request.get(`/assets/${asset}`, {
-        headers: { "if-none-match": etag },
-      });
-
-      expect(revalidatedResponse.status()).toBe(304);
-      expect(revalidatedResponse.headers()["etag"]).toBe(etag);
     }
 
-    const markResponse = await request.get("/assets/ladybird-mark.png");
-    const markEtag = markResponse.headers()["etag"];
+    const markResponse = await request.get(`${assetBase}ladybird-mark.png`);
 
     expect(markResponse.status()).toBe(200);
     expect(markResponse.headers()["content-type"]).toBe("image/png");
     expect(markResponse.headers()["cache-control"]).toBe(
-      "public, max-age=0, must-revalidate",
+      "public, max-age=31536000, immutable",
     );
-    expect(markEtag).toMatch(/^\"[0-9a-f]{64}\"$/);
+    expect(markResponse.headers()["etag"]).toMatch(/^\"[0-9a-f]{64}\"$/);
 
-    const revalidatedMark = await request.get("/assets/ladybird-mark.png", {
-      headers: { "if-none-match": markEtag },
+    const unknownVersion = await request.get("/assets/invalid/application.css");
+    expect(unknownVersion.status()).toBe(404);
+
+    const legacyAsset = await request.get("/assets/application.css");
+    expect(legacyAsset.headers()["cache-control"])
+      .toBe("public, max-age=0, must-revalidate");
+    const revalidatedLegacyAsset = await request.get("/assets/application.css", {
+      headers: { "if-none-match": legacyAsset.headers()["etag"] },
     });
 
-    expect(revalidatedMark.status()).toBe(304);
-    expect(revalidatedMark.headers()["etag"]).toBe(markEtag);
+    expect(revalidatedLegacyAsset.status()).toBe(304);
+  });
+
+  test("reuses cached assets when navigating between management pages", async ({ page }) => {
+    await page.goto("/issues");
+    await page.goto("/settings");
+    await page.goto("/issues");
+
+    const assetTransfers = await page.evaluate(() =>
+      performance.getEntriesByType("resource")
+        .filter((entry) => new URL(entry.name).pathname.startsWith("/assets/"))
+        .map((entry) => (entry as PerformanceResourceTiming).transferSize),
+    );
+    expect(assetTransfers.length).toBeGreaterThan(0);
+    expect(assetTransfers).toEqual(assetTransfers.map(() => 0));
   });
 
   test("searches tracked and GitHub issues in one selector", async ({ page }) => {
