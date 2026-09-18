@@ -982,7 +982,7 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
     assert_eq!(old_github_link.len(), 1);
     assert_eq!(old_github_link[0].issue_id, created_issue.issue_id);
     let matching_issues = admin_database
-        .list_issues(&IssueSearch::parse("state:all github:4813").unwrap())
+        .list_issues(&IssueSearch::parse("github:4813").unwrap())
         .await
         .expect("find issue by its previous GitHub number");
     assert!(

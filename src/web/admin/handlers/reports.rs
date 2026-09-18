@@ -355,7 +355,7 @@ pub async fn search_completions(
     let key = key.to_ascii_lowercase();
     let prefix = value_prefix.trim_matches('"').to_ascii_lowercase();
     let values = match key.as_str() {
-        "state" => vec!["triage", "confirmed", "rejected", "all"]
+        "state" => vec!["triage", "confirmed", "rejected"]
             .into_iter()
             .map(str::to_owned)
             .collect(),
@@ -991,7 +991,7 @@ fn field_string(
 fn field_filter_url(key: &str, value: &str) -> String {
     let mut url = reqwest::Url::parse("http://localhost/").expect("static URL is valid");
     url.query_pairs_mut()
-        .append_pair("q", &format!("state:all {}", filter_expression(key, value)));
+        .append_pair("q", &filter_expression(key, value));
 
     format!("/?{}", url.query().unwrap_or_default())
 }
@@ -999,7 +999,7 @@ fn field_filter_url(key: &str, value: &str) -> String {
 fn submitted_date_filter_url(date: NaiveDate) -> String {
     let mut url = reqwest::Url::parse("http://localhost/").expect("static URL is valid");
     url.query_pairs_mut()
-        .append_pair("q", "state:all")
+        .append_pair("q", "")
         .append_pair("since", &date.to_string())
         .append_pair("until", &date.to_string());
 

@@ -33,7 +33,7 @@ impl IssueSearch {
                     let state = value.to_ascii_lowercase();
                     if !matches!(
                         state.as_str(),
-                        "unresolved" | "needs_attention" | "resolved" | "rejected" | "all"
+                        "unresolved" | "needs_attention" | "resolved" | "rejected"
                     ) {
                         return Err(AppError::InvalidRequest("Invalid issue state filter"));
                     }
@@ -83,6 +83,7 @@ mod tests {
     #[test]
     fn rejects_invalid_qualifiers() {
         assert!(IssueSearch::parse("state:missing").is_err());
+        assert!(IssueSearch::parse("state:all").is_err());
         assert!(IssueSearch::parse("github:abc").is_err());
         assert!(IssueSearch::parse("platform:linux").is_err());
         assert!(IssueSearch::parse("state:unresolved|resolved").is_err());

@@ -183,7 +183,7 @@ test.describe("authenticated management UI", () => {
     await page.getByRole("region", { name: "Overview" })
       .getByRole("link", { name: "Filter reports by Platform" })
       .click();
-    expect(new URL(page.url()).searchParams.get("q")).toBe("state:all platform:macos");
+    expect(new URL(page.url()).searchParams.get("q")).toBe("platform:macos");
     await expect(page.locator(`a[href="/reports/${reportId}"]`)).toBeVisible();
 
     expect(await page.evaluate(() => (window as any).fixtureWasExecuted)).toBeUndefined();

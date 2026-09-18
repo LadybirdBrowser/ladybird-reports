@@ -208,21 +208,15 @@ pub async fn search_completions(
         if !key.eq_ignore_ascii_case("state") {
             Vec::new()
         } else {
-            [
-                "unresolved",
-                "needs_attention",
-                "resolved",
-                "rejected",
-                "all",
-            ]
-            .into_iter()
-            .filter(|value| value.starts_with(&prefix.to_ascii_lowercase()))
-            .map(|value| IssueCompletion {
-                replacement: format!("state:{value}"),
-                label: value.replace('_', " "),
-                description: "Issue state".into(),
-            })
-            .collect()
+            ["unresolved", "needs_attention", "resolved", "rejected"]
+                .into_iter()
+                .filter(|value| value.starts_with(&prefix.to_ascii_lowercase()))
+                .map(|value| IssueCompletion {
+                    replacement: format!("state:{value}"),
+                    label: value.replace('_', " "),
+                    description: "Issue state".into(),
+                })
+                .collect()
         }
     } else {
         [

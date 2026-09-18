@@ -891,9 +891,6 @@ fn push_qualified_search_predicate(sql: &mut QueryBuilder<'_, Postgres>, key: &s
             "rejected" => {
                 sql.push("reports.state = 'rejected'");
             }
-            "all" => {
-                sql.push("TRUE");
-            }
             _ => unreachable!("report state qualifiers are validated while parsing"),
         },
         "kind" => push_report_column_filter_predicate(sql, "reports.kind", value),

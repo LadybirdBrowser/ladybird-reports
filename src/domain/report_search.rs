@@ -105,7 +105,7 @@ fn validate_qualifier(key: &str, value: &str) -> Result<()> {
     if key.eq_ignore_ascii_case("state")
         && !matches!(
             value.to_ascii_lowercase().as_str(),
-            "triage" | "confirmed" | "rejected" | "all"
+            "triage" | "confirmed" | "rejected"
         )
     {
         return Err(AppError::InvalidRequest("Invalid report state filter"));
@@ -159,7 +159,7 @@ mod tests {
         assert!(ReportSearch::parse("state:confirmed").is_ok());
         assert!(ReportSearch::parse("state:rejected").is_ok());
         assert!(ReportSearch::parse("state:triage state:confirmed").is_ok());
-        assert!(ReportSearch::parse("state:all").is_ok());
+        assert!(ReportSearch::parse("state:all").is_err());
         assert!(ReportSearch::parse("state:triage|confirmed").is_err());
         assert!(ReportSearch::parse("state:unknown").is_err());
     }

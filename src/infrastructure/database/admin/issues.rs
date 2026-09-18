@@ -32,7 +32,7 @@ impl AdminDatabase {
              WHERE issues.merged_into IS NULL",
         );
 
-        if !search.states.is_empty() && !search.states.iter().any(|state| state == "all") {
+        if !search.states.is_empty() {
             sql.push(" AND issues.state = ANY(")
                 .push_bind(&search.states)
                 .push(")");
