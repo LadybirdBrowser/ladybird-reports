@@ -1282,6 +1282,22 @@ tbody tr:hover {
     background: var(--surface-subtle);
 }
 
+.clickable-report-row {
+    position: relative;
+    cursor: pointer;
+}
+
+.clickable-report-row .row-link::after {
+    position: absolute;
+    inset: 0;
+    content: "";
+}
+
+.clickable-report-row form {
+    position: relative;
+    z-index: 1;
+}
+
 .primary-link {
     color: var(--ink);
     font-weight: 700;

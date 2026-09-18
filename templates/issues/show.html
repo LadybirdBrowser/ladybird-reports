@@ -76,10 +76,10 @@
                             </thead>
                             <tbody>
                                 {% for report in reports %}
-                                    <tr>
+                                    <tr class="clickable-report-row">
                                         <td>
                                             <a
-                                                class="primary-link"
+                                                class="primary-link row-link"
                                                 href="/reports/{{ report.id }}"
                                             >
                                                 {{ report.title }}
@@ -132,8 +132,8 @@
                             </thead>
                             <tbody>
                                 {% for report in potential_matches %}
-                                    <tr>
-                                        <td><a class="primary-link" href="/reports/{{ report.id }}">{{ report.title }}</a></td>
+                                    <tr class="clickable-report-row">
+                                        <td><a class="primary-link row-link" href="/reports/{{ report.id }}">{{ report.title }}</a></td>
                                         <td>{{ report.client_version }}</td>
                                         <td class="quiet">{{ report.created_at }}</td>
                                         <td>

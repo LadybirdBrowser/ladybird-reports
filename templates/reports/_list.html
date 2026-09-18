@@ -16,10 +16,10 @@
             </thead>
             <tbody data-report-rows>
                 {% for report in reports %}
-                    <tr>
+                    <tr class="clickable-report-row">
                         <td class="report-table-report">
                             <a
-                                class="primary-link report-title-link"
+                                class="primary-link report-title-link row-link"
                                 href="/reports/{{ report.id }}"
                             >
                                 {{ report.title }}

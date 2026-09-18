@@ -868,6 +868,14 @@ test.describe("authenticated management UI", () => {
 
     await issueLink.click();
     const issueUrl = page.url();
+    const assignedRow = page.locator(".clickable-report-row").filter({
+      has: page.locator(`a[href="/reports/${reportId}"]`),
+    }).first();
+    const versionCell = await assignedRow.locator("td").nth(1).boundingBox();
+    expect(versionCell).not.toBeNull();
+    await page.mouse.click(versionCell!.x + versionCell!.width / 2, versionCell!.y + versionCell!.height / 2);
+    await expect(page).toHaveURL(`/reports/${reportId}`);
+    await page.goto(issueUrl);
     await page.getByRole("button", { name: `Unlink report ${reportId}` }).click();
 
     await page.goto(`/reports/${reportId}`);
