@@ -96,6 +96,7 @@ fn render_issue_description(markdown: &str) -> String {
     options.extension.tasklist = true;
     options.extension.alerts = true;
     options.render.escape = true;
+    options.render.hardbreaks = true;
 
     // GitHub issue bodies can include HTML. Leave it escaped because the
     // description is supplied by another service and inserted into our UI.
@@ -119,6 +120,20 @@ mod markdown_tests {
         assert!(
             !render_issue_description("[bad](javascript:alert(1))").contains("href=\"javascript:")
         );
+    }
+
+    #[test]
+    fn preserves_line_breaks_between_links_in_github_issue_bodies() {
+        let html = render_issue_description(
+            "Here are some sample files:\n\nhttps://example.com/first\nhttps://example.com/second\n\nTrace:\n```\nframe one\nframe two\n```",
+        );
+
+        assert!(html.contains(concat!(
+            "<a href=\"https://example.com/first\">https://example.com/first</a>",
+            "<br />\n",
+            "<a href=\"https://example.com/second\">",
+        )));
+        assert!(html.contains("frame one\nframe two"));
     }
 }
 
