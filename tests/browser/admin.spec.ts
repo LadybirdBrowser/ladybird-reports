@@ -671,11 +671,14 @@ test.describe("authenticated management UI", () => {
     await page.getByRole("button", { name: "Reject report" }).first().click();
     await confirmation.getByRole("button", { name: "Reject report" }).click();
     await expect(page.locator(".badge-rejected")).toHaveText("Rejected");
+    await expect(page.locator(".page-header h1")).toHaveCSS("text-decoration-line", "line-through");
     await page.getByRole("button", { name: "Restore report" }).click();
     await expect(page.locator(".badge-triage")).toHaveText("Needs triage");
+    await expect(page.locator(".page-header h1")).toHaveCSS("text-decoration-line", "none");
     await page.getByRole("button", { name: "Reject report" }).first().click();
     await confirmation.getByRole("button", { name: "Reject report" }).click();
     await expect(page.locator(".badge-rejected")).toHaveText("Rejected");
+    await expect(page.locator(".page-header h1")).toHaveCSS("text-decoration-line", "line-through");
     await expect(page).toHaveURL(new RegExp(`${href}$`));
 
     await page.getByRole("link", { name: "Reports", exact: true }).click();

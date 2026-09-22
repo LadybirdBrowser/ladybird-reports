@@ -8,7 +8,7 @@
     <header class="page-header">
         <div>
             <p class="eyebrow">Submitted diagnostic</p>
-            <h1>{{ report.title }}</h1>
+            <h1 class="report-title report-title-{{ report.state }}">{{ report.title }}</h1>
         </div>
 
         {% if report.is_rejected %}

@@ -384,6 +384,10 @@ nav a:hover {
     overflow-wrap: anywhere;
 }
 
+.report-title-rejected {
+    text-decoration: line-through;
+}
+
 .page-header p:last-child {
     margin-bottom: 0;
 }

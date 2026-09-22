@@ -131,6 +131,7 @@ pub struct ReportTemplate {
 pub struct ReportView {
     id: ReportId,
     title: String,
+    state: String,
     overview: Vec<OverviewField>,
     is_assigned: bool,
     is_confirmed: bool,
@@ -504,6 +505,7 @@ pub async fn show(
     let report_view = ReportView {
         id: details.report.id,
         title,
+        state: details.report.state.clone(),
         overview,
         is_assigned: details.report.issue_id.is_some(),
         is_confirmed: details.report.state == "confirmed",
