@@ -118,11 +118,14 @@ API process cannot retrieve the credential.
 
 ## Identifiers
 
-Every identifier in the protocol, application, and database is UUIDv7. The server
-generates report, challenge, upload, issue, attachment-storage, GitHub-attempt, and
-request identifiers. Clients generate submission and attachment identifiers. Rust
-types reject other UUID versions at input boundaries, and database checks enforce the
-same rule for privileged writes.
+The server generates report, challenge, upload, issue, attachment, GitHub-attempt,
+and request identifiers, all UUIDv7. Rust types reject other UUID versions at input
+boundaries, and database checks enforce the same rule for privileged writes.
+
+Clients generate submission identifiers, which may be any UUID version, and name
+their attachments with short references that are only unique within a submission.
+Staged and stored attachment files are named after the server's attachment
+identifier, never after client input.
 
 ## Attachments
 

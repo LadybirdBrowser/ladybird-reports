@@ -4,9 +4,9 @@ use chrono::{Duration, Utc};
 
 use crate::{
     domain::{
-        ChallengeClaims, ChallengeId, FieldDefinition, ReportId, ReportManifest,
-        RuntimeConfiguration, UploadId, is_sha256_hex, proof_is_valid, sha256_hex, sign_challenge,
-        verify_challenge,
+        AttachmentId, AttachmentReference, ChallengeClaims, ChallengeId, FieldDefinition, ReportId,
+        ReportManifest, RuntimeConfiguration, UploadId, is_sha256_hex, proof_is_valid, sha256_hex,
+        sign_challenge, verify_challenge,
     },
     error::{AppError, Result},
     infrastructure::{
@@ -24,6 +24,7 @@ pub struct ReportIngestionService {
 
 pub struct PreparedSubmission {
     pub manifest: ReportManifest,
+    pub attachment_ids: HashMap<AttachmentReference, AttachmentId>,
     pub upload_id: UploadId,
     pub staging: StagingUpload,
     claims: ChallengeClaims,
@@ -124,12 +125,18 @@ impl ReportIngestionService {
         manifest.validate(&definitions, &configuration.limits)?;
         self.ensure_storage_capacity(&configuration)?;
 
+        let attachment_ids = manifest
+            .attachments
+            .iter()
+            .map(|attachment| (attachment.id.clone(), AttachmentId::new()))
+            .collect();
         let upload_id = UploadId::new();
         let staging = self.attachments.begin_staging(upload_id).await?;
 
         Ok(PrepareSubmissionOutcome::Ready(Box::new(
             PreparedSubmission {
                 manifest,
+                attachment_ids,
                 upload_id,
                 staging,
                 claims,
@@ -148,7 +155,11 @@ impl ReportIngestionService {
 
         prepared
             .staging
-            .validate(&prepared.manifest.attachments, &configuration.limits)
+            .validate(
+                &prepared.manifest.attachments,
+                &prepared.attachment_ids,
+                &configuration.limits,
+            )
             .await?;
 
         let outcome = self
@@ -157,6 +168,7 @@ impl ReportIngestionService {
                 claims: &prepared.claims,
                 token_hash: &prepared.token_hash,
                 manifest: &prepared.manifest,
+                attachment_ids: &prepared.attachment_ids,
                 upload_id: prepared.upload_id,
                 source_client_key,
                 source_retention_days: configuration.maintenance.submission_source_retention_days,

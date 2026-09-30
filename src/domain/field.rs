@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Number;
 
 use crate::{
-    domain::{AttachmentId, IngestionLimits},
+    domain::{AttachmentReference, IngestionLimits},
     error::{AppError, Result},
 };
 
@@ -23,7 +23,7 @@ pub enum FieldValue {
     StackTrace(String),
     Number(Number),
     Boolean(bool),
-    Attachment(AttachmentId),
+    Attachment(AttachmentReference),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -88,14 +88,14 @@ impl FieldValue {
             }
             Self::Number(value) => value.clone().into(),
             Self::Boolean(value) => (*value).into(),
-            Self::Attachment(value) => value.to_string().into(),
+            Self::Attachment(value) => value.as_str().into(),
         }
     }
 }
 
 pub fn validate_fields(
     fields: &[DiagnosticField],
-    attachment_ids: &HashSet<AttachmentId>,
+    attachment_references: &HashSet<&AttachmentReference>,
     definitions: &HashMap<String, FieldDefinition>,
     limits: &IngestionLimits,
 ) -> Result<()> {
@@ -134,7 +134,7 @@ pub fn validate_fields(
             {
                 return Err(AppError::InvalidRequest("Multiline field is too large"));
             }
-            FieldValue::Attachment(id) if !attachment_ids.contains(id) => {
+            FieldValue::Attachment(reference) if !attachment_references.contains(reference) => {
                 return Err(AppError::InvalidRequest(
                     "Diagnostic field references an unknown attachment",
                 ));

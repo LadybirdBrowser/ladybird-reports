@@ -3,10 +3,7 @@ use std::collections::{HashMap, HashSet};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    domain::{
-        AttachmentId, DiagnosticField, FieldDefinition, IngestionLimits, SubmissionId,
-        validate_fields,
-    },
+    domain::{DiagnosticField, FieldDefinition, IngestionLimits, SubmissionId, validate_fields},
     error::{AppError, Result},
 };
 
@@ -32,11 +29,41 @@ pub enum ReportKind {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct AttachmentManifest {
-    pub id: AttachmentId,
+    pub id: AttachmentReference,
     pub name: String,
     pub media_type: AttachmentMediaType,
     pub size: u64,
     pub sha256: String,
+}
+
+// Names an attachment within one submission: its multipart part and the diagnostic fields that refer to it.
+#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[serde(try_from = "String")]
+pub struct AttachmentReference(String);
+
+impl AttachmentReference {
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl TryFrom<String> for AttachmentReference {
+    type Error = &'static str;
+
+    fn try_from(value: String) -> std::result::Result<Self, Self::Error> {
+        let valid = (1..=64).contains(&value.len())
+            && value
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'));
+
+        if valid {
+            Ok(Self(value))
+        } else {
+            Err(
+                "attachment reference must be 1 to 64 ASCII letters, digits, hyphens or underscores",
+            )
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -88,17 +115,20 @@ impl ReportManifest {
             return Err(AppError::InvalidRequest("Too many attachments"));
         }
 
-        let attachment_ids = self.validate_attachments(limits)?;
-        validate_fields(&self.fields, &attachment_ids, definitions, limits)
+        let references = self.validate_attachments(limits)?;
+        validate_fields(&self.fields, &references, definitions, limits)
     }
 
-    fn validate_attachments(&self, limits: &IngestionLimits) -> Result<HashSet<AttachmentId>> {
-        let mut attachment_ids = HashSet::new();
+    fn validate_attachments(
+        &self,
+        limits: &IngestionLimits,
+    ) -> Result<HashSet<&AttachmentReference>> {
+        let mut references = HashSet::new();
         let mut total_size = 0_u64;
 
         for attachment in &self.attachments {
-            if !attachment_ids.insert(attachment.id) {
-                return Err(AppError::InvalidRequest("Duplicate attachment ID"));
+            if !references.insert(&attachment.id) {
+                return Err(AppError::InvalidRequest("Duplicate attachment reference"));
             }
 
             validate_attachment_name(&attachment.name)?;
@@ -120,7 +150,7 @@ impl ReportManifest {
             return Err(AppError::InvalidRequest("Attachments are too large"));
         }
 
-        Ok(attachment_ids)
+        Ok(references)
     }
 }
 
@@ -152,7 +182,7 @@ mod tests {
     #[test]
     fn jpeg_attachments_are_not_part_of_the_protocol() {
         let json = serde_json::json!({
-            "id": AttachmentId::new(),
+            "id": "screenshot",
             "name": "screenshot.jpg",
             "media_type": "image/jpeg",
             "size": 4,
@@ -160,6 +190,34 @@ mod tests {
         });
 
         assert!(serde_json::from_value::<AttachmentManifest>(json).is_err());
+    }
+
+    #[test]
+    fn attachment_references_are_short_tokens() {
+        for reference in [
+            "diagnostics",
+            "screenshot-1",
+            "stack_trace",
+            &"a".repeat(64),
+        ] {
+            assert!(
+                AttachmentReference::try_from(reference.to_owned()).is_ok(),
+                "{reference}"
+            );
+        }
+
+        for reference in [
+            "",
+            "../diagnostics",
+            "crash diagnostics",
+            "diagnostics.txt",
+            &"a".repeat(65),
+        ] {
+            assert!(
+                AttachmentReference::try_from(reference.to_owned()).is_err(),
+                "{reference}"
+            );
+        }
     }
 
     #[test]

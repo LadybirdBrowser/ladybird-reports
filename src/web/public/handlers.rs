@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     application::{PrepareSubmissionOutcome, ReportIngestionService},
-    domain::{AttachmentId, UploadId},
+    domain::{AttachmentReference, UploadId},
     error::{AppError, Result},
 };
 
@@ -172,7 +172,7 @@ async fn receive_and_accept(
         .manifest
         .attachments
         .iter()
-        .map(|attachment| (attachment.id, attachment))
+        .map(|attachment| (&attachment.id, attachment))
         .collect::<HashMap<_, _>>();
 
     let mut received = HashSet::new();
@@ -183,22 +183,22 @@ async fn receive_and_accept(
         .await
         .map_err(|_| AppError::InvalidRequest("Invalid multipart body"))?
     {
-        let client_id = part
+        let reference = part
             .name()
-            .and_then(|name| name.parse::<AttachmentId>().ok())
+            .and_then(|name| AttachmentReference::try_from(name.to_owned()).ok())
             .ok_or(AppError::InvalidRequest("Invalid attachment part name"))?;
 
         let manifest = attachments
-            .get(&client_id)
+            .get(&reference)
             .ok_or(AppError::InvalidRequest("Unexpected attachment"))?;
 
-        if !received.insert(client_id) {
+        if !received.insert(reference.clone()) {
             return Err(AppError::InvalidRequest("Duplicate attachment"));
         }
 
         let mut writer = prepared
             .staging
-            .create_writer(client_id, manifest.size)
+            .create_writer(prepared.attachment_ids[&reference], manifest.size)
             .await?;
 
         while let Some(chunk) = part

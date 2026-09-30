@@ -1,5 +1,5 @@
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     path::{Path, PathBuf},
 };
 
@@ -9,7 +9,8 @@ use tokio::sync::Semaphore;
 
 use crate::{
     domain::{
-        AttachmentId, AttachmentManifest, AttachmentMediaType, IngestionLimits, ReportId, UploadId,
+        AttachmentId, AttachmentManifest, AttachmentMediaType, AttachmentReference,
+        IngestionLimits, ReportId, UploadId,
     },
     error::{AppError, Result},
 };
@@ -216,19 +217,21 @@ impl StagingUpload {
     pub async fn validate(
         &self,
         attachments: &[AttachmentManifest],
+        attachment_ids: &HashMap<AttachmentReference, AttachmentId>,
         limits: &IngestionLimits,
     ) -> Result<()> {
         let mut validated_ids = HashSet::new();
 
         for attachment in attachments {
+            let attachment_id = attachment_ids[&attachment.id];
             validate_attachment_file(
-                &self.path(attachment.id),
+                &self.path(attachment_id),
                 attachment,
                 limits,
                 self.validation_memory(),
             )
             .await?;
-            validated_ids.insert(attachment.id);
+            validated_ids.insert(attachment_id);
         }
 
         let mut directory = tokio::fs::read_dir(self.directory()).await?;

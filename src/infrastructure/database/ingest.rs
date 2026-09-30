@@ -7,8 +7,8 @@ use sqlx::{PgPool, Row};
 
 use crate::{
     domain::{
-        AttachmentId, ChallengeClaims, FieldDefinition, FieldKind, ReportId, ReportManifest,
-        RuntimeConfiguration, SubmissionId, UploadId,
+        AttachmentId, AttachmentReference, ChallengeClaims, FieldDefinition, FieldKind, ReportId,
+        ReportManifest, RuntimeConfiguration, SubmissionId, UploadId,
     },
     error::{AppError, Result},
 };
@@ -39,6 +39,7 @@ pub struct AcceptReportRequest<'a> {
     pub claims: &'a ChallengeClaims,
     pub token_hash: &'a str,
     pub manifest: &'a ReportManifest,
+    pub attachment_ids: &'a HashMap<AttachmentReference, AttachmentId>,
     pub upload_id: UploadId,
     pub source_client_key: &'a str,
     pub source_retention_days: u32,
@@ -64,7 +65,7 @@ struct StoredField<'a> {
 #[derive(Serialize)]
 struct StoredAttachment<'a> {
     id: AttachmentId,
-    client_id: AttachmentId,
+    client_reference: &'a str,
     name: &'a str,
     media_type: &'static str,
     size: u64,
@@ -241,8 +242,8 @@ impl IngestDatabase {
             .attachments
             .iter()
             .map(|attachment| StoredAttachment {
-                id: AttachmentId::new(),
-                client_id: attachment.id,
+                id: request.attachment_ids[&attachment.id],
+                client_reference: attachment.id.as_str(),
                 name: &attachment.name,
                 media_type: attachment.media_type.as_str(),
                 size: attachment.size,

@@ -183,12 +183,12 @@ async fn main() -> Result<()> {
     .await?;
     sqlx::query(
         "INSERT INTO attachments
-            (id, report_id, client_id, name, media_type, size, sha256, storage_key)
+            (id, report_id, client_reference, name, media_type, size, sha256, storage_key)
          VALUES ($1, $2, $3, 'crash-diagnostics.txt', 'text/plain', $4, $5, $6)",
     )
     .bind(attachment_id)
     .bind(REPORT_ID.parse::<ReportId>().expect("valid fixture UUIDv7"))
-    .bind(AttachmentId::new())
+    .bind("diagnostics")
     .bind(attachment_bytes.len() as i64)
     .bind(hex::encode(Sha256::digest(&attachment_bytes)))
     .bind(storage_key)

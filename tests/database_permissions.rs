@@ -9,8 +9,8 @@ use chrono::{Duration, Utc};
 use ladybird_reports::{
     application::ReportIngestionService,
     domain::{
-        DiagnosticField, FieldValue, IssueId, IssueSearch, ReportId, ReportKind, ReportManifest,
-        SubmissionId, UploadId, proof_is_valid, sha256_hex,
+        AttachmentManifest, AttachmentMediaType, DiagnosticField, FieldValue, IssueId, IssueSearch,
+        ReportId, ReportKind, ReportManifest, SubmissionId, UploadId, proof_is_valid, sha256_hex,
     },
     infrastructure::{
         SecretCipher,
@@ -171,9 +171,13 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
         .expect("connect ingestion adapter");
     let ingestion =
         ReportIngestionService::new(ingest_database.clone(), attachments.clone(), [23; 32]);
+    let attachment_bytes = b"Ladybird crash report, format 1\nProcess: WebContent\n";
     let manifest = ReportManifest {
         protocol: 1,
-        submission_id: SubmissionId::new(),
+        submission_id: uuid::Builder::from_random_bytes(rand::random())
+            .into_uuid()
+            .try_into()
+            .expect("a UUIDv4 is a valid submission ID"),
         kind: ReportKind::WebCompat,
         client_version: "integration-test".into(),
         build: "Debug ARM64".into(),
@@ -181,7 +185,15 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
             key: "future-client-field".into(),
             value: FieldValue::Text("accepted but marked unknown".into()),
         }],
-        attachments: Vec::new(),
+        attachments: vec![AttachmentManifest {
+            id: String::from("diagnostics")
+                .try_into()
+                .expect("valid attachment reference"),
+            name: "crash-diagnostics.txt".into(),
+            media_type: AttachmentMediaType::PlainText,
+            size: attachment_bytes.len() as u64,
+            sha256: sha256_hex(attachment_bytes),
+        }],
     };
     let manifest_bytes = serde_json::to_vec(&manifest).expect("serialize manifest");
     let manifest_digest = sha256_hex(&manifest_bytes);
@@ -227,6 +239,15 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
     )
     .into_bytes();
     multipart.extend_from_slice(&manifest_bytes);
+    multipart.extend_from_slice(
+        format!(
+            "\r\n--{boundary}\r\n\
+             Content-Disposition: form-data; name=\"diagnostics\"; filename=\"crash-diagnostics.txt\"\r\n\
+             Content-Type: text/plain\r\n\r\n"
+        )
+        .as_bytes(),
+    );
+    multipart.extend_from_slice(attachment_bytes);
     multipart.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
     let report_request = Request::builder()
         .method("POST")
@@ -286,6 +307,26 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
         .expect("accepted report exists");
     assert_eq!(report.report.client_version, "integration-test");
     assert_eq!(report.fields.len(), 1);
+    assert_eq!(report.attachments.len(), 1);
+    let stored_attachment = &report.attachments[0];
+    assert_eq!(
+        stored_attachment.storage_key,
+        format!("reports/{report_id}/{}", stored_attachment.id)
+    );
+    assert_eq!(
+        attachments
+            .read(&stored_attachment.storage_key)
+            .await
+            .expect("read stored attachment"),
+        attachment_bytes
+    );
+    let client_reference: String =
+        sqlx::query_scalar("SELECT client_reference FROM attachments WHERE id = $1")
+            .bind(stored_attachment.id)
+            .fetch_one(&admin_pool)
+            .await
+            .expect("read attachment reference");
+    assert_eq!(client_reference, "diagnostics");
     assert!(!report.fields[0].recognized_at_submission);
     assert!(report.report.has_submission_source);
     assert!(!report.report.submission_source_is_blocked);
