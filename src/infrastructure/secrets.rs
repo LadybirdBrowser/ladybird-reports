@@ -4,7 +4,7 @@ use base64::{
 };
 use chacha20poly1305::{
     ChaCha20Poly1305, KeyInit, Nonce,
-    aead::{Aead, OsRng, rand_core::RngCore},
+    aead::{Aead, Generate},
 };
 
 use crate::error::{AppError, Result};
@@ -29,8 +29,7 @@ pub fn hash_secret(value: impl AsRef<[u8]>) -> String {
 }
 
 pub fn random_token() -> String {
-    let mut bytes = [0_u8; 32];
-    OsRng.fill_bytes(&mut bytes);
+    let bytes = <[u8; 32]>::generate();
     URL_SAFE_NO_PAD.encode(bytes)
 }
 
@@ -45,12 +44,11 @@ impl SecretCipher {
     }
 
     pub fn encrypt(&self, plaintext: &str) -> Result<String> {
-        let mut nonce = [0_u8; 12];
-        OsRng.fill_bytes(&mut nonce);
+        let nonce = Nonce::generate();
 
         let cipher = ChaCha20Poly1305::new((&self.key).into());
         let ciphertext = cipher
-            .encrypt(Nonce::from_slice(&nonce), plaintext.as_bytes())
+            .encrypt(&nonce, plaintext.as_bytes())
             .map_err(|_| AppError::Unavailable)?;
 
         let mut encoded = Vec::with_capacity(nonce.len() + ciphertext.len());
@@ -70,9 +68,10 @@ impl SecretCipher {
         }
 
         let (nonce, ciphertext) = bytes.split_at(12);
+        let nonce = Nonce::try_from(nonce).map_err(|_| AppError::Unavailable)?;
         let cipher = ChaCha20Poly1305::new((&self.key).into());
         let plaintext = cipher
-            .decrypt(Nonce::from_slice(nonce), ciphertext)
+            .decrypt(&nonce, ciphertext)
             .map_err(|_| AppError::Unavailable)?;
 
         String::from_utf8(plaintext).map_err(|_| AppError::Unavailable)

@@ -19,10 +19,10 @@ pub fn generate_report_title(input: ReportTitleInput<'_>) -> String {
         _ => "Diagnostic",
     };
 
-    if input.kind == "crash" {
-        if let Some(location) = input.failure_reason.and_then(source_location_from_failure) {
-            return format!("{kind}: {location}");
-        }
+    if input.kind == "crash"
+        && let Some(location) = input.failure_reason.and_then(source_location_from_failure)
+    {
+        return format!("{kind}: {location}");
     }
 
     if let Some(stack) = input.stack_trace {

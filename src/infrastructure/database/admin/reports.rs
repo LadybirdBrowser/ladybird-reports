@@ -267,12 +267,11 @@ impl AdminDatabase {
                 "platform" => entry.platform = text,
                 "architecture" => entry.architecture = text,
                 "process" => entry.process = text,
-                _ if kind == "stack_trace"
-                    || (kind == "multiline" && (key == "stack" || configured_stack)) =>
+                _ if (kind == "stack_trace"
+                    || (kind == "multiline" && (key == "stack" || configured_stack)))
+                    && (entry.stack_trace.is_none() || key == "stack") =>
                 {
-                    if entry.stack_trace.is_none() || key == "stack" {
-                        entry.stack_trace = text;
-                    }
+                    entry.stack_trace = text;
                 }
                 _ => {}
             }
@@ -849,7 +848,7 @@ impl AdminDatabase {
     }
 }
 
-fn push_text_search(sql: &mut QueryBuilder<'_, Postgres>, term: &str) {
+fn push_text_search(sql: &mut QueryBuilder<Postgres>, term: &str) {
     sql.push(" AND (position(lower(")
         .push_bind(term.to_owned())
         .push(") in lower(reports.id::text)) > 0 OR position(lower(")
@@ -868,7 +867,7 @@ fn push_text_search(sql: &mut QueryBuilder<'_, Postgres>, term: &str) {
         .push(") in lower(report_fields.value #>> '{}')) > 0))");
 }
 
-fn push_qualified_search(sql: &mut QueryBuilder<'_, Postgres>, key: &str, values: &[&str]) {
+fn push_qualified_search(sql: &mut QueryBuilder<Postgres>, key: &str, values: &[&str]) {
     sql.push(" AND (");
     for (index, value) in values.iter().enumerate() {
         if index > 0 {
@@ -879,7 +878,7 @@ fn push_qualified_search(sql: &mut QueryBuilder<'_, Postgres>, key: &str, values
     sql.push(")");
 }
 
-fn push_qualified_search_predicate(sql: &mut QueryBuilder<'_, Postgres>, key: &str, value: &str) {
+fn push_qualified_search_predicate(sql: &mut QueryBuilder<Postgres>, key: &str, value: &str) {
     match key {
         "state" => match value.to_ascii_lowercase().as_str() {
             "triage" => {
@@ -917,7 +916,7 @@ fn push_qualified_search_predicate(sql: &mut QueryBuilder<'_, Postgres>, key: &s
 }
 
 fn push_report_column_filter_predicate(
-    sql: &mut QueryBuilder<'_, Postgres>,
+    sql: &mut QueryBuilder<Postgres>,
     column: &str,
     value: &str,
 ) {

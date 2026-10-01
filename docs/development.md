@@ -1,6 +1,6 @@
 # Development and testing
 
-Ladybird Reports requires Rust 1.88 or newer, Node.js, and PostgreSQL 17.
+Ladybird Reports requires Rust 1.98 or newer, Node.js, and PostgreSQL 17.
 
 ## Complete local suite
 

@@ -1,5 +1,4 @@
-use rand::RngCore;
-use sqlx::{PgPool, Row, postgres::PgPoolOptions};
+use sqlx::{AssertSqlSafe, PgPool, Row, postgres::PgPoolOptions};
 
 use crate::{
     error::{AppError, Result},
@@ -122,7 +121,9 @@ async fn create_reporting_role(admin_pool: &PgPool, role: &str, password: &str) 
     .fetch_one(admin_pool)
     .await?;
 
-    sqlx::query(&statement).execute(admin_pool).await?;
+    sqlx::query(AssertSqlSafe(statement))
+        .execute(admin_pool)
+        .await?;
     Ok(())
 }
 
@@ -135,6 +136,8 @@ pub async fn apply_ingest_permissions(admin_pool: &PgPool, ingest_role: &str) ->
         .await?
         .get("role");
 
+    // Every dynamic fragment below is either quoted by PostgreSQL or selected
+    // from the fixed function allowlist in this module.
     let statements = [
         format!("REVOKE ALL ON ALL TABLES IN SCHEMA public FROM {quoted_role}"),
         format!("REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM {quoted_role}"),
@@ -144,7 +147,9 @@ pub async fn apply_ingest_permissions(admin_pool: &PgPool, ingest_role: &str) ->
     ];
 
     for statement in statements {
-        sqlx::query(&statement).execute(admin_pool).await?;
+        sqlx::query(AssertSqlSafe(statement))
+            .execute(admin_pool)
+            .await?;
     }
 
     let functions = [
@@ -165,7 +170,9 @@ pub async fn apply_ingest_permissions(admin_pool: &PgPool, ingest_role: &str) ->
 
     for function in functions {
         let statement = format!("GRANT EXECUTE ON FUNCTION {function} TO {quoted_role}");
-        sqlx::query(&statement).execute(admin_pool).await?;
+        sqlx::query(AssertSqlSafe(statement))
+            .execute(admin_pool)
+            .await?;
     }
 
     Ok(())
@@ -197,7 +204,7 @@ async fn verify_ingest_role_exists(admin_pool: &PgPool, ingest_role: &str) -> Re
 
 fn random_reporting_role() -> String {
     let mut bytes = [0_u8; 8];
-    rand::thread_rng().fill_bytes(&mut bytes);
+    rand::fill(&mut bytes);
     format!("ladybird_reporting_{}", hex::encode(bytes))
 }
 

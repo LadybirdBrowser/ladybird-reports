@@ -65,7 +65,7 @@ impl ConfigurationCache {
         }))
     }
 
-    async fn reload(&self, pool: &PgPool, query: &str) -> Result<()> {
+    async fn reload(&self, pool: &PgPool, query: &'static str) -> Result<()> {
         let value: Value = sqlx::query_scalar(query).fetch_one(pool).await?;
         let configuration: RuntimeConfiguration =
             serde_json::from_value(value).map_err(|error| AppError::Internal(error.into()))?;

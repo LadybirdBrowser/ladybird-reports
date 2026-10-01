@@ -223,11 +223,12 @@ impl AdminDatabase {
             .execute(&mut *transaction)
             .await?;
 
-            if trace.auto_match_eligible && prior_version.is_none() {
-                if let Some(fingerprint) = fingerprint {
-                    self.match_indexed_report(&mut transaction, &trace, &fingerprint)
-                        .await?;
-                }
+            if trace.auto_match_eligible
+                && prior_version.is_none()
+                && let Some(fingerprint) = fingerprint
+            {
+                self.match_indexed_report(&mut transaction, &trace, &fingerprint)
+                    .await?;
             }
 
             transaction.commit().await?;

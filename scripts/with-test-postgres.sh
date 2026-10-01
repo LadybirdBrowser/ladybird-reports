@@ -27,14 +27,14 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-"$postgres_bin/initdb" -D "$postgres_data" --auth=trust --no-locale >/dev/null
+"$postgres_bin/initdb" -D "$postgres_data" --username=postgres --auth=trust --no-locale >/dev/null
 "$postgres_bin/pg_ctl" \
     -D "$postgres_data" \
     -o "-p $postgres_port -h 127.0.0.1" \
     -w start >/dev/null
-"$postgres_bin/createdb" -h 127.0.0.1 -p "$postgres_port" ladybird_reports
+"$postgres_bin/createdb" -h 127.0.0.1 -p "$postgres_port" -U postgres ladybird_reports
 
-export ADMIN_DATABASE_URL="postgresql://127.0.0.1:$postgres_port/ladybird_reports"
+export ADMIN_DATABASE_URL="postgresql://postgres@127.0.0.1:$postgres_port/ladybird_reports"
 export TEST_ADMIN_DATABASE_URL="$ADMIN_DATABASE_URL"
 
 "$@"

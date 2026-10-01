@@ -2,7 +2,7 @@
 name = "ladybird-reports"
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.88"
+rust-version = "1.98"
 license = "BSD-2-Clause"
 
 [dependencies]
@@ -10,28 +10,28 @@ anyhow = "1.0"
 askama = "0.16"
 async-trait = "0.1"
 axum = { version = "0.8", features = ["macros", "multipart"] }
-base64 = "0.22"
-chacha20poly1305 = "0.10"
+base64 = "0.23"
+chacha20poly1305 = "0.11"
 chrono = { version = "0.4", features = ["serde"] }
 comrak = { version = "0.55", default-features = false }
 cookie = "0.18"
 fs2 = "0.4"
 hex = "0.4"
-hmac = "0.12"
+hmac = "0.13"
 ipnet = { version = "2.11", features = ["serde"] }
-jsonwebtoken = "9.3"
+jsonwebtoken = { version = "11.1", features = ["rust_crypto"] }
 png = "0.18"
-rand = "0.8"
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+rand = "0.10"
+reqwest = { version = "0.13", default-features = false, features = ["form", "json", "rustls"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-sha2 = "0.10"
-sqlx = { version = "0.8", features = ["chrono", "json", "postgres", "runtime-tokio-rustls", "uuid"] }
+sha2 = "0.11"
+sqlx = { version = "0.9", features = ["chrono", "json", "postgres", "runtime-tokio", "tls-rustls-ring-webpki", "uuid"] }
 subtle = "2.6"
 thiserror = "2.0"
 tokio = { version = "1.47", features = ["fs", "macros", "net", "rt-multi-thread", "signal", "time"] }
 tower = "0.5"
-tower-http = { version = "0.6", features = ["limit", "request-id", "set-header", "trace"] }
+tower-http = { version = "0.7", features = ["limit", "request-id", "set-header", "trace"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 uuid = { version = "1.18", features = ["serde", "v7"] }
