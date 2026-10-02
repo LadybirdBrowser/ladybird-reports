@@ -8,13 +8,13 @@
             <p class="eyebrow">Tracked issue</p>
             <h1>{{ issue.title }}</h1>
         </div>
-        {% if issue.state == "rejected" %}
+        {% if issue.state == IssueState::Rejected %}
             <span class="badge badge-rejected">Rejected</span>
         {% else if issue.merged_into.is_some() %}
             <span class="badge badge-neutral">Merged</span>
-        {% else if issue.state == "needs_attention" %}
+        {% else if issue.state == IssueState::NeedsAttention %}
             <span class="badge badge-warning">Needs attention</span>
-        {% else if issue.state == "resolved" %}
+        {% else if issue.state == IssueState::Resolved %}
             <span class="badge badge-success">Resolved</span>
         {% else %}
             <span class="badge badge-triage">Unresolved</span>
@@ -179,23 +179,23 @@
                         <span>GitHub</span>
                         <a href="{{ issue.github_url }}">Issue #{{ issue.github_number }}</a>
                     </div>
-                    {% if issue.merged_into.is_none() && issue.state != "rejected" %}
-                        {% if issue.github_state == "missing" %}
+                    {% if issue.merged_into.is_none() && issue.state != IssueState::Rejected %}
+                        {% if issue.github_state == GithubLinkState::Missing %}
                             <p class="issue-link-warning">The GitHub issue was deleted. Link a replacement to resume tracking.</p>
-                        {% else if issue.github_state == "moved" %}
+                        {% else if issue.github_state == GithubLinkState::Moved %}
                             <p class="issue-link-warning">The GitHub issue moved out of the configured repository.</p>
-                        {% else if issue.github_state == "unavailable" %}
+                        {% else if issue.github_state == GithubLinkState::Unavailable %}
                             <p class="issue-link-warning">GitHub could not verify this issue. Check access before changing its link.</p>
-                        {% else if issue.github_state == "unknown" %}
+                        {% else if issue.github_state == GithubLinkState::Unknown %}
                             <p class="issue-link-warning">GitHub has not confirmed the current status yet.</p>
                         {% endif %}
 
-                        {% if issue.github_state == "missing" || issue.github_state == "moved" || issue.github_state == "unavailable" %}
+                        {% if issue.github_state.is_unreachable() %}
                             <div class="issue-recovery-actions">
                                 <button type="button" popovertarget="link-replacement-issue">
                                     Link replacement issue
                                 </button>
-                                {% if issue.github_state == "missing" %}
+                                {% if issue.github_state == GithubLinkState::Missing %}
                                     <button
                                         class="button-secondary"
                                         type="button"
@@ -238,7 +238,7 @@
                                     </div>
                                 </form>
                             </div>
-                            {% if issue.github_state == "missing" %}
+                            {% if issue.github_state == GithubLinkState::Missing %}
                                 <div
                                     class="confirmation-popover replacement-issue-popover modal-overlay"
                                     id="create-replacement-issue"
@@ -269,7 +269,7 @@
                 </div>
             </section>
 
-            {% if issue.state != "rejected" %}
+            {% if issue.state != IssueState::Rejected %}
             <section class="card">
                 <div class="card-header">
                     <h2>Actions</h2>

@@ -1,7 +1,7 @@
 use chrono::Utc;
 use sqlx::Row;
 
-use crate::{error::Result, infrastructure::database::AdminDatabase};
+use crate::{domain::AuditAction, error::Result, infrastructure::database::AdminDatabase};
 
 use super::{NewSession, SessionRecord, insert_audit_event};
 
@@ -87,7 +87,7 @@ impl AdminDatabase {
         insert_audit_event(
             &mut *transaction,
             Some(session.github_id),
-            "session.signed_in",
+            AuditAction::SessionSignedIn,
             None,
             serde_json::json!({}),
         )
@@ -112,11 +112,11 @@ impl AdminDatabase {
     ) -> Result<()> {
         sqlx::query(
             "INSERT INTO audit_events (action, details)
-             SELECT 'session.denied', jsonb_build_object('github_id', $1::bigint, 'login', $2::text)
+             SELECT $4::text, jsonb_build_object('github_id', $1::bigint, 'login', $2::text)
              WHERE NOT EXISTS (
                 SELECT 1
                 FROM audit_events
-                WHERE action = 'session.denied'
+                WHERE action = $4::text
                     AND details @> jsonb_build_object('github_id', $1::bigint)
                     AND created_at > now() - make_interval(secs => $3::double precision)
              )",
@@ -124,6 +124,7 @@ impl AdminDatabase {
         .bind(github_id)
         .bind(login)
         .bind(window_seconds as f64)
+        .bind(AuditAction::SessionDenied)
         .execute(&self.pool)
         .await?;
 
@@ -278,7 +279,7 @@ impl AdminDatabase {
         insert_audit_event(
             &mut *transaction,
             Some(github_id),
-            "session.signed_out",
+            AuditAction::SessionSignedOut,
             None,
             serde_json::json!({}),
         )

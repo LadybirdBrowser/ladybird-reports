@@ -9,7 +9,7 @@ use comrak::{Options, markdown_to_html};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    domain::{IssueId, IssueSearch, ReportId},
+    domain::{GithubLinkState, IssueId, IssueReportAction, IssueSearch, IssueState, ReportId},
     error::{AppError, Result},
 };
 
@@ -65,7 +65,7 @@ pub struct IssueRow {
     title: String,
     report_count: i64,
     github_number: i64,
-    state: String,
+    state: IssueState,
 }
 
 #[derive(Template)]
@@ -87,8 +87,8 @@ pub struct IssueView {
     description_html: String,
     github_number: i64,
     github_url: String,
-    state: String,
-    github_state: String,
+    state: IssueState,
+    github_state: GithubLinkState,
     merged_into: Option<IssueId>,
 }
 
@@ -200,8 +200,9 @@ pub async fn search_completions(
         if !key.eq_ignore_ascii_case("state") {
             Vec::new()
         } else {
-            ["unresolved", "needs_attention", "resolved", "rejected"]
-                .into_iter()
+            IssueState::ALL
+                .iter()
+                .map(|state| state.as_str())
                 .filter(|value| value.starts_with(&prefix.to_ascii_lowercase()))
                 .map(|value| IssueCompletion {
                     replacement: format!("state:{value}"),
@@ -304,7 +305,7 @@ pub async fn show(
         .ok_or_else(|| not_found("Issue not found"))?
         .state;
 
-    let github_field_warning = if issue_state == "rejected" {
+    let github_field_warning = if issue_state == IssueState::Rejected {
         false
     } else {
         match ensure_github_reports_link(&state, &session, issue_id).await {
@@ -322,10 +323,8 @@ pub async fn show(
         .await?
         .ok_or_else(|| not_found("Issue not found"))?;
 
-    let potential_matches = if matches!(
-        details.issue.state.as_str(),
-        "unresolved" | "needs_attention"
-    ) && details.issue.merged_into.is_none()
+    let potential_matches = if details.issue.state.is_open()
+        && details.issue.merged_into.is_none()
         && details.issue.resolved_at.is_none()
     {
         state
@@ -415,21 +414,20 @@ pub async fn reject(
     Form(form): Form<RejectIssueForm>,
 ) -> Result<Redirect> {
     session.verify_csrf(&form.csrf)?;
-    let reject_reports = match form.report_action.as_str() {
-        "unlink" => false,
-        "reject" => true,
-        _ => return Err(AppError::InvalidRequest("Invalid report action")),
-    };
+    let report_action = form
+        .report_action
+        .parse::<IssueReportAction>()
+        .map_err(|_| AppError::InvalidRequest("Invalid report action"))?;
     let reports_updated = state
         .database
-        .reject_issue(issue_id, session.github_id, reject_reports)
+        .reject_issue(issue_id, session.github_id, report_action)
         .await?;
 
     tracing::warn!(
         event = "issue.update_state",
         %issue_id,
-        to = "rejected",
-        report_action = form.report_action,
+        to = %IssueState::Rejected,
+        report_action = %report_action,
         reports_updated,
         actor = session.login,
     );
@@ -487,10 +485,7 @@ pub async fn create_replacement(
         .issue_details(issue_id)
         .await?
         .ok_or(AppError::NotFound("Issue not found"))?;
-    if !matches!(
-        details.issue.github_state.as_str(),
-        "missing" | "moved" | "unavailable"
-    ) {
+    if !details.issue.github_state.is_unreachable() {
         return Err(AppError::Conflict(
             "Current GitHub issue is still available",
         ));

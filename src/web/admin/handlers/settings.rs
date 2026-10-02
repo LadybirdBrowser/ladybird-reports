@@ -9,7 +9,7 @@ use chrono::{DateTime, Utc};
 use serde::Deserialize;
 
 use crate::{
-    domain::{FieldKind, RuntimeConfiguration, SETTING_DEFINITIONS},
+    domain::{AuditAction, AuditEntity, FieldKind, RuntimeConfiguration, SETTING_DEFINITIONS},
     error::{AppError, Result},
     infrastructure::database::AuditEvent,
 };
@@ -33,7 +33,7 @@ pub struct SettingsTemplate {
 pub struct FieldView {
     key: String,
     label: String,
-    kind: String,
+    kind: FieldKind,
 }
 
 pub struct SettingDefinitionView {
@@ -254,28 +254,23 @@ async fn load_operations(
 }
 
 fn event_view(event: AuditEvent) -> EventView {
+    // Rows written by earlier releases may hold actions that no longer exist.
+    let action = AuditAction::parse(&event.action);
     let target = event.entity_id.map(|id| {
         let identifier = id.to_string();
         let suffix = &identifier[identifier.len() - 8..];
-        let is_issue = event.action.starts_with("issue.");
-        let label = if is_issue {
-            format!("Issue ·{suffix}")
-        } else {
-            format!("Report ·{suffix}")
+        let (label, section) = match AuditEntity::of_stored_action(&event.action) {
+            AuditEntity::Issue => (format!("Issue ·{suffix}"), "issues"),
+            AuditEntity::Report => (format!("Report ·{suffix}"), "reports"),
         };
-        let url = if event.action == "issue.update_visibility" {
-            None
-        } else if is_issue {
-            Some(format!("/issues/{id}"))
-        } else {
-            Some(format!("/reports/{id}"))
-        };
-        (label, url)
+        let has_page = action.is_none_or(AuditAction::entity_has_page);
+
+        (label, has_page.then(|| format!("/{section}/{id}")))
     });
 
     let actor = event
         .actor_login
-        .or_else(|| denied_sign_in_login(&event.action, &event.details))
+        .or_else(|| denied_sign_in_login(action, &event.details))
         .unwrap_or_else(|| "system".into());
 
     EventView {
@@ -290,8 +285,11 @@ fn event_view(event: AuditEvent) -> EventView {
 
 /// A denied sign-in has no maintainer actor, so the account that tried to sign
 /// in is shown instead of "system".
-fn denied_sign_in_login(action: &str, details: &serde_json::Value) -> Option<String> {
-    if action != "session.denied" {
+fn denied_sign_in_login(
+    action: Option<AuditAction>,
+    details: &serde_json::Value,
+) -> Option<String> {
+    if action != Some(AuditAction::SessionDenied) {
         return None;
     }
 

@@ -2,7 +2,8 @@ use chrono::{DateTime, Duration, NaiveDate, Utc};
 use serde_json::Value;
 
 use crate::domain::{
-    AttachmentId, DiscordDeliveryLeaseId, IssueId, ReportId, ReportSearch, SubmissionId,
+    AttachmentId, DiscordDeliveryLeaseId, FieldKind, GithubLinkState, IssueId, IssueState,
+    ReportId, ReportKind, ReportSearch, ReportState, SubmissionId,
 };
 
 #[derive(Clone, Debug)]
@@ -49,13 +50,13 @@ pub struct ReportSummary {
     pub id: ReportId,
     #[sqlx(skip)]
     pub title: String,
-    pub kind: String,
+    pub kind: ReportKind,
     pub client_version: String,
     #[sqlx(skip)]
     pub platform: Option<String>,
     #[sqlx(skip)]
     pub architecture: Option<String>,
-    pub state: String,
+    pub state: ReportState,
     pub created_at: DateTime<Utc>,
 }
 
@@ -64,7 +65,7 @@ pub struct GithubIssueLink {
     pub issue_id: IssueId,
     pub github_number: i64,
     pub title: String,
-    pub github_state: String,
+    pub github_state: GithubLinkState,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -78,7 +79,7 @@ pub struct PendingDiscordNotification {
     pub report_id: ReportId,
     pub lease_id: DiscordDeliveryLeaseId,
     pub title: String,
-    pub kind: String,
+    pub kind: ReportKind,
     pub client_version: String,
     pub build: String,
     pub fields: Value,
@@ -94,7 +95,7 @@ pub struct ReportSearchResult {
     pub platform: Option<String>,
     pub architecture: Option<String>,
     pub issue_title: Option<String>,
-    pub state: String,
+    pub state: ReportState,
     pub created_at: DateTime<Utc>,
 }
 
@@ -103,11 +104,11 @@ pub struct ReportRecord {
     pub id: ReportId,
     pub submission_id: SubmissionId,
     pub manifest_digest: String,
-    pub kind: String,
+    pub kind: ReportKind,
     pub client_version: String,
     pub build: String,
     pub issue_id: Option<IssueId>,
-    pub state: String,
+    pub state: ReportState,
     pub has_submission_source: bool,
     pub submission_source_is_blocked: bool,
     pub created_at: DateTime<Utc>,
@@ -117,12 +118,22 @@ pub struct ReportRecord {
 #[derive(Clone, Debug)]
 pub struct StoredDiagnosticField {
     pub key: String,
-    pub kind: String,
+    pub kind: FieldKind,
     pub value: Value,
     pub recognized_at_submission: bool,
     pub current_label: Option<String>,
-    pub current_kind: Option<String>,
+    pub current_kind: Option<FieldKind>,
     pub current_position: Option<i32>,
+}
+
+impl StoredDiagnosticField {
+    /// Whether the field holds a stack trace: it was submitted or is now defined
+    /// as one, or it is the multiline `stack` field of an older client.
+    pub fn is_stack_trace(&self) -> bool {
+        self.kind == FieldKind::StackTrace
+            || self.current_kind == Some(FieldKind::StackTrace)
+            || (self.key == "stack" && self.kind == FieldKind::Multiline)
+    }
 }
 
 #[derive(Clone, Debug, sqlx::FromRow)]
@@ -152,10 +163,10 @@ pub struct BlockReportSourceOutcome {
 pub struct IssueSummary {
     pub id: IssueId,
     pub title: String,
-    pub state: String,
+    pub state: IssueState,
     pub resolved_at: Option<DateTime<Utc>>,
     pub github_number: i64,
-    pub github_state: String,
+    pub github_state: GithubLinkState,
     pub report_count: i64,
     pub created_at: DateTime<Utc>,
 }
@@ -164,21 +175,21 @@ pub struct IssueSummary {
 pub struct PotentialIssueMatch {
     pub id: IssueId,
     pub title: String,
-    pub github_state: String,
+    pub github_state: GithubLinkState,
 }
 
 #[derive(Clone, Debug)]
 pub struct IssueRecord {
     pub id: IssueId,
     pub title: String,
-    pub state: String,
+    pub state: IssueState,
     pub description: String,
     pub resolved_at: Option<DateTime<Utc>>,
     pub merged_into: Option<IssueId>,
     pub github_number: i64,
     pub github_repository: String,
     pub github_issue_id: Option<i64>,
-    pub github_state: String,
+    pub github_state: GithubLinkState,
     pub github_url: String,
     pub github_reports_field_id: Option<i64>,
     pub github_reports_link_url: Option<String>,
@@ -214,6 +225,6 @@ pub struct ConfigurationRecord {
 pub struct FieldDefinitionRecord {
     pub key: String,
     pub label: String,
-    pub kind: String,
+    pub kind: FieldKind,
     pub position: i32,
 }

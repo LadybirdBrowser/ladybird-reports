@@ -1,5 +1,7 @@
 use crate::error::{AppError, Result};
 
+use super::ReportState;
+
 const MAXIMUM_SEARCH_BYTES: usize = 512;
 const MAXIMUM_SEARCH_TERMS: usize = 32;
 
@@ -103,10 +105,7 @@ fn validate_qualifier(key: &str, value: &str) -> Result<()> {
     }
 
     if key.eq_ignore_ascii_case("state")
-        && !matches!(
-            value.to_ascii_lowercase().as_str(),
-            "triage" | "confirmed" | "rejected"
-        )
+        && ReportState::parse(&value.to_ascii_lowercase()).is_none()
     {
         return Err(AppError::InvalidRequest("Invalid report state filter"));
     }

@@ -26,14 +26,15 @@ pub enum FieldValue {
     Attachment(AttachmentReference),
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum FieldKind {
-    Text,
-    Multiline,
-    StackTrace,
-    Number,
-    Boolean,
-    Attachment,
+text_enum! {
+    pub enum FieldKind {
+        Text => "text",
+        Multiline => "multiline",
+        StackTrace => "stack_trace",
+        Number => "number",
+        Boolean => "boolean",
+        Attachment => "attachment",
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -42,31 +43,6 @@ pub struct FieldDefinition {
     pub label: String,
     pub kind: FieldKind,
     pub position: i32,
-}
-
-impl FieldKind {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Self::Text => "text",
-            Self::Multiline => "multiline",
-            Self::StackTrace => "stack_trace",
-            Self::Number => "number",
-            Self::Boolean => "boolean",
-            Self::Attachment => "attachment",
-        }
-    }
-
-    pub fn parse(value: &str) -> Option<Self> {
-        match value {
-            "text" => Some(Self::Text),
-            "multiline" => Some(Self::Multiline),
-            "stack_trace" => Some(Self::StackTrace),
-            "number" => Some(Self::Number),
-            "boolean" => Some(Self::Boolean),
-            "attachment" => Some(Self::Attachment),
-            _ => None,
-        }
-    }
 }
 
 impl FieldValue {

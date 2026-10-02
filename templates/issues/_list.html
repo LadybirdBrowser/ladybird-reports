@@ -30,11 +30,11 @@
                                 </span>
                             </td>
                             <td>
-                                {% if issue.state == "rejected" %}
+                                {% if issue.state == IssueState::Rejected %}
                                     <span class="badge badge-rejected">Rejected</span>
-                                {% else if issue.state == "needs_attention" %}
+                                {% else if issue.state == IssueState::NeedsAttention %}
                                     <span class="badge badge-warning">Needs attention</span>
-                                {% else if issue.state == "resolved" %}
+                                {% else if issue.state == IssueState::Resolved %}
                                     <span class="badge badge-success">Resolved</span>
                                 {% else %}
                                     <span class="badge badge-triage">Unresolved</span>

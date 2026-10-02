@@ -11,9 +11,9 @@
             <h1 class="report-title-{{ report.state }}">{{ report.title }}</h1>
         </div>
 
-        {% if report.is_rejected %}
+        {% if report.state == ReportState::Rejected %}
             <span class="badge badge-rejected">Rejected</span>
-        {% else if report.is_confirmed %}
+        {% else if report.state == ReportState::Confirmed %}
             <span class="badge badge-confirmed">Confirmed</span>
         {% else %}
             <span class="badge badge-triage">Needs triage</span>
@@ -183,7 +183,7 @@
                     </section>
                 {% endif %}
 
-                {% if report.is_rejected %}
+                {% if report.state == ReportState::Rejected %}
                     <section class="action-group">
                         <form method="post" action="/reports/{{ report.id }}/state">
                             <input
@@ -201,7 +201,7 @@
                     </section>
                 {% endif %}
 
-                {% if !report.is_rejected %}
+                {% if report.state != ReportState::Rejected %}
                     <section class="action-group">
                         <button
                             class="button-danger"
@@ -352,7 +352,7 @@
                         <div class="issue-suggestion">
                             <div>
                                 <a class="primary-link" href="/issues/{{ issue.id }}">{{ issue.title }}</a>
-                                {% if issue.github_state != "open" %}
+                                {% if issue.github_state != GithubLinkState::Open %}
                                     <span class="quiet">GitHub link needs attention</span>
                                 {% endif %}
                             </div>

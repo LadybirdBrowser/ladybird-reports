@@ -1,7 +1,10 @@
 use sqlx::Row;
 
 use crate::{
-    domain::{IssueId, ReportId, STACK_SIGNATURE_VERSION, parse_stack_trace, stack_fingerprint},
+    domain::{
+        AuditAction, IssueId, ReportId, ReportKind, ReportState, STACK_SIGNATURE_VERSION,
+        StackSignatureStatus, parse_stack_trace, stack_fingerprint,
+    },
     error::Result,
     infrastructure::database::AdminDatabase,
 };
@@ -160,15 +163,15 @@ impl AdminDatabase {
         for trace in pending {
             let parsed = parse_stack_trace(&trace.text);
             let fingerprint = stack_fingerprint(
-                &trace.kind,
+                trace.kind,
                 trace.process.as_deref(),
                 trace.signal.as_deref(),
                 &parsed.frame_keys,
             );
             let status = if fingerprint.is_some() {
-                "parsed"
+                StackSignatureStatus::Parsed
             } else {
-                "insufficient"
+                StackSignatureStatus::Insufficient
             };
 
             let mut transaction = self.pool.begin().await?;
@@ -254,13 +257,13 @@ impl AdminDatabase {
         .bind(trace.report_id)
         .bind(STACK_SIGNATURE_VERSION)
         .bind(fingerprint)
-        .bind(&trace.kind)
+        .bind(trace.kind)
         .fetch_all(&mut **transaction)
         .await?;
 
         if issues.len() == 1 {
             let issue_id = issues[0];
-            let previous_state: Option<String> =
+            let previous_state: Option<ReportState> =
                 sqlx::query_scalar("SELECT state FROM reports WHERE id = $1 FOR UPDATE")
                     .bind(trace.report_id)
                     .fetch_optional(&mut **transaction)
@@ -285,7 +288,7 @@ impl AdminDatabase {
                 insert_audit_event(
                     &mut **transaction,
                     None,
-                    "report.update_issue",
+                    AuditAction::ReportUpdateIssue,
                     Some(trace.report_id.0),
                     serde_json::json!({
                         "from": null,
@@ -296,15 +299,17 @@ impl AdminDatabase {
                 )
                 .await?;
 
-                if let Some(previous_state) = previous_state.filter(|state| state != "confirmed") {
+                if let Some(previous_state) =
+                    previous_state.filter(|state| *state != ReportState::Confirmed)
+                {
                     insert_audit_event(
                         &mut **transaction,
                         None,
-                        "report.update_state",
+                        AuditAction::ReportUpdateState,
                         Some(trace.report_id.0),
                         serde_json::json!({
                             "from": previous_state,
-                            "to": "confirmed",
+                            "to": ReportState::Confirmed,
                             "source": "stack_signature",
                         }),
                     )
@@ -350,7 +355,7 @@ impl AdminDatabase {
         .bind(trace.report_id)
         .bind(STACK_SIGNATURE_VERSION)
         .bind(fingerprint)
-        .bind(&trace.kind)
+        .bind(trace.kind)
         .fetch_one(&mut **transaction)
         .await?;
 
@@ -367,7 +372,7 @@ impl AdminDatabase {
 
 struct PendingStackTrace {
     report_id: ReportId,
-    kind: String,
+    kind: ReportKind,
     key: String,
     text: String,
     signal: Option<String>,

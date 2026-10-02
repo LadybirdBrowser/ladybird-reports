@@ -9,6 +9,7 @@ use sha2::Sha256;
 use subtle::ConstantTimeEq;
 
 use crate::{
+    domain::{GithubLinkState, GithubSyncSource},
     error::{AppError, Result},
     infrastructure::github::GithubIssue,
 };
@@ -20,9 +21,38 @@ struct Repository {
     full_name: String,
 }
 
+/// The `action` of a GitHub `issues` event that this service reacts to. GitHub
+/// sends many more, all of which are ignored.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "snake_case")]
+enum IssueEventAction {
+    Opened,
+    Edited,
+    Closed,
+    Reopened,
+    Deleted,
+    Transferred,
+    #[serde(other)]
+    Other,
+}
+
+impl IssueEventAction {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Opened => "opened",
+            Self::Edited => "edited",
+            Self::Closed => "closed",
+            Self::Reopened => "reopened",
+            Self::Deleted => "deleted",
+            Self::Transferred => "transferred",
+            Self::Other => "other",
+        }
+    }
+}
+
 #[derive(Deserialize)]
 struct IssueEvent {
-    action: String,
+    action: IssueEventAction,
     issue: GithubIssue,
     repository: Repository,
     installation: Option<Installation>,
@@ -55,7 +85,7 @@ pub async fn receive(
     let event: IssueEvent = serde_json::from_slice(&body)
         .map_err(|_| AppError::InvalidRequest("Invalid GitHub issue event"))?;
     let configuration = state.database.configuration().await?;
-    if event.action != "transferred"
+    if event.action != IssueEventAction::Transferred
         && !event
             .repository
             .full_name
@@ -64,39 +94,42 @@ pub async fn receive(
         return Ok(StatusCode::NO_CONTENT);
     }
 
-    let linked_issue = match event.action.as_str() {
-        "deleted" => {
+    let linked_issue = match event.action {
+        IssueEventAction::Deleted => {
             state
                 .database
                 .mark_github_issue_unavailable(
                     &event.repository.full_name,
                     event.issue.number,
                     Some(event.issue.id),
-                    "missing",
-                    "webhook",
+                    GithubLinkState::Missing,
+                    GithubSyncSource::Webhook,
                 )
                 .await?
         }
-        "transferred" => {
+        IssueEventAction::Transferred => {
             state
                 .database
                 .mark_github_issue_unavailable(
                     &event.repository.full_name,
                     event.issue.number,
                     Some(event.issue.id),
-                    "moved",
-                    "webhook",
+                    GithubLinkState::Moved,
+                    GithubSyncSource::Webhook,
                 )
                 .await?
         }
-        "opened" | "edited" | "closed" | "reopened" => {
+        IssueEventAction::Opened
+        | IssueEventAction::Edited
+        | IssueEventAction::Closed
+        | IssueEventAction::Reopened => {
             state
                 .database
                 .sync_github_issue_with_installation(
                     &event.repository.full_name,
                     &event.issue,
                     None,
-                    "webhook",
+                    GithubSyncSource::Webhook,
                     event
                         .installation
                         .as_ref()
@@ -104,11 +137,11 @@ pub async fn receive(
                 )
                 .await?
         }
-        _ => None,
+        IssueEventAction::Other => None,
     };
 
     if let Some(issue_id) = linked_issue {
-        if event.action == "closed"
+        if event.action == IssueEventAction::Closed
             && event.issue.state_reason.as_deref() == Some("duplicate")
             && event.installation.is_none()
         {
@@ -117,7 +150,7 @@ pub async fn receive(
         tracing::info!(
             event = "github.issue_synchronized",
             %issue_id,
-            github_action = event.action,
+            github_action = event.action.as_str(),
         );
     }
 

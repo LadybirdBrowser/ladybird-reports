@@ -1,6 +1,9 @@
 use ladybird_reports::{
     application::backfill_failure_reasons,
-    domain::{AttachmentId, IssueId, ReportId, SubmissionId, UploadId, sha256_hex},
+    domain::{
+        AttachmentId, AuditAction, IssueId, ReportId, ReportKind, SubmissionId, UploadId,
+        sha256_hex,
+    },
     error::Result,
     infrastructure::{
         SecretCipher,
@@ -211,15 +214,17 @@ async fn main() -> Result<()> {
 
     sqlx::query(
         "INSERT INTO audit_events (actor, action)
-         VALUES (12345, 'session.signed_in')",
+         VALUES (12345, $1)",
     )
+    .bind(AuditAction::SessionSignedIn)
     .execute(&mut *transaction)
     .await?;
 
     sqlx::query(
         "INSERT INTO audit_events (action, entity_id, details)
-         VALUES ('report.submitted', $1, '{\"kind\": \"web_compat\"}'::jsonb)",
+         VALUES ($1, $2, '{\"kind\": \"web_compat\"}'::jsonb)",
     )
+    .bind(AuditAction::ReportSubmitted)
     .bind(REPORT_ID.parse::<ReportId>().expect("valid fixture UUIDv7"))
     .execute(&mut *transaction)
     .await?;
@@ -249,7 +254,7 @@ async fn main() -> Result<()> {
 
     let example_reports = [
         ExampleReport {
-            kind: "crash",
+            kind: ReportKind::Crash,
             client_version: "Ladybird Nightly 2026-09-15",
             build: "macOS · arm64 · Release",
             platform: "macOS",
@@ -259,7 +264,7 @@ async fn main() -> Result<()> {
             confirmed: false,
         },
         ExampleReport {
-            kind: "web_compat",
+            kind: ReportKind::WebCompat,
             client_version: "Ladybird Nightly 2026-09-15",
             build: "ConfirmedOS · arm64 · Release",
             platform: "ConfirmedOS",
@@ -269,7 +274,7 @@ async fn main() -> Result<()> {
             confirmed: true,
         },
         ExampleReport {
-            kind: "web_compat",
+            kind: ReportKind::WebCompat,
             client_version: "Ladybird Nightly 2026-09-15",
             build: "Linux · x86_64 · Debug",
             platform: "Linux",
@@ -279,7 +284,7 @@ async fn main() -> Result<()> {
             confirmed: false,
         },
         ExampleReport {
-            kind: "crash",
+            kind: ReportKind::Crash,
             client_version: "0.7.0-alpha",
             build: "macOS · arm64 · ASan",
             platform: "macOS",
@@ -289,7 +294,7 @@ async fn main() -> Result<()> {
             confirmed: false,
         },
         ExampleReport {
-            kind: "web_compat",
+            kind: ReportKind::WebCompat,
             client_version: "Ladybird Nightly 2026-09-14",
             build: "Linux · x86_64 · Release",
             platform: "Linux",
@@ -328,9 +333,9 @@ async fn main() -> Result<()> {
             &mut transaction,
             ExampleReport {
                 kind: if index % 2 == 0 {
-                    "crash"
+                    ReportKind::Crash
                 } else {
-                    "web_compat"
+                    ReportKind::WebCompat
                 },
                 client_version: "Pagination fixture",
                 build: "PaginationOS · x86_64 · Release",
@@ -358,7 +363,7 @@ async fn main() -> Result<()> {
 
 #[derive(Clone, Copy)]
 struct ExampleReport<'a> {
-    kind: &'a str,
+    kind: ReportKind,
     client_version: &'a str,
     build: &'a str,
     platform: &'a str,
@@ -456,7 +461,7 @@ async fn insert_example_report(
     sqlx::query(
         "INSERT INTO audit_events (action, entity_id, details, created_at)
          VALUES (
-            'report.submitted',
+            $4,
             $1,
             jsonb_build_object('kind', $2::text),
             now() - make_interval(hours => $3)
@@ -465,6 +470,7 @@ async fn insert_example_report(
     .bind(report_id)
     .bind(report.kind)
     .bind(report.hours_ago)
+    .bind(AuditAction::ReportSubmitted)
     .execute(&mut **transaction)
     .await?;
 

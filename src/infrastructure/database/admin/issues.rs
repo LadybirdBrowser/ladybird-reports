@@ -1,7 +1,10 @@
 use sqlx::{Postgres, QueryBuilder, Row};
 
 use crate::{
-    domain::{IssueId, IssueSearch, ReportId},
+    domain::{
+        AuditAction, GithubSyncSource, IssueId, IssueReportAction, IssueSearch, IssueState,
+        ReportId, ReportState,
+    },
     error::{AppError, Result},
     infrastructure::{
         database::AdminDatabase,
@@ -189,7 +192,7 @@ impl AdminDatabase {
             ));
         }
 
-        self.sync_github_issue(repository, issue, Some(actor), "assignment")
+        self.sync_github_issue(repository, issue, Some(actor), GithubSyncSource::Assignment)
             .await?;
 
         let mut transaction = self.pool.begin().await?;
@@ -271,7 +274,7 @@ impl AdminDatabase {
             insert_audit_event(
                 &mut *transaction,
                 Some(actor),
-                "issue.create",
+                AuditAction::IssueCreate,
                 Some(issue_id.0),
                 serde_json::json!({
                     "github_number": issue.number,
@@ -284,7 +287,7 @@ impl AdminDatabase {
             (issue_id, true)
         };
 
-        let previous: (Option<IssueId>, String) = sqlx::query_as(
+        let previous: (Option<IssueId>, ReportState) = sqlx::query_as(
             "SELECT issue_id, state
              FROM reports
              WHERE id = $1
@@ -296,7 +299,7 @@ impl AdminDatabase {
         .await?
         .ok_or(AppError::NotFound("Report not found"))?;
 
-        if previous.0 == Some(issue_id) && previous.1 == "confirmed" {
+        if previous.0 == Some(issue_id) && previous.1 == ReportState::Confirmed {
             transaction.commit().await?;
             return Ok(GithubIssueAssignment { issue_id, created });
         }
@@ -325,7 +328,7 @@ impl AdminDatabase {
             insert_audit_event(
                 &mut *transaction,
                 Some(actor),
-                "report.update_issue",
+                AuditAction::ReportUpdateIssue,
                 Some(report_id.0),
                 serde_json::json!({
                     "from": previous.0,
@@ -335,13 +338,13 @@ impl AdminDatabase {
             .await?;
         }
 
-        if previous.1 != "confirmed" {
+        if previous.1 != ReportState::Confirmed {
             self.audit_report_state_change(
                 &mut transaction,
                 report_id,
                 actor,
-                &previous.1,
-                "confirmed",
+                previous.1,
+                ReportState::Confirmed,
             )
             .await?;
         }
@@ -450,7 +453,7 @@ impl AdminDatabase {
             return Err(AppError::NotFound("Issue not found"));
         }
 
-        let previous_state: String = sqlx::query_scalar(
+        let previous_state: ReportState = sqlx::query_scalar(
             "SELECT state FROM reports
              WHERE id = $1 AND issue_id = $2 AND storage_state = 'ready'
              FOR UPDATE",
@@ -475,19 +478,19 @@ impl AdminDatabase {
         insert_audit_event(
             &mut *transaction,
             Some(actor),
-            "report.update_issue",
+            AuditAction::ReportUpdateIssue,
             Some(report_id.0),
             serde_json::json!({ "from": issue_id, "to": null }),
         )
         .await?;
 
-        if previous_state != "triage" {
+        if previous_state != ReportState::Triage {
             self.audit_report_state_change(
                 &mut transaction,
                 report_id,
                 actor,
-                &previous_state,
-                "triage",
+                previous_state,
+                ReportState::Triage,
             )
             .await?;
         }
@@ -500,14 +503,15 @@ impl AdminDatabase {
         &self,
         issue_id: IssueId,
         actor: i64,
-        reject_reports: bool,
+        report_action: IssueReportAction,
     ) -> Result<u64> {
+        let reject_reports = report_action == IssueReportAction::Reject;
         let mut transaction = self.pool.begin().await?;
         sqlx::query("SELECT pg_advisory_xact_lock(891125)")
             .execute(&mut *transaction)
             .await?;
 
-        let previous_state: String = sqlx::query_scalar(
+        let previous_state: IssueState = sqlx::query_scalar(
             "SELECT state FROM issues WHERE id = $1 AND state <> 'rejected' FOR UPDATE",
         )
         .bind(issue_id)
@@ -544,6 +548,11 @@ impl AdminDatabase {
         .await?
         .rows_affected();
 
+        let reports_target = if reject_reports {
+            ReportState::Rejected
+        } else {
+            ReportState::Triage
+        };
         let reports_updated: i64 = sqlx::query_scalar(
             "WITH previous AS MATERIALIZED (
                 SELECT id, state FROM reports WHERE issue_id = $1 FOR UPDATE
@@ -551,7 +560,7 @@ impl AdminDatabase {
              updated AS (
                 UPDATE reports
                 SET issue_id = CASE WHEN $3 THEN reports.issue_id ELSE NULL END,
-                    state = CASE WHEN $3 THEN 'rejected' ELSE 'triage' END,
+                    state = $4,
                     updated_at = now()
                 FROM previous
                 WHERE reports.id = previous.id
@@ -559,20 +568,17 @@ impl AdminDatabase {
              ),
              issue_events AS (
                 INSERT INTO audit_events (actor, action, entity_id, details)
-                SELECT $2, 'report.update_issue', id,
+                SELECT $2, $5::text, id,
                        jsonb_build_object('from', $1::uuid, 'to', NULL)
                 FROM updated WHERE NOT $3
                 RETURNING 1
              ),
              state_events AS (
                 INSERT INTO audit_events (actor, action, entity_id, details)
-                SELECT $2, 'report.update_state', id,
-                       jsonb_build_object(
-                           'from', previous_state,
-                           'to', CASE WHEN $3 THEN 'rejected' ELSE 'triage' END
-                       )
+                SELECT $2, $6::text, id,
+                       jsonb_build_object('from', previous_state, 'to', $4::text)
                 FROM updated
-                WHERE previous_state <> CASE WHEN $3 THEN 'rejected' ELSE 'triage' END
+                WHERE previous_state <> $4
                 RETURNING 1
              )
              SELECT count(*) FROM updated",
@@ -580,18 +586,21 @@ impl AdminDatabase {
         .bind(issue_id)
         .bind(actor)
         .bind(reject_reports)
+        .bind(reports_target)
+        .bind(AuditAction::ReportUpdateIssue)
+        .bind(AuditAction::ReportUpdateState)
         .fetch_one(&mut *transaction)
         .await?;
 
         insert_audit_event(
             &mut *transaction,
             Some(actor),
-            "issue.update_state",
+            AuditAction::IssueUpdateState,
             Some(issue_id.0),
             serde_json::json!({
                 "from": previous_state,
-                "to": "rejected",
-                "report_action": if reject_reports { "reject" } else { "unlink" },
+                "to": IssueState::Rejected,
+                "report_action": report_action,
                 "reports_updated": reports_updated,
                 "merged_sources_rejected": merged_sources_rejected,
             }),

@@ -8,7 +8,7 @@ pub fn title_for_report(details: &ReportDetails) -> String {
     let stack_trace = stack_trace_for_report(details);
 
     generate_report_title(ReportTitleInput {
-        kind: &details.report.kind,
+        kind: details.report.kind,
         client_version: &details.report.client_version,
         failure_reason: text_field("failure_reason"),
         stack_trace,
@@ -21,11 +21,7 @@ pub(crate) fn stack_trace_for_report(details: &ReportDetails) -> Option<&str> {
     details
         .fields
         .iter()
-        .filter(|field| {
-            field.kind == "stack_trace"
-                || field.current_kind.as_deref() == Some("stack_trace")
-                || (field.key == "stack" && field.kind == "multiline")
-        })
+        .filter(|field| field.is_stack_trace())
         .filter_map(|field| field.value.as_str().map(|value| (field, value)))
         .min_by_key(|(field, _)| field.key != "stack")
         .map(|(_, value)| value)

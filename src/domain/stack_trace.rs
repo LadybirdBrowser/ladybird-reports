@@ -1,6 +1,17 @@
 use sha2::{Digest, Sha256};
 
+use super::ReportKind;
+
 pub const STACK_SIGNATURE_VERSION: i32 = 1;
+
+text_enum! {
+    /// Whether a stack was detailed enough to fingerprint. Mirrors the
+    /// `report_stack_signatures_status_check` constraint.
+    pub enum StackSignatureStatus {
+        Parsed => "parsed",
+        Insufficient => "insufficient",
+    }
+}
 const MAX_RENDERED_LINES: usize = 256;
 const MAX_SIGNATURE_FRAMES: usize = 24;
 const NATIVE_STACK_HEADER: &str = "Native stack (binary build ID, object address):";
@@ -74,7 +85,7 @@ pub fn parse_stack_trace(text: &str) -> ParsedStackTrace {
 }
 
 pub fn stack_fingerprint(
-    kind: &str,
+    kind: ReportKind,
     process: Option<&str>,
     signal: Option<&str>,
     frame_keys: &[String],
@@ -86,7 +97,7 @@ pub fn stack_fingerprint(
     let mut digest = Sha256::new();
     let process = process.unwrap_or("").trim().to_ascii_lowercase();
     let signal = signal.unwrap_or("").trim().to_ascii_uppercase();
-    for component in [kind, &process, &signal]
+    for component in [kind.as_str(), &process, &signal]
         .into_iter()
         .chain(frame_keys.iter().take(5).map(String::as_str))
     {
@@ -201,12 +212,12 @@ mod tests {
         );
         assert_eq!(first.frame_keys, second.frame_keys);
         assert_eq!(
-            stack_fingerprint("crash", None, Some("SIGSEGV"), &first.frame_keys),
-            stack_fingerprint("crash", None, Some("SIGSEGV"), &second.frame_keys)
+            stack_fingerprint(ReportKind::Crash, None, Some("SIGSEGV"), &first.frame_keys),
+            stack_fingerprint(ReportKind::Crash, None, Some("SIGSEGV"), &second.frame_keys)
         );
         assert_ne!(
-            stack_fingerprint("crash", None, Some("SIGSEGV"), &first.frame_keys),
-            stack_fingerprint("crash", None, Some("SIGABRT"), &second.frame_keys)
+            stack_fingerprint(ReportKind::Crash, None, Some("SIGSEGV"), &first.frame_keys),
+            stack_fingerprint(ReportKind::Crash, None, Some("SIGABRT"), &second.frame_keys)
         );
     }
 

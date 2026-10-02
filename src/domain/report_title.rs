@@ -1,10 +1,10 @@
-use super::parse_stack_trace;
+use super::{ReportKind, parse_stack_trace};
 
 const MAX_TITLE_CHARACTERS: usize = 120;
 pub const REPORT_TITLE_STACK_CHARACTERS: usize = 8192;
 
 pub struct ReportTitleInput<'a> {
-    pub kind: &'a str,
+    pub kind: ReportKind,
     pub client_version: &'a str,
     pub failure_reason: Option<&'a str>,
     pub stack_trace: Option<&'a str>,
@@ -14,12 +14,11 @@ pub struct ReportTitleInput<'a> {
 
 pub fn generate_report_title(input: ReportTitleInput<'_>) -> String {
     let kind = match input.kind {
-        "crash" => "Crash",
-        "web_compat" => "Web compatibility",
-        _ => "Diagnostic",
+        ReportKind::Crash => "Crash",
+        ReportKind::WebCompat => "Web compatibility",
     };
 
-    if input.kind == "crash"
+    if input.kind == ReportKind::Crash
         && let Some(location) = input.failure_reason.and_then(source_location_from_failure)
     {
         return format!("{kind}: {location}");
@@ -171,7 +170,7 @@ mod tests {
     #[test]
     fn source_location_takes_priority_over_a_generic_verification_expression() {
         let title = generate_report_title(ReportTitleInput {
-            kind: "crash",
+            kind: ReportKind::Crash,
             client_version: "1.0",
             failure_reason: Some(
                 "Verification failed: false at Libraries/LibMedia/FFmpeg/FFmpegVideoDecoder.cpp:235",
@@ -183,7 +182,7 @@ mod tests {
         assert_eq!(title, "Crash: FFmpegVideoDecoder.cpp:235");
 
         let fallback = generate_report_title(ReportTitleInput {
-            kind: "crash",
+            kind: ReportKind::Crash,
             client_version: "1.0",
             failure_reason: Some("Verification failed: false"),
             stack_trace: Some("#0 0x123 Media::FFmpeg::FFmpegVideoDecoder::take_next_output()"),
@@ -201,7 +200,7 @@ mod tests {
         let symbol = "AK::Function<void ()>::CallableWrapper<WebContent::ConnectionFromClient::debug_request(AK::DistinctNumeric<unsigned long long, Web::__PageId_tag, AK::DistinctNumericFeature::Comparison, AK::DistinctNumericFeature::CastToBool>, AK::ByteString, AK::ByteString)::$_2>::call()";
         let stack = format!("#0 abcdef1234567890 0x123 {symbol} at /bin/WebContent");
         let title = generate_report_title(ReportTitleInput {
-            kind: "crash",
+            kind: ReportKind::Crash,
             client_version: "1.0",
             failure_reason: None,
             stack_trace: Some(&stack),
@@ -222,7 +221,7 @@ mod tests {
             #0 4402e9f4aa8030998b5a8e8bab39a036 0x100028897 non-virtual thunk to Compositor::ConnectionFromClient::crash() at /bin/Compositor\n\
             #1 4402e9f4aa8030998b5a8e8bab39a036 0x10002b943 CompositorControlServerStub::handle_crash() at /bin/Compositor";
         let title = generate_report_title(ReportTitleInput {
-            kind: "crash",
+            kind: ReportKind::Crash,
             client_version: "1.0",
             failure_reason: None,
             stack_trace: Some(stack),
@@ -236,7 +235,7 @@ mod tests {
     #[test]
     fn title_falls_back_to_type_and_context() {
         let title = generate_report_title(ReportTitleInput {
-            kind: "crash",
+            kind: ReportKind::Crash,
             client_version: "1.0",
             failure_reason: None,
             stack_trace: Some("Native stack (binary build ID, object address):"),
@@ -246,7 +245,7 @@ mod tests {
         assert_eq!(title, "Crash report · WebContent · macOS");
 
         let title = generate_report_title(ReportTitleInput {
-            kind: "web_compat",
+            kind: ReportKind::WebCompat,
             client_version: "Ladybird Nightly 2026.09.17",
             failure_reason: None,
             stack_trace: None,
@@ -257,23 +256,13 @@ mod tests {
             title,
             "Web compatibility report · Ladybird Nightly 2026.09.17"
         );
-
-        let title = generate_report_title(ReportTitleInput {
-            kind: "future_kind",
-            client_version: "1.0",
-            failure_reason: None,
-            stack_trace: None,
-            process: None,
-            platform: None,
-        });
-        assert_eq!(title, "Diagnostic report · 1.0");
     }
 
     #[test]
     fn title_rejects_private_or_unusable_symbols() {
         let stack = "#0 0x123 https://private.example/path at WebContent";
         let title = generate_report_title(ReportTitleInput {
-            kind: "crash",
+            kind: ReportKind::Crash,
             client_version: "1.0",
             failure_reason: None,
             stack_trace: Some(stack),
@@ -288,7 +277,7 @@ mod tests {
         let function = "very_long_function_name_".repeat(12);
         let stack = format!("#0 0x123 WebContent::{function}(int) at WebContent");
         let title = generate_report_title(ReportTitleInput {
-            kind: "crash",
+            kind: ReportKind::Crash,
             client_version: "1.0",
             failure_reason: None,
             stack_trace: Some(&stack),

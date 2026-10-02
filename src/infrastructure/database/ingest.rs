@@ -8,7 +8,7 @@ use sqlx::{PgPool, Row};
 use crate::{
     domain::{
         AttachmentId, AttachmentReference, ChallengeClaims, FieldDefinition, FieldKind, ReportId,
-        ReportManifest, RuntimeConfiguration, SubmissionId, UploadId,
+        ReportManifest, RuntimeConfiguration, StorageState, SubmissionId, UploadId,
     },
     error::{AppError, Result},
 };
@@ -25,7 +25,7 @@ pub struct IngestDatabase {
 pub struct ReportReceipt {
     pub report_id: ReportId,
     pub digest_matches: bool,
-    pub storage_state: String,
+    pub storage_state: StorageState,
     pub staging_id: UploadId,
 }
 

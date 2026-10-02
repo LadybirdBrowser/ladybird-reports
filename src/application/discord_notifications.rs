@@ -4,7 +4,7 @@ use chrono::SecondsFormat;
 use serde_json::Value;
 
 use crate::{
-    domain::{DiscordConfiguration, concise_function_name, parse_stack_trace},
+    domain::{DiscordConfiguration, ReportKind, concise_function_name, parse_stack_trace},
     infrastructure::{
         database::{AdminDatabase, PendingDiscordNotification},
         discord::{
@@ -235,7 +235,7 @@ fn report_message(
             title: truncate_text(&notification.title, 256),
             url: report_url,
             description,
-            color: report_color(&notification.kind),
+            color: report_color(notification.kind),
             fields: embed_fields,
             timestamp: notification
                 .created_at
@@ -328,11 +328,10 @@ fn truncate_text(value: &str, maximum_characters: usize) -> String {
     truncated
 }
 
-fn report_color(kind: &str) -> u32 {
+fn report_color(kind: ReportKind) -> u32 {
     match kind {
-        "crash" => 0xd84a4a,
-        "web_compat" => 0x5d55dc,
-        _ => 0x666b7a,
+        ReportKind::Crash => 0xd84a4a,
+        ReportKind::WebCompat => 0x5d55dc,
     }
 }
 
@@ -341,7 +340,7 @@ mod tests {
     use chrono::Utc;
 
     use crate::{
-        domain::{DiscordConfiguration, DiscordDeliveryLeaseId, ReportId},
+        domain::{DiscordConfiguration, DiscordDeliveryLeaseId, ReportId, ReportKind},
         infrastructure::database::PendingDiscordNotification,
     };
 
@@ -392,7 +391,7 @@ mod tests {
             report_id: ReportId::new(),
             lease_id: DiscordDeliveryLeaseId::new(),
             title: "Crash: WebContent::ConnectionFromClient::debug_request".into(),
-            kind: "crash".into(),
+            kind: ReportKind::Crash,
             client_version: "Ladybird Nightly".into(),
             build: "macOS arm64".into(),
             fields: serde_json::json!({

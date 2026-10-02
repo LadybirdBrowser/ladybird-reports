@@ -6,7 +6,7 @@ use axum::{
 };
 
 use crate::{
-    domain::IssueId,
+    domain::{GithubLinkState, IssueId},
     error::{AppError, Result},
     infrastructure::github::GithubIssueState,
 };
@@ -83,7 +83,10 @@ pub async fn issue_options(
         }
 
         if let Some(linked_issue) = linked_issues.get(&github_issue.number) {
-            if linked_issue.github_state != "open" && linked_issue.github_state != "unknown" {
+            if !matches!(
+                linked_issue.github_state,
+                GithubLinkState::Open | GithubLinkState::Unknown
+            ) {
                 continue;
             }
             if included_issue_ids.insert(linked_issue.issue_id) {
@@ -133,12 +136,7 @@ pub(super) async fn ensure_github_reports_link(
         .await?
         .ok_or(AppError::NotFound("Issue not found"))?;
 
-    if issue.merged_into.is_some()
-        || matches!(
-            issue.github_state.as_str(),
-            "missing" | "moved" | "unavailable"
-        )
-    {
+    if issue.merged_into.is_some() || issue.github_state.is_unreachable() {
         return Ok(());
     }
 

@@ -1,3 +1,7 @@
+#[macro_use]
+mod text_enum;
+
+mod audit;
 mod configuration;
 mod field;
 mod identifiers;
@@ -8,7 +12,9 @@ mod report;
 mod report_search;
 mod report_title;
 mod stack_trace;
+mod states;
 
+pub use audit::*;
 pub use configuration::*;
 pub use field::*;
 pub use identifiers::*;
@@ -19,3 +25,4 @@ pub use report::*;
 pub use report_search::*;
 pub use report_title::*;
 pub use stack_trace::*;
+pub use states::*;

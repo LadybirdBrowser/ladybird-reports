@@ -9,8 +9,10 @@ use chrono::{Duration, Utc};
 use ladybird_reports::{
     application::ReportIngestionService,
     domain::{
-        AttachmentManifest, AttachmentMediaType, DiagnosticField, FieldValue, IssueId, IssueSearch,
-        ReportId, ReportKind, ReportManifest, SubmissionId, UploadId, proof_is_valid, sha256_hex,
+        AttachmentManifest, AttachmentMediaType, AuditAction, DiagnosticField, FieldKind,
+        FieldValue, GithubLinkState, GithubSyncSource, IssueId, IssueReportAction, IssueSearch,
+        IssueState, ReportId, ReportKind, ReportManifest, ReportState, StackSignatureStatus,
+        StorageState, SubmissionId, UploadId, proof_is_valid, sha256_hex,
     },
     infrastructure::{
         SecretCipher,
@@ -327,6 +329,42 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
     assert!(report.report.has_submission_source);
     assert!(!report.report.submission_source_is_blocked);
     assert!(report.report.expires_at.is_some());
+
+    // The accept_report SQL function spells this action out as text.
+    let submitted_events: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM audit_events WHERE action = $1 AND entity_id = $2",
+    )
+    .bind(AuditAction::ReportSubmitted)
+    .bind(report.report.id.0)
+    .fetch_one(&admin_pool)
+    .await
+    .expect("count report submission audit events");
+    assert_eq!(submitted_events, 1);
+
+    // Each text enum mirrors a CHECK constraint; they must list the same values.
+    assert_constraint_values(&admin_pool, "reports_state_valid", ReportState::ALL).await;
+    assert_constraint_values(&admin_pool, "issues_state_valid", IssueState::ALL).await;
+    assert_constraint_values(
+        &admin_pool,
+        "issues_github_state_check",
+        GithubLinkState::ALL,
+    )
+    .await;
+    assert_constraint_values(
+        &admin_pool,
+        "reports_storage_state_check",
+        StorageState::ALL,
+    )
+    .await;
+    assert_constraint_values(&admin_pool, "reports_kind_check", ReportKind::ALL).await;
+    assert_constraint_values(&admin_pool, "report_fields_kind_check", FieldKind::ALL).await;
+    assert_constraint_values(&admin_pool, "field_definitions_kind_check", FieldKind::ALL).await;
+    assert_constraint_values(
+        &admin_pool,
+        "report_stack_signatures_status_check",
+        StackSignatureStatus::ALL,
+    )
+    .await;
     let source_retention_is_one_month: bool = sqlx::query_scalar(
         "SELECT source_client_key_expires_at = created_at + interval '30 days'
          FROM reports WHERE id = $1",
@@ -713,7 +751,7 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
 
     assert!(
         admin_database
-            .set_report_state(second_triage_report, "confirmed", 999)
+            .set_report_state(second_triage_report, ReportState::Confirmed, 999)
             .await
             .is_err(),
         "an unlinked report cannot be confirmed"
@@ -725,7 +763,7 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
         .expect("represent a previously confirmed unlinked report");
     assert!(
         admin_database
-            .set_report_state(second_triage_report, "triage", 999)
+            .set_report_state(second_triage_report, ReportState::Triage, 999)
             .await
             .is_err(),
         "an unlinked confirmed report cannot be manually returned to triage"
@@ -777,7 +815,7 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
     assert!(confirmed_report_is_visible);
 
     admin_database
-        .set_report_state(second_triage_report, "rejected", 999)
+        .set_report_state(second_triage_report, ReportState::Rejected, 999)
         .await
         .expect("reject the confirmed report");
     let rejected_report_is_retained: bool = sqlx::query_scalar(
@@ -803,7 +841,7 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
     assert!(assigned_report_is_visible);
     assert!(
         admin_database
-            .set_report_state(assigned_report, "triage", 999)
+            .set_report_state(assigned_report, ReportState::Triage, 999)
             .await
             .is_err(),
         "a linked report cannot return to triage"
@@ -1012,7 +1050,7 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
             "LadybirdBrowser/ladybird",
             &closed_github_issue,
             None,
-            "test",
+            GithubSyncSource::Assignment,
         )
         .await
         .expect("synchronize GitHub closure");
@@ -1041,7 +1079,12 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
     transferred_issue.id = 94813;
     transferred_issue.html_url = "https://github.com/LadybirdBrowser/other/issues/8888".into();
     admin_database
-        .sync_github_issue("LadybirdBrowser/other", &transferred_issue, None, "test")
+        .sync_github_issue(
+            "LadybirdBrowser/other",
+            &transferred_issue,
+            None,
+            GithubSyncSource::Assignment,
+        )
         .await
         .expect("detect issue transfer by stable GitHub identity");
     assert!(
@@ -1062,8 +1105,8 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
             "LadybirdBrowser/ladybird",
             4813,
             Some(94813),
-            "missing",
-            "test",
+            GithubLinkState::Missing,
+            GithubSyncSource::Webhook,
         )
         .await
         .expect("mark deleted GitHub issue");
@@ -1072,7 +1115,7 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
             "LadybirdBrowser/ladybird",
             &github_issue(4813, "Stale webhook title"),
             None,
-            "webhook",
+            GithubSyncSource::Webhook,
         )
         .await
         .expect("ignore a late update after deletion");
@@ -1134,7 +1177,7 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
     assert_eq!(unlinked_state, "triage");
 
     let reports_unlinked = admin_database
-        .reject_issue(created_issue.issue_id, 999, false)
+        .reject_issue(created_issue.issue_id, 999, IssueReportAction::Unlink)
         .await
         .expect("reject tracked issue and unlink its reports");
     assert_eq!(reports_unlinked as i64, linked_before_rejection - 1);
@@ -1145,7 +1188,7 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
             .unwrap()
             .unwrap()
             .state,
-        "rejected"
+        IssueState::Rejected
     );
     let remaining_assignments: i64 =
         sqlx::query_scalar("SELECT count(*) FROM reports WHERE issue_id = $1")
@@ -1442,7 +1485,7 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
         .expect("link first report manually");
 
     admin_database
-        .set_report_state(stack_reports[0], "rejected", 999)
+        .set_report_state(stack_reports[0], ReportState::Rejected, 999)
         .await
         .expect("reject a linked report");
     let unmatched_report =
@@ -1527,7 +1570,7 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
     assert!(
         potential_matches
             .iter()
-            .all(|report| report.state == "triage")
+            .all(|report| report.state == ReportState::Triage)
     );
     sqlx::query("UPDATE report_stack_signatures SET algorithm_version = 0 WHERE report_id = $1")
         .bind(matching_report)
@@ -1599,7 +1642,7 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
         .expect("create a group to reject with its report");
     assert_eq!(
         admin_database
-            .reject_issue(rejected_group.issue_id, 999, true)
+            .reject_issue(rejected_group.issue_id, 999, IssueReportAction::Reject)
             .await
             .expect("reject issue and linked report"),
         1
@@ -1619,7 +1662,7 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
             .unwrap()
             .unwrap()
             .state,
-        "rejected"
+        IssueState::Rejected
     );
 
     let duplicate_report =
@@ -1643,7 +1686,7 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
             "LadybirdBrowser/ladybird",
             &closed_duplicate,
             None,
-            "webhook",
+            GithubSyncSource::Webhook,
             Some(42),
         )
         .await
@@ -1710,7 +1753,7 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
             "LadybirdBrowser/ladybird",
             &another_closure,
             None,
-            "webhook",
+            GithubSyncSource::Webhook,
             Some(42),
         )
         .await
@@ -1762,6 +1805,35 @@ fn post_challenge(peer: ConnectInfo<SocketAddr>, manifest_digest: &str) -> Reque
             serde_json::json!({ "manifest_digest": manifest_digest }).to_string(),
         ))
         .expect("build challenge request")
+}
+
+/// Asserts that a CHECK constraint on text values allows exactly the variants of `E`.
+async fn assert_constraint_values<E: std::fmt::Display>(
+    pool: &sqlx::PgPool,
+    constraint: &str,
+    variants: &[E],
+) {
+    let definition: String = sqlx::query_scalar(
+        "SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname = $1",
+    )
+    .bind(constraint)
+    .fetch_one(pool)
+    .await
+    .unwrap_or_else(|error| panic!("read constraint {constraint}: {error}"));
+
+    // Quoted values appear at the odd positions when splitting on the quote.
+    let allowed = definition
+        .split('\'')
+        .skip(1)
+        .step_by(2)
+        .map(str::to_owned)
+        .collect::<std::collections::BTreeSet<_>>();
+    let declared = variants
+        .iter()
+        .map(ToString::to_string)
+        .collect::<std::collections::BTreeSet<_>>();
+
+    assert_eq!(declared, allowed, "{constraint} and its Rust enum disagree");
 }
 
 async fn count_denied_sign_ins(pool: &sqlx::PgPool) -> i64 {

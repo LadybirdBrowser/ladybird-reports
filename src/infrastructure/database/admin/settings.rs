@@ -7,7 +7,10 @@ use serde_json::Value;
 use sqlx::Row;
 
 use crate::{
-    domain::{FieldKind, RuntimeConfiguration, is_valid_field_key, setting_invalidates_sessions},
+    domain::{
+        AuditAction, FieldKind, RuntimeConfiguration, is_valid_field_key,
+        setting_invalidates_sessions,
+    },
     error::{AppError, Result},
     infrastructure::database::AdminDatabase,
 };
@@ -87,7 +90,7 @@ impl AdminDatabase {
         insert_audit_event(
             &mut *transaction,
             Some(actor),
-            "configuration.update",
+            AuditAction::ConfigurationUpdate,
             None,
             serde_json::json!({ "changed": changed }),
         )
@@ -168,9 +171,9 @@ impl AdminDatabase {
             &mut *transaction,
             Some(actor),
             if old.is_some() {
-                "field_definition.update"
+                AuditAction::FieldDefinitionUpdate
             } else {
-                "field_definition.create"
+                AuditAction::FieldDefinitionCreate
             },
             None,
             serde_json::json!({ "key": key, "from": old, "to": new }),
@@ -234,7 +237,7 @@ impl AdminDatabase {
         insert_audit_event(
             &mut *transaction,
             Some(actor),
-            "field_definitions.reorder",
+            AuditAction::FieldDefinitionsReorder,
             None,
             serde_json::json!({
                 "from": existing_order,

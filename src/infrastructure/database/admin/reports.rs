@@ -4,8 +4,8 @@ use sqlx::{Postgres, QueryBuilder, Row};
 
 use crate::{
     domain::{
-        AttachmentId, IssueId, REPORT_TITLE_STACK_CHARACTERS, ReportId, ReportTitleInput,
-        generate_report_title,
+        AttachmentId, AuditAction, IssueId, REPORT_TITLE_STACK_CHARACTERS, ReportId, ReportKind,
+        ReportState, ReportTitleInput, generate_report_title,
     },
     error::{AppError, Result},
     infrastructure::database::AdminDatabase,
@@ -26,7 +26,7 @@ struct TitleFields {
 }
 
 impl TitleFields {
-    fn title(&self, kind: &str, client_version: &str) -> String {
+    fn title(&self, kind: ReportKind, client_version: &str) -> String {
         generate_report_title(ReportTitleInput {
             kind,
             client_version,
@@ -194,10 +194,10 @@ impl AdminDatabase {
             .into_iter()
             .map(|row| {
                 let id = row.get("id");
-                let kind: String = row.get("kind");
+                let kind: ReportKind = row.get("kind");
                 let client_version: String = row.get("client_version");
                 let fields = title_fields.remove(&id).unwrap_or_default();
-                let title = fields.title(&kind, &client_version);
+                let title = fields.title(kind, &client_version);
 
                 ReportSearchResult {
                     id,
@@ -276,7 +276,7 @@ impl AdminDatabase {
     pub(super) async fn generated_report_title(
         &self,
         report_id: ReportId,
-        kind: &str,
+        kind: ReportKind,
         client_version: &str,
     ) -> Result<String> {
         let mut fields = self.report_title_fields(&[report_id]).await?;
@@ -292,7 +292,7 @@ impl AdminDatabase {
 
         for report in reports {
             let fields = title_fields.remove(&report.id).unwrap_or_default();
-            report.title = fields.title(&report.kind, &report.client_version);
+            report.title = fields.title(report.kind, &report.client_version);
             report.platform = fields.platform;
             report.architecture = fields.architecture;
         }
@@ -461,7 +461,7 @@ impl AdminDatabase {
             ));
         }
 
-        let previous: (Option<IssueId>, String) = sqlx::query_as(
+        let previous: (Option<IssueId>, ReportState) = sqlx::query_as(
             "SELECT issue_id, state
              FROM reports
              WHERE id = $1
@@ -473,7 +473,7 @@ impl AdminDatabase {
         .await?
         .ok_or(AppError::NotFound("Report not found"))?;
 
-        if previous.0 == Some(issue_id) && previous.1 == "confirmed" {
+        if previous.0 == Some(issue_id) && previous.1 == ReportState::Confirmed {
             transaction.commit().await?;
             return Ok(());
         }
@@ -497,7 +497,7 @@ impl AdminDatabase {
             insert_audit_event(
                 &mut *transaction,
                 Some(actor),
-                "report.update_issue",
+                AuditAction::ReportUpdateIssue,
                 Some(report_id.0),
                 serde_json::json!({
                     "from": previous.0,
@@ -507,13 +507,13 @@ impl AdminDatabase {
             .await?;
         }
 
-        if previous.1 != "confirmed" {
+        if previous.1 != ReportState::Confirmed {
             self.audit_report_state_change(
                 &mut transaction,
                 report_id,
                 actor,
-                &previous.1,
-                "confirmed",
+                previous.1,
+                ReportState::Confirmed,
             )
             .await?;
         }
@@ -525,15 +525,11 @@ impl AdminDatabase {
     pub async fn set_report_state(
         &self,
         report_id: ReportId,
-        target: &str,
+        target: ReportState,
         actor: i64,
-    ) -> Result<Option<String>> {
-        if !matches!(target, "triage" | "confirmed" | "rejected") {
-            return Err(AppError::InvalidRequest("Invalid report state"));
-        }
-
+    ) -> Result<Option<ReportState>> {
         let mut transaction = self.pool.begin().await?;
-        let previous: (String, Option<IssueId>) = sqlx::query_as(
+        let previous: (ReportState, Option<IssueId>) = sqlx::query_as(
             "SELECT state, issue_id
              FROM reports
              WHERE id = $1
@@ -549,17 +545,17 @@ impl AdminDatabase {
             transaction.commit().await?;
             return Ok(None);
         }
-        if matches!(target, "triage" | "confirmed") && previous.0 != "rejected" {
+        if target != ReportState::Rejected && previous.0 != ReportState::Rejected {
             return Err(AppError::InvalidRequest(
                 "Only rejected reports can be restored",
             ));
         }
-        if target == "confirmed" && previous.1.is_none() {
+        if target == ReportState::Confirmed && previous.1.is_none() {
             return Err(AppError::InvalidRequest(
                 "Link the report to an issue before confirming it",
             ));
         }
-        if target == "triage" && previous.1.is_some() {
+        if target == ReportState::Triage && previous.1.is_some() {
             return Err(AppError::InvalidRequest(
                 "Unlink the report before returning it to triage",
             ));
@@ -575,7 +571,7 @@ impl AdminDatabase {
         .execute(&mut *transaction)
         .await?;
 
-        self.audit_report_state_change(&mut transaction, report_id, actor, &previous.0, target)
+        self.audit_report_state_change(&mut transaction, report_id, actor, previous.0, target)
             .await?;
 
         transaction.commit().await?;
@@ -587,13 +583,13 @@ impl AdminDatabase {
         transaction: &mut sqlx::Transaction<'_, Postgres>,
         report_id: ReportId,
         actor: i64,
-        from: &str,
-        to: &str,
+        from: ReportState,
+        to: ReportState,
     ) -> Result<()> {
         insert_audit_event(
             &mut **transaction,
             Some(actor),
-            "report.update_state",
+            AuditAction::ReportUpdateState,
             Some(report_id.0),
             serde_json::json!({ "from": from, "to": to }),
         )
@@ -719,17 +715,20 @@ impl AdminDatabase {
                 "INSERT INTO audit_events (actor, action, entity_id, details)
                  SELECT
                     $1,
-                    'report.update_state',
+                    $3::text,
                     rejected.id,
                     jsonb_build_object(
-                        'from', 'triage',
-                        'to', 'rejected',
+                        'from', $4::text,
+                        'to', $5::text,
                         'reason', 'source_blocked'
                     )
                  FROM unnest($2::uuid[]) AS rejected(id)",
             )
             .bind(actor)
             .bind(rejected_ids)
+            .bind(AuditAction::ReportUpdateState)
+            .bind(ReportState::Triage)
+            .bind(ReportState::Rejected)
             .execute(&mut *transaction)
             .await?;
         }
@@ -737,7 +736,7 @@ impl AdminDatabase {
         insert_audit_event(
             &mut *transaction,
             Some(actor),
-            "submission_source.update_state",
+            AuditAction::SubmissionSourceUpdateState,
             Some(report_id.0),
             serde_json::json!({
                 "from": "allowed",
@@ -778,7 +777,7 @@ impl AdminDatabase {
         insert_audit_event(
             &mut *transaction,
             Some(actor),
-            "submission_source.update_state",
+            AuditAction::SubmissionSourceUpdateState,
             Some(report_id.0),
             serde_json::json!({ "from": "blocked", "to": "allowed" }),
         )
@@ -842,18 +841,11 @@ fn push_qualified_search(sql: &mut QueryBuilder<Postgres>, key: &str, values: &[
 
 fn push_qualified_search_predicate(sql: &mut QueryBuilder<Postgres>, key: &str, value: &str) {
     match key {
-        "state" => match value.to_ascii_lowercase().as_str() {
-            "triage" => {
-                sql.push("reports.state = 'triage'");
-            }
-            "confirmed" => {
-                sql.push("reports.state = 'confirmed'");
-            }
-            "rejected" => {
-                sql.push("reports.state = 'rejected'");
-            }
-            _ => unreachable!("report state qualifiers are validated while parsing"),
-        },
+        "state" => {
+            let state = ReportState::parse(&value.to_ascii_lowercase())
+                .expect("report state qualifiers are validated while parsing");
+            sql.push("reports.state = ").push_bind(state);
+        }
         "kind" => push_report_column_filter_predicate(sql, "reports.kind", value),
         "version" | "client_version" => {
             push_report_column_filter_predicate(sql, "reports.client_version", value);

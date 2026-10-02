@@ -1,7 +1,7 @@
 use sqlx::Row;
 
 use crate::{
-    domain::{DiscordDeliveryLeaseId, ReportId},
+    domain::{DiscordDeliveryLeaseId, ReportId, ReportKind},
     error::Result,
     infrastructure::database::AdminDatabase,
 };
@@ -103,10 +103,10 @@ impl AdminDatabase {
 
         let attempt_count: i32 = row.get("attempt_count");
         transaction.commit().await?;
-        let kind: String = row.get("kind");
+        let kind: ReportKind = row.get("kind");
         let client_version: String = row.get("client_version");
         let title = self
-            .generated_report_title(report_id, &kind, &client_version)
+            .generated_report_title(report_id, kind, &client_version)
             .await?;
         let notification = PendingDiscordNotification {
             report_id,

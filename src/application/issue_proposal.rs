@@ -1,4 +1,7 @@
-use crate::infrastructure::database::ReportDetails;
+use crate::{
+    domain::{FieldKind, ReportKind},
+    infrastructure::database::ReportDetails,
+};
 
 use super::{stack_trace_for_report, title_for_report};
 
@@ -12,10 +15,9 @@ pub struct IssueProposal {
 /// attachments stay in Reports unless a maintainer adds them to the draft.
 /// The proposed title uses only the concise function name derived from a stack.
 pub fn propose_issue(details: &ReportDetails) -> IssueProposal {
-    let report_type = match details.report.kind.as_str() {
-        "crash" => "Crash",
-        "web_compat" => "Web compatibility issue",
-        _ => "Diagnostic issue",
+    let report_type = match details.report.kind {
+        ReportKind::Crash => "Crash",
+        ReportKind::WebCompat => "Web compatibility issue",
     };
     let platform = field_value(details, "platform", 40);
     let title = title_for_report(details);
@@ -77,7 +79,7 @@ fn field_value(details: &ReportDetails, key: &str, maximum_characters: usize) ->
     details
         .fields
         .iter()
-        .find(|field| field.key == key && field.kind == "text")
+        .find(|field| field.key == key && field.kind == FieldKind::Text)
         .and_then(|field| field.value.as_str())
         .and_then(|value| safe_value(value, maximum_characters))
 }
@@ -114,7 +116,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        domain::{ReportId, SubmissionId},
+        domain::{ReportId, ReportState, SubmissionId},
         infrastructure::database::{ReportRecord, StoredDiagnosticField},
     };
 
@@ -125,23 +127,27 @@ mod tests {
                 id: ReportId::new(),
                 submission_id: SubmissionId::new(),
                 manifest_digest: String::new(),
-                kind: "crash".into(),
+                kind: ReportKind::Crash,
                 client_version: "Ladybird Nightly 2026.09.16".into(),
                 build: "Release".into(),
                 issue_id: None,
-                state: "triage".into(),
+                state: ReportState::Triage,
                 has_submission_source: true,
                 submission_source_is_blocked: false,
                 created_at: Utc::now(),
                 expires_at: None,
             },
             fields: vec![
-                field("platform", "text", json!("macOS")),
-                field("architecture", "text", json!("arm64")),
-                field("signal", "text", json!("SIGABRT")),
-                field("url", "text", json!("https://private.example/path")),
-                field("stack", "multiline", json!("private stack trace")),
-                field("unknown", "text", json!("private unknown field")),
+                field("platform", FieldKind::Text, json!("macOS")),
+                field("architecture", FieldKind::Text, json!("arm64")),
+                field("signal", FieldKind::Text, json!("SIGABRT")),
+                field(
+                    "url",
+                    FieldKind::Text,
+                    json!("https://private.example/path"),
+                ),
+                field("stack", FieldKind::Multiline, json!("private stack trace")),
+                field("unknown", FieldKind::Text, json!("private unknown field")),
             ],
             attachments: Vec::new(),
             events: Vec::new(),
@@ -173,10 +179,10 @@ mod tests {
         );
     }
 
-    fn field(key: &str, kind: &str, value: serde_json::Value) -> StoredDiagnosticField {
+    fn field(key: &str, kind: FieldKind, value: serde_json::Value) -> StoredDiagnosticField {
         StoredDiagnosticField {
             key: key.into(),
-            kind: kind.into(),
+            kind,
             value,
             recognized_at_submission: true,
             current_label: None,

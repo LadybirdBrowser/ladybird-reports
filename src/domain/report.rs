@@ -19,11 +19,11 @@ pub struct ReportManifest {
     pub attachments: Vec<AttachmentManifest>,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ReportKind {
-    Crash,
-    WebCompat,
+text_enum! {
+    pub enum ReportKind {
+        Crash => "crash",
+        WebCompat => "web_compat",
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -80,15 +80,6 @@ impl AttachmentMediaType {
         match self {
             Self::Png => "image/png",
             Self::PlainText => "text/plain",
-        }
-    }
-}
-
-impl ReportKind {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Crash => "crash",
-            Self::WebCompat => "web_compat",
         }
     }
 }

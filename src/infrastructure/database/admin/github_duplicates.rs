@@ -2,7 +2,7 @@ use chrono::{DateTime, Utc};
 use sqlx::Row;
 
 use crate::{
-    domain::IssueId,
+    domain::{AuditAction, GithubLinkState, IssueId, IssueState},
     error::{AppError, Result},
     infrastructure::{database::AdminDatabase, github::GithubIssue},
 };
@@ -115,7 +115,7 @@ impl AdminDatabase {
 
         let source_is_current = source.is_some_and(|source| {
             source.get::<Option<i64>, _>("github_issue_id") == Some(job.github_issue_id)
-                && source.get::<String, _>("github_state") == "closed"
+                && source.get::<GithubLinkState, _>("github_state") == GithubLinkState::Closed
                 && source.get::<Option<IssueId>, _>("merged_into").is_none()
         });
         let destination = if source_is_current {
@@ -149,12 +149,13 @@ impl AdminDatabase {
                     WHERE issue_id = $1 RETURNING id
                  )
                  INSERT INTO audit_events (action, entity_id, details)
-                 SELECT 'report.update_issue', id,
+                 SELECT $3::text, id,
                     jsonb_build_object('from', $1::uuid, 'to', $2::uuid)
                  FROM moved",
             )
             .bind(job.source_issue_id)
             .bind(destination)
+            .bind(AuditAction::ReportUpdateIssue)
             .execute(&mut *transaction)
             .await?;
 
@@ -171,7 +172,7 @@ impl AdminDatabase {
             insert_audit_event(
                 &mut *transaction,
                 None,
-                "issue.merge",
+                AuditAction::IssueMerge,
                 Some(job.source_issue_id.0),
                 serde_json::json!({
                     "source": "github_duplicate",
@@ -247,7 +248,7 @@ async fn ensure_destination(
         .bind(repository)
         .bind(issue.number)
         .bind(issue.id)
-        .bind(issue.state.as_str())
+        .bind(GithubLinkState::from(issue.state))
         .bind(issue.updated_at)
         .execute(&mut **transaction)
         .await?;
@@ -256,12 +257,9 @@ async fn ensure_destination(
 
     let issue_id = IssueId::new();
     let description = issue.body.as_deref().unwrap_or_default();
-    let state = if issue.state.as_str() == "closed" {
-        "resolved"
-    } else {
-        "unresolved"
-    };
-    let resolved_at: Option<DateTime<Utc>> = (state == "resolved").then(Utc::now);
+    let link_state = GithubLinkState::from(issue.state);
+    let state = IssueState::tracking(link_state);
+    let resolved_at: Option<DateTime<Utc>> = (state == IssueState::Resolved).then(Utc::now);
     sqlx::query(
         "INSERT INTO issues (
             id, title, description, github_number, github_url,
@@ -276,7 +274,7 @@ async fn ensure_destination(
     .bind(&issue.html_url)
     .bind(repository)
     .bind(issue.id)
-    .bind(issue.state.as_str())
+    .bind(link_state)
     .bind(issue.updated_at)
     .bind(state)
     .bind(resolved_at)
@@ -286,7 +284,7 @@ async fn ensure_destination(
     insert_audit_event(
         &mut **transaction,
         None,
-        "issue.create",
+        AuditAction::IssueCreate,
         Some(issue_id.0),
         serde_json::json!({ "source": "github_duplicate", "github_number": issue.number }),
     )

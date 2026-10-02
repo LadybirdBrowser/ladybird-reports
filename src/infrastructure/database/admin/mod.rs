@@ -18,7 +18,7 @@ pub use stack_signatures::STACK_INDEX_BATCH_SIZE;
 
 use sqlx::PgPool;
 
-use crate::error::Result;
+use crate::{domain::AuditAction, error::Result};
 
 use super::{ConfigurationCache, connect_pool};
 
@@ -63,7 +63,7 @@ impl AdminDatabase {
 async fn insert_audit_event<'e>(
     executor: impl sqlx::PgExecutor<'e>,
     actor: Option<i64>,
-    action: &str,
+    action: AuditAction,
     entity_id: Option<uuid::Uuid>,
     details: serde_json::Value,
 ) -> Result<()> {

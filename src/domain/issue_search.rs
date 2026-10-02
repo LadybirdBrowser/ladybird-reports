@@ -1,11 +1,11 @@
 use crate::error::{AppError, Result};
 
-use super::report_search::tokenize;
+use super::{IssueState, report_search::tokenize};
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct IssueSearch {
     pub terms: Vec<String>,
-    pub states: Vec<String>,
+    pub states: Vec<IssueState>,
     pub github_numbers: Vec<i64>,
     pub ids: Vec<String>,
 }
@@ -30,13 +30,8 @@ impl IssueSearch {
 
             match key.to_ascii_lowercase().as_str() {
                 "state" => {
-                    let state = value.to_ascii_lowercase();
-                    if !matches!(
-                        state.as_str(),
-                        "unresolved" | "needs_attention" | "resolved" | "rejected"
-                    ) {
-                        return Err(AppError::InvalidRequest("Invalid issue state filter"));
-                    }
+                    let state = IssueState::parse(&value.to_ascii_lowercase())
+                        .ok_or(AppError::InvalidRequest("Invalid issue state filter"))?;
                     search.states.push(state);
                 }
                 "github" => {
@@ -68,7 +63,7 @@ impl IssueSearch {
 
 #[cfg(test)]
 mod tests {
-    use super::IssueSearch;
+    use super::{IssueSearch, IssueState};
 
     #[test]
     fn parses_issue_query_and_repeated_states() {
@@ -76,7 +71,10 @@ mod tests {
             IssueSearch::parse("renderer state:unresolved state:needs_attention github:#4812")
                 .expect("valid issue search");
         assert_eq!(search.terms, ["renderer"]);
-        assert_eq!(search.states, ["unresolved", "needs_attention"]);
+        assert_eq!(
+            search.states,
+            [IssueState::Unresolved, IssueState::NeedsAttention]
+        );
         assert_eq!(search.github_numbers, [4812]);
     }
 

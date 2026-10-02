@@ -6,7 +6,10 @@ use std::{sync::Arc, time::Duration};
 
 use base64::Engine;
 
-use crate::error::{AppError, Result};
+use crate::{
+    domain::GithubLinkState,
+    error::{AppError, Result},
+};
 
 #[derive(Clone)]
 pub struct GithubClient {
@@ -111,6 +114,15 @@ impl GithubIssueState {
         match self {
             Self::Open => "open",
             Self::Closed => "closed",
+        }
+    }
+}
+
+impl From<GithubIssueState> for GithubLinkState {
+    fn from(state: GithubIssueState) -> Self {
+        match state {
+            GithubIssueState::Open => Self::Open,
+            GithubIssueState::Closed => Self::Closed,
         }
     }
 }

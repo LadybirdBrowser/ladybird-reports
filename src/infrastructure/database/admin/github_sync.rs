@@ -2,9 +2,12 @@ use chrono::{DateTime, Utc};
 use sqlx::Row;
 
 use crate::{
-    domain::IssueId,
+    domain::{AuditAction, GithubLinkState, GithubSyncSource, IssueId, IssueState},
     error::{AppError, Result},
-    infrastructure::{database::AdminDatabase, github::GithubIssue},
+    infrastructure::{
+        database::AdminDatabase,
+        github::{GithubIssue, GithubIssueState},
+    },
 };
 
 use super::{insert_audit_event, issues::validate_issue_text};
@@ -47,8 +50,8 @@ impl AdminDatabase {
         let old_number: i64 = current.get("github_number");
         let old_id: Option<i64> = current.get("github_issue_id");
         let old_url: String = current.get("github_url");
-        let old_state: String = current.get("github_state");
-        if !matches!(old_state.as_str(), "missing" | "moved" | "unavailable") {
+        let old_state: GithubLinkState = current.get("github_state");
+        if !old_state.is_unreachable() {
             return Err(AppError::Conflict(
                 "Current GitHub issue is still available",
             ));
@@ -136,7 +139,7 @@ impl AdminDatabase {
         insert_audit_event(
             &mut *transaction,
             Some(actor),
-            "issue.update_github_link",
+            AuditAction::IssueUpdateGithubLink,
             Some(issue_id.0),
             serde_json::json!({
                 "from": { "repository": old_repository, "number": old_number, "url": old_url },
@@ -155,7 +158,7 @@ impl AdminDatabase {
         repository: &str,
         issue: &GithubIssue,
         actor: Option<i64>,
-        source: &str,
+        source: GithubSyncSource,
     ) -> Result<Option<IssueId>> {
         self.sync_github_issue_with_installation(repository, issue, actor, source, None)
             .await
@@ -166,7 +169,7 @@ impl AdminDatabase {
         repository: &str,
         issue: &GithubIssue,
         actor: Option<i64>,
-        source: &str,
+        source: GithubSyncSource,
         installation_id: Option<i64>,
     ) -> Result<Option<IssueId>> {
         let description = issue.body.as_deref().unwrap_or_default();
@@ -198,9 +201,9 @@ impl AdminDatabase {
         let issue_id: IssueId = row.get("id");
         let stored_repository: String = row.get("github_repository");
         let state = if current_repository.eq_ignore_ascii_case(&stored_repository) {
-            issue.state.as_str()
+            GithubLinkState::from(issue.state)
         } else {
-            "moved"
+            GithubLinkState::Moved
         };
         let previous_id: Option<i64> = row.get("github_issue_id");
         if previous_id.is_some_and(|id| id != issue.id) {
@@ -213,13 +216,13 @@ impl AdminDatabase {
             return Ok(Some(issue_id));
         }
 
-        let previous_state: String = row.get("github_state");
-        if source == "webhook" && matches!(previous_state.as_str(), "missing" | "moved") {
+        let previous_state: GithubLinkState = row.get("github_state");
+        if source == GithubSyncSource::Webhook && previous_state.is_gone() {
             transaction.commit().await?;
             return Ok(Some(issue_id));
         }
-        if source == "webhook" {
-            if issue.state.as_str() == "closed"
+        if source == GithubSyncSource::Webhook {
+            if issue.state == GithubIssueState::Closed
                 && issue.state_reason.as_deref() == Some("duplicate")
             {
                 if let Some(installation_id) = installation_id {
@@ -246,7 +249,7 @@ impl AdminDatabase {
                     .execute(&mut *transaction)
                     .await?;
                 }
-            } else if matches!(issue.state.as_str(), "open" | "closed") {
+            } else {
                 sqlx::query("DELETE FROM github_duplicate_jobs WHERE source_issue_id = $1")
                     .bind(issue_id)
                     .execute(&mut *transaction)
@@ -263,11 +266,7 @@ impl AdminDatabase {
                  description = $4,
                  github_url = $5,
                  github_state = $6,
-                 state = CASE
-                    WHEN $6 IN ('missing', 'moved', 'unavailable') THEN 'needs_attention'
-                    WHEN $6 = 'closed' THEN 'resolved'
-                    ELSE 'unresolved'
-                 END,
+                 state = $8,
                  github_checked_at = now(),
                  github_updated_at = $7,
                  resolved_at = CASE
@@ -292,6 +291,7 @@ impl AdminDatabase {
         .bind(&issue.html_url)
         .bind(state)
         .bind(issue.updated_at)
+        .bind(IssueState::tracking(state))
         .execute(&mut *transaction)
         .await?;
 
@@ -303,7 +303,7 @@ impl AdminDatabase {
             insert_audit_event(
                 &mut *transaction,
                 actor,
-                "issue.sync_github",
+                AuditAction::IssueSyncGithub,
                 Some(issue_id.0),
                 serde_json::json!({
                     "source": source,
@@ -325,10 +325,10 @@ impl AdminDatabase {
         repository: &str,
         number: i64,
         github_id: Option<i64>,
-        state: &str,
-        source: &str,
+        state: GithubLinkState,
+        source: GithubSyncSource,
     ) -> Result<Option<IssueId>> {
-        if !matches!(state, "missing" | "moved" | "unavailable") {
+        if !state.is_unreachable() {
             return Err(AppError::InvalidRequest("Invalid GitHub link state"));
         }
 
@@ -357,13 +357,13 @@ impl AdminDatabase {
         if github_id.is_some_and(|id| previous_id.is_some_and(|previous| previous != id)) {
             return Err(AppError::Conflict("GitHub issue identity changed"));
         }
-        let previous_state: String = row.get("github_state");
+        let previous_state: GithubLinkState = row.get("github_state");
 
         sqlx::query(
             "UPDATE issues
              SET github_issue_id = COALESCE(github_issue_id, $2),
                  github_state = $3,
-                 state = 'needs_attention',
+                 state = $4,
                  github_checked_at = now(),
                  updated_at = CASE WHEN github_state <> $3 THEN now() ELSE updated_at END
              WHERE id = $1",
@@ -371,6 +371,7 @@ impl AdminDatabase {
         .bind(issue_id)
         .bind(github_id)
         .bind(state)
+        .bind(IssueState::tracking(state))
         .execute(&mut *transaction)
         .await?;
 
@@ -378,7 +379,7 @@ impl AdminDatabase {
             insert_audit_event(
                 &mut *transaction,
                 None,
-                "issue.sync_github",
+                AuditAction::IssueSyncGithub,
                 Some(issue_id.0),
                 serde_json::json!({
                     "source": source,

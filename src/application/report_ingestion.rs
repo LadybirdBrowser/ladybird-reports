@@ -5,8 +5,8 @@ use chrono::{Duration, Utc};
 use crate::{
     domain::{
         AttachmentId, AttachmentReference, ChallengeClaims, ChallengeId, FieldDefinition, ReportId,
-        ReportManifest, RuntimeConfiguration, UploadId, is_sha256_hex, proof_is_valid, sha256_hex,
-        sign_challenge, verify_challenge,
+        ReportManifest, RuntimeConfiguration, StorageState, UploadId, is_sha256_hex,
+        proof_is_valid, sha256_hex, sign_challenge, verify_challenge,
     },
     error::{AppError, Result},
     infrastructure::{
@@ -263,7 +263,7 @@ impl ReportIngestionService {
             let receipt = ReportReceipt {
                 report_id,
                 digest_matches: true,
-                storage_state: "pending_files".into(),
+                storage_state: StorageState::PendingFiles,
                 staging_id,
             };
 
@@ -341,7 +341,7 @@ impl ReportIngestionService {
     }
 
     async fn recover_receipt(&self, receipt: &ReportReceipt) -> Result<()> {
-        if receipt.storage_state == "ready" {
+        if receipt.storage_state == StorageState::Ready {
             return Ok(());
         }
 

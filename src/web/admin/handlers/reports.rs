@@ -10,8 +10,8 @@ use serde::{Deserialize, Serialize};
 use crate::{
     application::{IssueProposal, propose_issue, title_for_report},
     domain::{
-        AttachmentId, IssueId, ParsedStackTrace, ReportId, ReportSearch, filter_expression,
-        parse_stack_trace, stack_fingerprint,
+        AttachmentId, FieldKind, GithubLinkState, IssueId, ParsedStackTrace, ReportId, ReportKind,
+        ReportSearch, ReportState, filter_expression, parse_stack_trace, stack_fingerprint,
     },
     error::{AppError, Result},
     infrastructure::database::{REPORT_PAGE_SIZE, ReportQuery, SEARCH_VALUE_LIMIT},
@@ -133,11 +133,9 @@ pub struct ReportTemplate {
 pub struct ReportView {
     id: ReportId,
     title: String,
-    state: String,
+    state: ReportState,
     overview: Vec<OverviewField>,
     is_assigned: bool,
-    is_confirmed: bool,
-    is_rejected: bool,
     has_submission_source: bool,
     submission_source_is_blocked: bool,
 }
@@ -152,7 +150,7 @@ pub struct LinkedIssueView {
 pub struct PotentialIssueView {
     id: IssueId,
     title: String,
-    github_state: String,
+    github_state: GithubLinkState,
 }
 
 pub struct OverviewField {
@@ -165,7 +163,7 @@ pub struct OverviewField {
 pub struct FieldView {
     key: String,
     label: String,
-    kind: String,
+    kind: FieldKind,
     value: String,
     is_multiline: bool,
     stack: Option<ParsedStackTrace>,
@@ -240,7 +238,7 @@ async fn load_report_list(
     let reports = reports
         .into_iter()
         .map(|report| {
-            let (state_label, state_tone) = report_state(&report.state);
+            let (state_label, state_tone) = report_state(report.state);
 
             ReportRow {
                 id: report.id,
@@ -276,7 +274,7 @@ pub async fn search_options(
         .await?
         .into_iter()
         .map(|report| {
-            let (state_label, badge_tone) = report_state(&report.state);
+            let (state_label, badge_tone) = report_state(report.state);
             let badge = report
                 .issue_title
                 .map(|title| format!("{state_label} · {title}"))
@@ -350,13 +348,13 @@ pub async fn search_completions(
     let key = key.to_ascii_lowercase();
     let prefix = value_prefix.trim_matches('"').to_ascii_lowercase();
     let values = match key.as_str() {
-        "state" => vec!["triage", "confirmed", "rejected"]
-            .into_iter()
-            .map(str::to_owned)
+        "state" => ReportState::ALL
+            .iter()
+            .map(|state| state.as_str().to_owned())
             .collect(),
-        "kind" => vec!["crash", "web_compat"]
-            .into_iter()
-            .map(str::to_owned)
+        "kind" => ReportKind::ALL
+            .iter()
+            .map(|kind| kind.as_str().to_owned())
             .collect(),
         "id" | "report" => Vec::new(),
         _ => {
@@ -382,11 +380,10 @@ pub async fn search_completions(
     Ok(Json(ReportCompletionResponse { results }))
 }
 
-fn report_kind_label(kind: &str) -> &str {
+fn report_kind_label(kind: ReportKind) -> &'static str {
     match kind {
-        "crash" => "Crash report",
-        "web_compat" => "Web compatibility report",
-        _ => "Diagnostic report",
+        ReportKind::Crash => "Crash report",
+        ReportKind::WebCompat => "Web compatibility report",
     }
 }
 
@@ -449,9 +446,9 @@ pub async fn show(
     let mut overview = vec![
         OverviewField::searchable(
             "Report type",
-            report_kind_label(&details.report.kind),
+            report_kind_label(details.report.kind),
             "kind",
-            &details.report.kind,
+            details.report.kind.as_str(),
         ),
         OverviewField::searchable(
             "Browser version",
@@ -493,11 +490,9 @@ pub async fn show(
     let report_view = ReportView {
         id: details.report.id,
         title,
-        state: details.report.state.clone(),
+        state: details.report.state,
         overview,
         is_assigned: details.report.issue_id.is_some(),
-        is_confirmed: details.report.state == "confirmed",
-        is_rejected: details.report.state == "rejected",
         has_submission_source: details.report.has_submission_source,
         submission_source_is_blocked: details.report.submission_source_is_blocked,
     };
@@ -507,7 +502,7 @@ pub async fn show(
 
     let signal = field_string(&details.fields, "signal");
     let process = field_string(&details.fields, "process");
-    let report_kind = details.report.kind.clone();
+    let report_kind = details.report.kind;
 
     for field in details.fields {
         let value = field
@@ -516,19 +511,17 @@ pub async fn show(
             .map(str::to_owned)
             .unwrap_or_else(|| field.value.to_string());
         let known = field.current_label.is_some();
+        let is_stack = field.is_stack_trace();
         let key = field.key;
 
         if matches!(key.as_str(), "platform" | "architecture") {
             continue;
         }
 
-        let is_stack = field.kind == "stack_trace"
-            || field.current_kind.as_deref() == Some("stack_trace")
-            || (key == "stack" && field.kind == "multiline");
         let stack = is_stack.then(|| parse_stack_trace(&value));
         let stack_signature = stack.as_ref().and_then(|parsed| {
             stack_fingerprint(
-                &report_kind,
+                report_kind,
                 process.as_deref(),
                 signal.as_deref(),
                 &parsed.frame_keys,
@@ -539,17 +532,17 @@ pub async fn show(
             })
         });
         let display_kind = if is_stack {
-            "stack_trace".to_owned()
+            FieldKind::StackTrace
         } else {
-            field.kind.clone()
+            field.kind
         };
+        let holds_text_block = matches!(field.kind, FieldKind::Multiline | FieldKind::StackTrace);
         let view = FieldView {
             label: field.current_label.clone().unwrap_or_else(|| key.clone()),
-            is_multiline: is_stack || matches!(field.kind.as_str(), "multiline" | "stack_trace"),
+            is_multiline: is_stack || holds_text_block,
             stack,
             stack_signature,
-            filter_url: (!matches!(field.kind.as_str(), "multiline" | "stack_trace"))
-                .then(|| field_filter_url(&key, &value)),
+            filter_url: (!holds_text_block).then(|| field_filter_url(&key, &value)),
             kind: display_kind,
             key,
             value,
@@ -722,6 +715,7 @@ pub async fn unlink_from_issue(
     Ok(report_redirect(report_id))
 }
 
+/// The states a maintainer can set directly. Rejecting has its own action.
 #[derive(Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ReportWorkflowState {
@@ -729,11 +723,11 @@ pub enum ReportWorkflowState {
     Confirmed,
 }
 
-impl ReportWorkflowState {
-    fn as_str(&self) -> &'static str {
-        match self {
-            Self::Triage => "triage",
-            Self::Confirmed => "confirmed",
+impl From<ReportWorkflowState> for ReportState {
+    fn from(state: ReportWorkflowState) -> Self {
+        match state {
+            ReportWorkflowState::Triage => Self::Triage,
+            ReportWorkflowState::Confirmed => Self::Confirmed,
         }
     }
 }
@@ -755,7 +749,7 @@ pub async fn set_state(
     Form(form): Form<ReportStateForm>,
 ) -> Result<Redirect> {
     session.verify_csrf(&form.csrf)?;
-    let target = form.state.as_str();
+    let target = ReportState::from(form.state);
     let previous = state
         .database
         .set_report_state(report_id, target, session.github_id)
@@ -764,8 +758,8 @@ pub async fn set_state(
     if let Some(previous) = previous {
         tracing::info!(
             event = "report.update_state",
-            from = previous,
-            to = target,
+            from = %previous,
+            to = %target,
             %report_id,
             actor = session.login,
         );
@@ -782,15 +776,15 @@ pub async fn reject(
     session.verify_csrf(&form.csrf)?;
     let previous = state
         .database
-        .set_report_state(report_id, "rejected", session.github_id)
+        .set_report_state(report_id, ReportState::Rejected, session.github_id)
         .await?;
 
     if let Some(previous) = previous {
         tracing::warn!(
             event = "report.update_state",
             %report_id,
-            from = previous,
-            to = "rejected",
+            from = %previous,
+            to = %ReportState::Rejected,
             actor = session.login,
         );
     }
@@ -959,13 +953,15 @@ fn next_page_url(
     ))
 }
 
-fn report_state(state: &str) -> (&'static str, &'static str) {
-    match state {
-        "triage" => ("Needs triage", "triage"),
-        "confirmed" => ("Confirmed", "confirmed"),
-        "rejected" => ("Rejected", "rejected"),
-        _ => ("Unknown state", "neutral"),
-    }
+/// The label shown for a state and the badge tone, which is named after it.
+fn report_state(state: ReportState) -> (&'static str, &'static str) {
+    let label = match state {
+        ReportState::Triage => "Needs triage",
+        ReportState::Confirmed => "Confirmed",
+        ReportState::Rejected => "Rejected",
+    };
+
+    (label, state.as_str())
 }
 
 fn default_report_search() -> String {
