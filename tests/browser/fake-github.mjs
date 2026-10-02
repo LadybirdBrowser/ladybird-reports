@@ -6,6 +6,7 @@ let latestCreatedIssue;
 const issueFieldValues = new Map();
 let issueFieldVisibility = "organization_members_only";
 let issueResponseDelayMs = 0;
+let membershipDenied = false;
 let refreshCount = 0;
 let issuedTokenCount = 0;
 const activeRefreshTokens = new Set();
@@ -90,7 +91,18 @@ const server = createServer((request, response) => {
     request.method === "GET" &&
     url.pathname === "/orgs/LadybirdBrowser/teams/maintainers/memberships/browser-tester"
   ) {
+    if (membershipDenied) {
+      sendJson(response, 404, { message: "Not Found" });
+      return;
+    }
+
     sendJson(response, 200, { state: "active" });
+    return;
+  }
+
+  if (request.method === "POST" && url.pathname === "/test/membership-denied") {
+    membershipDenied = url.searchParams.get("denied") === "true";
+    sendJson(response, 200, { denied: membershipDenied });
     return;
   }
 

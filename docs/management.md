@@ -86,6 +86,10 @@ incoming-webhook URL to enable delivery, or to `null` to pause it without discar
 queued notifications. The remaining values control queue polling, request timeouts,
 retry delays, and the native-stack excerpt included in each message.
 
+The `audit` object controls audit log behavior. `denied_sign_in_window_seconds`
+(default 600) limits how often one GitHub account that is denied at sign-in is
+recorded; set it to 0 to record every denial.
+
 Recognized field definitions control labels, value types, and display order.
 Drag a row handle to reorder it; the new order is saved immediately. Unknown
 fields remain available in reports until a definition is added.
@@ -98,3 +102,10 @@ names describe the operation; details record the affected fields or state
 transition. For example, `report.update_state` includes `from` and `to` values.
 Configuration events record changed setting paths without storing their values
 again. Anonymous report submission events have no maintainer actor.
+
+`session.denied` records a GitHub account that completed sign-in but is not on
+the authorization team. The account is not a maintainer, so its login is shown in
+the actor column and its GitHub ID is in the details. Repeated denials from the
+same account within `audit.denied_sign_in_window_seconds` (default 600) are
+recorded once; set it to 0 to record every denial. GitHub outages and rate limits
+during sign-in are not recorded as denials.

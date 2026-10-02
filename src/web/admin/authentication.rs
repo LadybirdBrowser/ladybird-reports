@@ -142,14 +142,39 @@ pub async fn github_callback(
     let user = state.github.current_user(&token.access_token).await?;
     let configuration = state.database.configuration().await?;
 
-    state
+    if let Err(error) = state
         .github
         .verify_team_membership(
             &token.access_token,
             &configuration.github_authorization_team,
             &user.login,
         )
-        .await?;
+        .await
+    {
+        // Only a definite denial is recorded. GitHub outages and rate limits say
+        // nothing about the account, and a failed audit write must never change
+        // the outcome of the sign-in.
+        if matches!(error, AppError::PermissionDenied(_)) {
+            if let Err(audit_error) = state
+                .database
+                .record_denied_sign_in(
+                    user.id,
+                    &user.login,
+                    configuration.audit.denied_sign_in_window_seconds,
+                )
+                .await
+            {
+                tracing::warn!(event = "session.denied_audit_failed", ?audit_error);
+            }
+            tracing::warn!(
+                event = "session.denied",
+                github_id = user.id,
+                login = user.login
+            );
+        }
+
+        return Err(error);
+    }
 
     let session_token = random_token();
     let csrf_token = random_token();

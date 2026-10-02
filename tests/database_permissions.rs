@@ -64,6 +64,10 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
             .expect("reporting role reads its runtime configuration projection");
     assert!(reporting_configuration.get("limits").is_some());
     assert!(reporting_configuration.get("discord").is_none());
+    assert!(
+        reporting_configuration.get("audit").is_none(),
+        "administrative settings stay out of the ingestion projection"
+    );
 
     assert!(
         sqlx::query("SELECT value FROM runtime_configuration")
@@ -359,6 +363,19 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
     assert_eq!(configuration.membership_recheck_seconds, 600);
     assert_eq!(configuration.session_lifetime_seconds, 24 * 60 * 60);
     assert_eq!(configuration.token_refresh_before_seconds, 15 * 60);
+    assert_eq!(configuration.audit.denied_sign_in_window_seconds, 10 * 60);
+    let stored_window: Option<i64> = sqlx::query_scalar(
+        "SELECT (value->'audit'->>'denied_sign_in_window_seconds')::bigint
+         FROM runtime_configuration",
+    )
+    .fetch_one(&admin_pool)
+    .await
+    .expect("read stored denied sign-in window");
+    assert_eq!(
+        stored_window,
+        Some(600),
+        "the migration backfills the setting"
+    );
     let original_team = configuration.github_authorization_team;
 
     let integration_session_hash = "9".repeat(64);
@@ -392,6 +409,87 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
     .await
     .expect("count session audit events");
     assert_eq!(session_audit_count, 2);
+
+    // A denied account is not a maintainer, so it is recorded without an actor,
+    // and repeated denials of the same account do not flood the log.
+    sqlx::query("DELETE FROM audit_events WHERE action = 'session.denied'")
+        .execute(&admin_pool)
+        .await
+        .expect("clear denied sign-in events");
+    for _ in 0..3 {
+        admin_database
+            .record_denied_sign_in(424_242, "outsider", 600)
+            .await
+            .expect("record denied sign-in");
+    }
+    admin_database
+        .record_denied_sign_in(424_243, "another-outsider", 600)
+        .await
+        .expect("record denied sign-in for another account");
+
+    let denied: Vec<(Option<i64>, String)> = sqlx::query_as(
+        "SELECT actor, details->>'login'
+         FROM audit_events
+         WHERE action = 'session.denied'
+         ORDER BY id",
+    )
+    .fetch_all(&admin_pool)
+    .await
+    .expect("read denied sign-in events");
+    assert_eq!(
+        denied,
+        vec![
+            (None, "outsider".to_owned()),
+            (None, "another-outsider".to_owned()),
+        ]
+    );
+
+    sqlx::query(
+        "UPDATE audit_events
+         SET created_at = now() - interval '11 minutes'
+         WHERE action = 'session.denied'",
+    )
+    .execute(&admin_pool)
+    .await
+    .expect("age denied sign-in events");
+    admin_database
+        .record_denied_sign_in(424_242, "outsider", 600)
+        .await
+        .expect("record denied sign-in after the window");
+    let denied_count: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM audit_events WHERE action = 'session.denied'")
+            .fetch_one(&admin_pool)
+            .await
+            .expect("count denied sign-in events");
+    assert_eq!(denied_count, 3);
+
+    // The window is configurable: a shorter one lets a repeat through sooner,
+    // and zero records every denial.
+    sqlx::query(
+        "UPDATE audit_events
+         SET created_at = now() - interval '90 seconds'
+         WHERE action = 'session.denied'",
+    )
+    .execute(&admin_pool)
+    .await
+    .expect("age denied sign-in events");
+    admin_database
+        .record_denied_sign_in(424_242, "outsider", 600)
+        .await
+        .expect("record denied sign-in inside a long window");
+    assert_eq!(count_denied_sign_ins(&admin_pool).await, 3);
+    admin_database
+        .record_denied_sign_in(424_242, "outsider", 60)
+        .await
+        .expect("record denied sign-in outside a short window");
+    assert_eq!(count_denied_sign_ins(&admin_pool).await, 4);
+    for _ in 0..2 {
+        admin_database
+            .record_denied_sign_in(424_242, "outsider", 0)
+            .await
+            .expect("record denied sign-in without throttling");
+    }
+    assert_eq!(count_denied_sign_ins(&admin_pool).await, 6);
 
     let team_change_session_hash = "8".repeat(64);
     admin_database
@@ -1687,6 +1785,13 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
     .await
     .expect("count canonical issues");
     assert_eq!(destination_count, 1);
+}
+
+async fn count_denied_sign_ins(pool: &sqlx::PgPool) -> i64 {
+    sqlx::query_scalar("SELECT count(*) FROM audit_events WHERE action = 'session.denied'")
+        .fetch_one(pool)
+        .await
+        .expect("count denied sign-in events")
 }
 
 async fn insert_stack_report_for_matching(

@@ -75,6 +75,36 @@ test("refreshes GitHub tokens and keeps an active session for 24 hours", async (
   expect((await page.context().cookies()).some((cookie) => cookie.name === "session")).toBe(false);
 });
 
+test("records a denied sign-in once and still lets maintainers in", async ({ page }) => {
+  const fakeGithub = "http://127.0.0.1:3101";
+  const setDenied = (denied: boolean) =>
+    page.request.post(`${fakeGithub}/test/membership-denied?denied=${denied}`);
+
+  await setDenied(true);
+  try {
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      await page.goto("/login");
+      await page.getByRole("link", { name: "Continue with GitHub" }).click();
+      await expect(page.getByText("Access denied")).toBeVisible();
+      expect((await page.context().cookies()).some((cookie) => cookie.name === "session"))
+        .toBe(false);
+    }
+  } finally {
+    await setDenied(false);
+  }
+
+  await page.goto("/login");
+  await page.getByRole("link", { name: "Continue with GitHub" }).click();
+  await expect(page).toHaveURL(/127\.0\.0\.1:3100\/$/);
+
+  await page.goto("/operations");
+  const denied = page.locator("[data-audit-rows] tr").filter({ hasText: "session.denied" });
+  await expect(denied).toHaveCount(1);
+  await expect(denied.locator("td").nth(1)).toHaveText("browser-tester");
+  await expect(denied.locator("code")).toContainText('"github_id":12345');
+  await expect(denied.locator("code")).toContainText('"login":"browser-tester"');
+});
+
 test("sign-in ignores an external return destination", async ({ page }) => {
   await page.goto("/login?next=%2F%2Fevil.example%2Fpath");
   await expect(page.getByRole("link", { name: "Continue with GitHub" }))

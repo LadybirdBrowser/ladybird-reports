@@ -96,6 +96,39 @@ impl AdminDatabase {
         Ok(())
     }
 
+    /// Records a GitHub account that completed OAuth but is not authorized.
+    ///
+    /// The account is not a maintainer, so it cannot be the audit actor and is
+    /// identified in the details instead. Any GitHub account can trigger this,
+    /// so repeats from one account within `window_seconds` are not recorded
+    /// again; otherwise a single account could push real entries out of the
+    /// log. A window of zero records every denial.
+    pub async fn record_denied_sign_in(
+        &self,
+        github_id: i64,
+        login: &str,
+        window_seconds: u64,
+    ) -> Result<()> {
+        sqlx::query(
+            "INSERT INTO audit_events (action, details)
+             SELECT 'session.denied', jsonb_build_object('github_id', $1::bigint, 'login', $2::text)
+             WHERE NOT EXISTS (
+                SELECT 1
+                FROM audit_events
+                WHERE action = 'session.denied'
+                    AND details @> jsonb_build_object('github_id', $1::bigint)
+                    AND created_at > now() - make_interval(secs => $3::double precision)
+             )",
+        )
+        .bind(github_id)
+        .bind(login)
+        .bind(window_seconds as f64)
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+
     pub async fn find_session(&self, token_hash: &str) -> Result<Option<SessionRecord>> {
         let row = sqlx::query(
             "SELECT

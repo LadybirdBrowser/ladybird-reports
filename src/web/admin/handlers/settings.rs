@@ -270,12 +270,27 @@ fn event_view(event: AuditEvent) -> EventView {
         (label, url)
     });
 
+    let actor = event
+        .actor_login
+        .or_else(|| denied_sign_in_login(&event.action, &event.details))
+        .unwrap_or_else(|| "system".into());
+
     EventView {
         action: event.action,
-        actor: event.actor_login.unwrap_or_else(|| "system".into()),
+        actor,
         target_label: target.as_ref().map(|(label, _)| label.clone()),
         target_url: target.and_then(|(_, url)| url),
         details: event.details.to_string(),
         created_at: event.created_at.format("%d %b %Y, %H:%M UTC").to_string(),
     }
+}
+
+/// A denied sign-in has no maintainer actor, so the account that tried to sign
+/// in is shown instead of "system".
+fn denied_sign_in_login(action: &str, details: &serde_json::Value) -> Option<String> {
+    if action != "session.denied" {
+        return None;
+    }
+
+    details.get("login")?.as_str().map(str::to_owned)
 }

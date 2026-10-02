@@ -30,6 +30,22 @@ pub struct RuntimeConfiguration {
     #[serde(default = "default_token_refresh_before_seconds")]
     pub token_refresh_before_seconds: u64,
     pub membership_recheck_seconds: u64,
+    #[serde(default)]
+    pub audit: AuditConfiguration,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct AuditConfiguration {
+    pub denied_sign_in_window_seconds: u64,
+}
+
+impl Default for AuditConfiguration {
+    fn default() -> Self {
+        Self {
+            denied_sign_in_window_seconds: 10 * 60,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -110,6 +126,7 @@ impl Default for RuntimeConfiguration {
             session_lifetime_seconds: default_session_lifetime_seconds(),
             token_refresh_before_seconds: default_token_refresh_before_seconds(),
             membership_recheck_seconds: 600,
+            audit: AuditConfiguration::default(),
         }
     }
 }
@@ -425,6 +442,13 @@ pub const SETTING_DEFINITIONS: &[SettingDefinition] = &[
         "Controls how often an active session revalidates GitHub team membership.",
         "Seconds between membership checks for one session.",
     ),
+    setting(
+        "denied_sign_in_window_seconds",
+        "audit.denied_sign_in_window_seconds",
+        "Denied sign-in audit window",
+        "Records a denied sign-in once per GitHub account in this window, so one account cannot flood the audit log.",
+        "Seconds between audit entries for one account; 0 records every denied sign-in.",
+    ),
 ];
 
 const fn setting(
@@ -605,7 +629,8 @@ impl RuntimeConfiguration {
             || !(30..=3600).contains(&proof.challenge_lifetime_seconds)
             || !(3600..=2_592_000).contains(&self.session_lifetime_seconds)
             || !(60..=3600).contains(&self.token_refresh_before_seconds)
-            || !(30..=3600).contains(&self.membership_recheck_seconds);
+            || !(30..=3600).contains(&self.membership_recheck_seconds)
+            || self.audit.denied_sign_in_window_seconds > 86_400;
 
         let invalid = invalid
             || !(60..=86_400).contains(&maintenance.sweep_interval_seconds)
@@ -717,6 +742,39 @@ mod tests {
             .collect::<BTreeSet<_>>();
 
         assert_eq!(documented_paths, configuration_paths);
+    }
+
+    #[test]
+    fn audit_settings_default_when_absent_and_are_bounded() {
+        let mut stored = serde_json::to_value(RuntimeConfiguration::default())
+            .expect("serialize default runtime configuration");
+        let stored = stored.as_object_mut().expect("configuration is an object");
+
+        // Configuration stored before the audit group existed.
+        stored.remove("audit");
+        let configuration: RuntimeConfiguration =
+            serde_json::from_value(stored.clone().into()).expect("configuration without audit");
+        assert_eq!(configuration.audit.denied_sign_in_window_seconds, 600);
+
+        // An audit group that predates a setting inside it.
+        stored.insert("audit".into(), serde_json::json!({}));
+        let configuration: RuntimeConfiguration =
+            serde_json::from_value(stored.clone().into()).expect("empty audit group");
+        assert_eq!(configuration.audit.denied_sign_in_window_seconds, 600);
+
+        stored.insert("audit".into(), serde_json::json!({ "unknown_setting": 1 }));
+        assert!(serde_json::from_value::<RuntimeConfiguration>(stored.clone().into()).is_err());
+
+        for (seconds, valid) in [(0, true), (1, true), (86_400, true), (86_401, false)] {
+            let configuration = RuntimeConfiguration {
+                audit: AuditConfiguration {
+                    denied_sign_in_window_seconds: seconds,
+                },
+                ..RuntimeConfiguration::default()
+            };
+
+            assert_eq!(configuration.validate().is_ok(), valid, "{seconds} seconds");
+        }
     }
 
     #[test]
