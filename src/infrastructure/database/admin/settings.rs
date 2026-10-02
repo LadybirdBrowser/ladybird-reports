@@ -246,9 +246,17 @@ impl AdminDatabase {
         Ok(())
     }
 
-    pub async fn recent_operations(&self) -> Result<Vec<super::AuditEvent>> {
+    /// Returns audit events newest first. `before_id` continues a listing from
+    /// the last event of the previous page; ids only ever increase, so the
+    /// cursor stays stable while new events are written.
+    pub async fn operations_page(
+        &self,
+        before_id: Option<i64>,
+        limit: i64,
+    ) -> Result<Vec<super::AuditEvent>> {
         let rows = sqlx::query(
             "SELECT
+                audit_events.id,
                 audit_events.action,
                 maintainers.login AS actor_login,
                 audit_events.entity_id,
@@ -256,15 +264,19 @@ impl AdminDatabase {
                 audit_events.created_at
              FROM audit_events
              LEFT JOIN maintainers ON maintainers.github_id = audit_events.actor
+             WHERE $1::bigint IS NULL OR audit_events.id < $1
              ORDER BY audit_events.id DESC
-             LIMIT 200",
+             LIMIT $2",
         )
+        .bind(before_id)
+        .bind(limit)
         .fetch_all(&self.pool)
         .await?;
 
         Ok(rows
             .into_iter()
             .map(|row| super::AuditEvent {
+                id: row.get("id"),
                 action: row.get("action"),
                 actor_login: row.get("actor_login"),
                 entity_id: row.get("entity_id"),

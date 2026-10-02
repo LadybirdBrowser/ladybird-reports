@@ -49,6 +49,19 @@ async fn main() -> Result<()> {
     .execute(&mut *transaction)
     .await?;
 
+    // The oldest events: enough to push the audit log past one page. They are
+    // inserted first so every event created below stays on the first page.
+    sqlx::query(
+        "INSERT INTO audit_events (action, details, created_at)
+         SELECT
+            'fixture.history',
+            jsonb_build_object('sequence', sequence),
+            now() - make_interval(days => 30, mins => sequence)
+         FROM generate_series(1, 130) AS sequence",
+    )
+    .execute(&mut *transaction)
+    .await?;
+
     sqlx::query(
         "UPDATE runtime_configuration
          SET value = value || jsonb_build_object(

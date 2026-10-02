@@ -96,6 +96,10 @@ pub fn router(state: AdminState) -> Router {
             post(handlers::settings::reorder_fields),
         )
         .route("/operations", get(handlers::settings::operations))
+        .route(
+            "/api/operations-list",
+            get(handlers::settings::operations_list),
+        )
         .route("/logout", post(authentication::logout))
         .route_layer(middleware::from_fn_with_state(
             state.clone(),

@@ -766,6 +766,47 @@ test.describe("authenticated management UI", () => {
     await expect(page.getByText("session.signed_in", { exact: true }).first()).toBeVisible();
   });
 
+  test("loads older audit events without reloading the page", async ({ page }) => {
+    await page.goto("/operations");
+
+    const rows = page.locator("[data-audit-rows] tr");
+    const history = rows.filter({ hasText: "fixture.history" });
+    const showMore = page.getByRole("button", { name: "Show more…" });
+
+    await expect(rows).toHaveCount(100);
+    await expect(showMore).toBeVisible();
+
+    // Prove the page is not reloaded: this marker disappears on navigation.
+    await page.evaluate(() => {
+      (window as unknown as { auditLogMarker: boolean }).auditLogMarker = true;
+    });
+    const firstRow = await rows.first().innerText();
+    const historyBefore = await history.count();
+
+    // Earlier tests add their own events, so keep loading until the last page.
+    let pages = 0;
+    while (await showMore.count() > 0) {
+      const before = await rows.count();
+      await showMore.click();
+      await expect.poll(() => rows.count()).toBeGreaterThan(before);
+      pages += 1;
+      expect(pages).toBeLessThan(10);
+    }
+
+    expect(pages).toBeGreaterThanOrEqual(1);
+    expect(await history.count()).toBeGreaterThan(historyBefore);
+    await expect(rows.first()).toHaveText(firstRow);
+    expect(await page.evaluate(
+      () => (window as unknown as { auditLogMarker?: boolean }).auditLogMarker,
+    )).toBe(true);
+    await expect(page).toHaveURL(/\/operations$/);
+
+    // Page boundaries neither skip nor repeat events.
+    await expect(history).toHaveCount(130);
+    const sequences = await history.locator("code").allInnerTexts();
+    expect(new Set(sequences).size).toBe(130);
+  });
+
   test("links an exact issue match and unlinks it from the report", async ({ page }) => {
     await page.goto("/issues");
     await page.getByRole("link", { name: "Intermittent navigation timeout" }).click();

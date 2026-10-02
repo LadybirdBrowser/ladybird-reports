@@ -191,6 +191,7 @@ pub struct IssueDetails {
 
 #[derive(Clone, Debug)]
 pub struct AuditEvent {
+    pub id: i64,
     pub action: String,
     pub actor_login: Option<String>,
     pub entity_id: Option<uuid::Uuid>,

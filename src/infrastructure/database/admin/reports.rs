@@ -820,6 +820,7 @@ impl AdminDatabase {
     pub(super) async fn audit_events(&self, entity_id: uuid::Uuid) -> Result<Vec<AuditEvent>> {
         let rows = sqlx::query(
             "SELECT
+                audit_events.id,
                 audit_events.action,
                 maintainers.login AS actor_login,
                 audit_events.entity_id,
@@ -838,6 +839,7 @@ impl AdminDatabase {
         Ok(rows
             .into_iter()
             .map(|row| AuditEvent {
+                id: row.get("id"),
                 action: row.get("action"),
                 actor_login: row.get("actor_login"),
                 entity_id: row.get("entity_id"),

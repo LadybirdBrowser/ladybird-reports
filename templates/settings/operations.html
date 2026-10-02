@@ -2,6 +2,8 @@
 
 {% block title %}Audit log{% endblock %}
 
+{% block scripts %}<script src="/assets/{{ asset_version }}/audit-log.js" defer></script>{% endblock %}
+
 {% block content %}
     <header class="page-header">
         <div>
@@ -13,49 +15,16 @@
         </div>
     </header>
 
-    <section class="card" aria-labelledby="operation-list-title">
+    <section
+        class="card"
+        aria-labelledby="operation-list-title"
+        data-audit-log
+    >
         <div class="card-header">
             <h2 id="operation-list-title">Latest activity</h2>
             <p>Newest first</p>
         </div>
-        {% if events.is_empty() %}
-            <div class="empty-state">
-                <strong>No audit events recorded</strong>
-                Administrative actions will appear here.
-            </div>
-        {% else %}
-            <div class="table-scroll">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Time</th>
-                            <th>Actor</th>
-                            <th>Action</th>
-                            <th>Target</th>
-                            <th>Details</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for event in events %}
-                            <tr>
-                                <td class="quiet">{{ event.created_at }}</td>
-                                <td>{{ event.actor }}</td>
-                                <td><span class="badge badge-neutral">{{ event.action }}</span></td>
-                                <td>
-                                    {% if let Some(url) = event.target_url %}
-                                        <a href="{{ url }}" title="Open {{ event.target_label.as_ref().unwrap() }}">
-                                            {{ event.target_label.as_ref().unwrap() }}
-                                        </a>
-                                    {% else if let Some(label) = event.target_label %}
-                                        <span class="quiet">{{ label }}</span>
-                                    {% endif %}
-                                </td>
-                                <td><code>{{ event.details }}</code></td>
-                            </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-        {% endif %}
+        <p class="visually-hidden" role="status" aria-live="polite" data-audit-status></p>
+        {% include "settings/_operations_list.html" %}
     </section>
 {% endblock %}

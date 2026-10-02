@@ -1,11 +1,17 @@
 use askama::Template;
-use axum::{Extension, Form, extract::State, http::StatusCode, response::Redirect};
+use axum::{
+    Extension, Form,
+    extract::{Query, State},
+    http::StatusCode,
+    response::Redirect,
+};
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
 
 use crate::{
     domain::{FieldKind, RuntimeConfiguration, SETTING_DEFINITIONS},
     error::{AppError, Result},
+    infrastructure::database::AuditEvent,
 };
 
 use super::super::{AdminState, TemplateResponse, authentication::Navigation, session::Session};
@@ -41,6 +47,14 @@ pub struct OperationsTemplate {
     navigation: Option<Navigation>,
     asset_version: &'static str,
     events: Vec<EventView>,
+    next_page: Option<String>,
+}
+
+#[derive(Template)]
+#[template(path = "settings/_operations_list.html")]
+pub struct OperationsListTemplate {
+    events: Vec<EventView>,
+    next_page: Option<String>,
 }
 
 pub struct EventView {
@@ -183,49 +197,85 @@ pub async fn reorder_fields(
     Ok(StatusCode::NO_CONTENT)
 }
 
+const OPERATIONS_PAGE_SIZE: usize = 100;
+
+#[derive(Deserialize)]
+pub struct OperationsQuery {
+    before_id: Option<i64>,
+}
+
 pub async fn operations(
     State(state): State<AdminState>,
     Extension(session): Extension<Session>,
 ) -> Result<TemplateResponse<OperationsTemplate>> {
-    let events = state
-        .database
-        .recent_operations()
-        .await?
-        .into_iter()
-        .map(|event| {
-            let target = event.entity_id.map(|id| {
-                let identifier = id.to_string();
-                let suffix = &identifier[identifier.len() - 8..];
-                let is_issue = event.action.starts_with("issue.");
-                let label = if is_issue {
-                    format!("Issue ·{suffix}")
-                } else {
-                    format!("Report ·{suffix}")
-                };
-                let url = if event.action == "issue.update_visibility" {
-                    None
-                } else if is_issue {
-                    Some(format!("/issues/{id}"))
-                } else {
-                    Some(format!("/reports/{id}"))
-                };
-                (label, url)
-            });
-
-            EventView {
-                action: event.action,
-                actor: event.actor_login.unwrap_or_else(|| "system".into()),
-                target_label: target.as_ref().map(|(label, _)| label.clone()),
-                target_url: target.and_then(|(_, url)| url),
-                details: event.details.to_string(),
-                created_at: event.created_at.format("%d %b %Y, %H:%M UTC").to_string(),
-            }
-        })
-        .collect();
+    let list = load_operations(&state, None).await?;
 
     Ok(TemplateResponse(OperationsTemplate {
         navigation: Some(Navigation::for_session(&state, &session)),
         asset_version: super::assets::asset_version(),
-        events,
+        events: list.events,
+        next_page: list.next_page,
     }))
+}
+
+pub async fn operations_list(
+    State(state): State<AdminState>,
+    Query(query): Query<OperationsQuery>,
+) -> Result<TemplateResponse<OperationsListTemplate>> {
+    Ok(TemplateResponse(
+        load_operations(&state, query.before_id).await?,
+    ))
+}
+
+async fn load_operations(
+    state: &AdminState,
+    before_id: Option<i64>,
+) -> Result<OperationsListTemplate> {
+    // One extra row tells us whether another page exists without a count query.
+    let mut events = state
+        .database
+        .operations_page(before_id, OPERATIONS_PAGE_SIZE as i64 + 1)
+        .await?;
+    let has_more = events.len() > OPERATIONS_PAGE_SIZE;
+    events.truncate(OPERATIONS_PAGE_SIZE);
+
+    let next_page = events
+        .last()
+        .filter(|_| has_more)
+        .map(|last| format!("/api/operations-list?before_id={}", last.id));
+
+    Ok(OperationsListTemplate {
+        events: events.into_iter().map(event_view).collect(),
+        next_page,
+    })
+}
+
+fn event_view(event: AuditEvent) -> EventView {
+    let target = event.entity_id.map(|id| {
+        let identifier = id.to_string();
+        let suffix = &identifier[identifier.len() - 8..];
+        let is_issue = event.action.starts_with("issue.");
+        let label = if is_issue {
+            format!("Issue ·{suffix}")
+        } else {
+            format!("Report ·{suffix}")
+        };
+        let url = if event.action == "issue.update_visibility" {
+            None
+        } else if is_issue {
+            Some(format!("/issues/{id}"))
+        } else {
+            Some(format!("/reports/{id}"))
+        };
+        (label, url)
+    });
+
+    EventView {
+        action: event.action,
+        actor: event.actor_login.unwrap_or_else(|| "system".into()),
+        target_label: target.as_ref().map(|(label, _)| label.clone()),
+        target_url: target.and_then(|(_, url)| url),
+        details: event.details.to_string(),
+        created_at: event.created_at.format("%d %b %Y, %H:%M UTC").to_string(),
+    }
 }

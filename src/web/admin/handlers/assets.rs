@@ -15,6 +15,7 @@ use super::super::AdminState;
 const STYLESHEET: &str = include_str!("../../../../assets/application.css");
 const JAVASCRIPT: &str = include_str!("../../../../assets/application.js");
 const REPORTS_JAVASCRIPT: &str = include_str!("../../../../assets/reports.js");
+const AUDIT_LOG_JAVASCRIPT: &str = include_str!("../../../../assets/audit-log.js");
 const LIST_SEARCH_JAVASCRIPT: &str = include_str!("../../../../assets/list-search.js");
 const GITHUB_ICON: &str = include_str!("../../../../assets/github-icon.svg");
 const LADYBIRD_MARK: &[u8] = include_bytes!("../../../../assets/ladybird-mark.png");
@@ -23,6 +24,8 @@ static STYLESHEET_ETAG: LazyLock<HeaderValue> = LazyLock::new(|| asset_etag(STYL
 static JAVASCRIPT_ETAG: LazyLock<HeaderValue> = LazyLock::new(|| asset_etag(JAVASCRIPT));
 static REPORTS_JAVASCRIPT_ETAG: LazyLock<HeaderValue> =
     LazyLock::new(|| asset_etag(REPORTS_JAVASCRIPT));
+static AUDIT_LOG_JAVASCRIPT_ETAG: LazyLock<HeaderValue> =
+    LazyLock::new(|| asset_etag(AUDIT_LOG_JAVASCRIPT));
 static LIST_SEARCH_JAVASCRIPT_ETAG: LazyLock<HeaderValue> =
     LazyLock::new(|| asset_etag(LIST_SEARCH_JAVASCRIPT));
 static GITHUB_ICON_ETAG: LazyLock<HeaderValue> = LazyLock::new(|| asset_etag(GITHUB_ICON));
@@ -33,6 +36,7 @@ static ASSET_VERSION: LazyLock<String> = LazyLock::new(|| {
         STYLESHEET.as_bytes(),
         JAVASCRIPT.as_bytes(),
         REPORTS_JAVASCRIPT.as_bytes(),
+        AUDIT_LOG_JAVASCRIPT.as_bytes(),
         LIST_SEARCH_JAVASCRIPT.as_bytes(),
         GITHUB_ICON.as_bytes(),
         LADYBIRD_MARK,
@@ -88,6 +92,11 @@ fn asset(name: &str) -> Option<(&'static [u8], &'static str, &'static HeaderValu
             REPORTS_JAVASCRIPT.as_bytes(),
             "text/javascript; charset=utf-8",
             &REPORTS_JAVASCRIPT_ETAG,
+        ),
+        "audit-log.js" => (
+            AUDIT_LOG_JAVASCRIPT.as_bytes(),
+            "text/javascript; charset=utf-8",
+            &AUDIT_LOG_JAVASCRIPT_ETAG,
         ),
         "list-search.js" => (
             LIST_SEARCH_JAVASCRIPT.as_bytes(),
