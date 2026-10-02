@@ -1,14 +1,12 @@
 use std::sync::Arc;
 
 use ladybird_reports::{
-    application::{DiscordNotificationService, backfill_failure_reasons},
+    application::{DiscordNotificationService, backfill_failure_reasons, run_stack_indexer},
     error::Result,
     infrastructure::{
         SecretCipher,
         attachments::FileAttachmentStore,
-        database::{
-            AdminDatabase, FAILURE_REASON_BATCH_SIZE, STACK_INDEX_BATCH_SIZE, initialize_database,
-        },
+        database::{AdminDatabase, FAILURE_REASON_BATCH_SIZE, initialize_database},
         discord::DiscordClient,
         github::GithubClient,
         read_secret,
@@ -160,24 +158,6 @@ async fn run_github_duplicates(state: AdminState) {
             Ok(None) => std::time::Duration::from_secs(5),
             Err(error) => {
                 tracing::warn!(event = "github.duplicate_claim_failed", ?error);
-                std::time::Duration::from_secs(30)
-            }
-        };
-        tokio::time::sleep(delay).await;
-    }
-}
-
-async fn run_stack_indexer(database: AdminDatabase) {
-    loop {
-        let delay = match database.index_pending_stack_traces().await {
-            Ok(STACK_INDEX_BATCH_SIZE) => std::time::Duration::from_millis(100),
-            Ok(0) => std::time::Duration::from_secs(1),
-            Ok(count) => {
-                tracing::info!(event = "stack_index.batch_complete", count);
-                std::time::Duration::from_secs(1)
-            }
-            Err(error) => {
-                tracing::warn!(event = "stack_index.failed", ?error);
                 std::time::Duration::from_secs(30)
             }
         };

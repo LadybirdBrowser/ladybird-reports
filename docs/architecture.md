@@ -82,8 +82,15 @@ not enter the signature. Unrecognized lines remain visible and the original text
 is always available in the report view.
 
 An admin background job indexes existing and new reports in bounded batches.
-When the algorithm version changes, it rebuilds older signatures from their
-preserved source text. The signature table is owned by the admin database role
+It waits for announcements instead of polling. PostgreSQL notifies the
+`ladybird_reports_stack_index` channel when a report becomes ready and when a
+field definition changes, because defining a field as a stack trace gives
+existing fields a signature to compute. On startup the job subscribes first, then
+scans for any trace without a current signature, so a report that became ready
+while the service was down is found. It repeats that scan if its connection is
+lost and re-established, or if an indexing run fails. When the algorithm version
+changes, the startup scan rebuilds older signatures from their preserved source
+text. The signature table is owned by the admin database role
 and cascades away with its source field at retention time. Similarity candidates
 are shown to maintainers on an unassigned report. A new report with an exact
 signature match to one active, linked issue is assigned to that issue by the

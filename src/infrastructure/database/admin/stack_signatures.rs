@@ -1,4 +1,6 @@
-use sqlx::Row;
+use std::time::Duration;
+
+use sqlx::{Row, postgres::PgListener};
 
 use crate::{
     domain::{
@@ -12,7 +14,11 @@ use crate::{
 use super::{PotentialIssueMatch, ReportSummary, insert_audit_event};
 
 /// Stack traces indexed per batch.
-pub const STACK_INDEX_BATCH_SIZE: usize = 50;
+const STACK_INDEX_BATCH_SIZE: usize = 50;
+
+/// Notified when stack traces may need indexing: a report became ready (the
+/// payload is its id) or a field definition changed (an empty payload).
+const STACK_INDEX_CHANNEL: &str = "ladybird_reports_stack_index";
 
 impl AdminDatabase {
     pub async fn potential_issue_matches(
@@ -90,6 +96,33 @@ impl AdminDatabase {
         .await?;
         self.populate_report_titles(&mut reports).await?;
         Ok(reports)
+    }
+
+    /// Starts listening for indexing work. Subscribe before the first scan: work
+    /// that appears while that scan runs then still has a notification waiting.
+    pub async fn listen_for_stack_index_work(&self) -> Result<PgListener> {
+        let mut listener = PgListener::connect_with(&self.pool).await?;
+        listener.listen(STACK_INDEX_CHANNEL).await?;
+
+        Ok(listener)
+    }
+
+    /// Indexes every pending stack trace, a batch at a time, pausing between full
+    /// batches so a large backlog does not monopolise the database. Returns how
+    /// many traces it indexed.
+    pub async fn drain_pending_stack_traces(&self, pause: Duration) -> Result<usize> {
+        let mut total = 0;
+
+        loop {
+            let count = self.index_pending_stack_traces().await?;
+            total += count;
+
+            if count < STACK_INDEX_BATCH_SIZE {
+                return Ok(total);
+            }
+
+            tokio::time::sleep(pause).await;
+        }
     }
 
     /// Rebuild a bounded batch. Old signatures are replaced when the algorithm changes.

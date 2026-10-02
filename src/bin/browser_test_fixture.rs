@@ -8,7 +8,7 @@ use ladybird_reports::{
     infrastructure::{
         SecretCipher,
         attachments::FileAttachmentStore,
-        database::{AdminDatabase, FAILURE_REASON_BATCH_SIZE, STACK_INDEX_BATCH_SIZE},
+        database::{AdminDatabase, FAILURE_REASON_BATCH_SIZE},
         hash_secret, random_token, read_secret,
     },
     runtime::required_environment,
@@ -353,7 +353,9 @@ async fn main() -> Result<()> {
 
     // Exercise the same backfill used for reports submitted before deployment.
     let database = AdminDatabase::from_pool(pool);
-    while database.index_pending_stack_traces().await? == STACK_INDEX_BATCH_SIZE {}
+    database
+        .drain_pending_stack_traces(std::time::Duration::ZERO)
+        .await?;
     let attachments = FileAttachmentStore::open(required_environment("ATTACHMENT_ROOT")?).await?;
     while backfill_failure_reasons(&database, &attachments).await? == FAILURE_REASON_BATCH_SIZE {}
 

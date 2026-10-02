@@ -7,7 +7,7 @@ use axum::{
 };
 use chrono::{Duration, Utc};
 use ladybird_reports::{
-    application::ReportIngestionService,
+    application::{ReportIngestionService, run_stack_indexer},
     domain::{
         AttachmentManifest, AttachmentMediaType, AuditAction, DiagnosticField, FieldKind,
         FieldValue, GithubLinkState, GithubSyncSource, IssueId, IssueReportAction, IssueSearch,
@@ -22,7 +22,7 @@ use ladybird_reports::{
     },
     web::public::{PublicState, router},
 };
-use sqlx::postgres::PgPoolOptions;
+use sqlx::postgres::{PgListener, PgPoolOptions};
 use tower::ServiceExt;
 
 #[tokio::test]
@@ -40,6 +40,13 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
     let (admin_pool, bootstrap) = initialize_database(&admin_url, None, &cipher)
         .await
         .expect("initialize database");
+    let mut stack_index_listener = PgListener::connect_with(&admin_pool)
+        .await
+        .expect("connect stack index listener");
+    stack_index_listener
+        .listen(STACK_INDEX_CHANNEL)
+        .await
+        .expect("listen for stack index work");
     let obsolete_report_columns: i64 = sqlx::query_scalar(
         "SELECT count(*) FROM information_schema.columns
          WHERE (table_name = 'reports'
@@ -340,6 +347,16 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
     .await
     .expect("count report submission audit events");
     assert_eq!(submitted_events, 1);
+
+    // Becoming ready announces the report to the stack indexer; changing a field
+    // definition announces that any report may need another look.
+    wait_for_stack_index_notification(&mut stack_index_listener, &report.report.id.to_string())
+        .await;
+    sqlx::query("UPDATE field_definitions SET kind = kind WHERE key = 'stack'")
+        .execute(&admin_pool)
+        .await
+        .expect("touch a field definition");
+    wait_for_stack_index_notification(&mut stack_index_listener, "").await;
 
     // Each text enum mirrors a CHECK constraint; they must list the same values.
     assert_constraint_values(&admin_pool, "reports_state_valid", ReportState::ALL).await;
@@ -1778,6 +1795,29 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
     .await
     .expect("count canonical issues");
     assert_eq!(destination_count, 1);
+
+    // The indexer is event-driven. Reports that became ready before it started
+    // are found by its startup check, spanning more than one batch; a report that
+    // becomes ready afterwards is found because the database announces it, as
+    // the worker has no timer to find it otherwise.
+    let missed_reports = {
+        let mut ids = Vec::new();
+        for index in 0..55 {
+            let stack = format!("#0 in Missed{index}::crash() at liblagom.so");
+            ids.push(insert_stack_report_for_matching(&admin_pool, &stack, 0).await);
+        }
+        ids
+    };
+    assert_eq!(indexed_count(&admin_pool, &missed_reports).await, 0);
+
+    let indexer = tokio::spawn(run_stack_indexer(admin_database.clone()));
+    wait_until_indexed(&admin_pool, &missed_reports).await;
+
+    let late_report =
+        insert_stack_report_for_matching(&admin_pool, "#0 in Announced::crash() at liblagom.so", 0)
+            .await;
+    wait_until_indexed(&admin_pool, &[late_report]).await;
+    indexer.abort();
 }
 
 fn new_session<'a>(authorized_team: &'a str, token_hash: &'a str) -> NewSession<'a> {
@@ -1836,6 +1876,45 @@ async fn assert_constraint_values<E: std::fmt::Display>(
     assert_eq!(declared, allowed, "{constraint} and its Rust enum disagree");
 }
 
+const STACK_INDEX_CHANNEL: &str = "ladybird_reports_stack_index";
+
+/// Waits for a stack index announcement with exactly this payload, skipping others.
+async fn wait_for_stack_index_notification(listener: &mut PgListener, payload: &str) {
+    tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        loop {
+            let notification = listener.recv().await.expect("receive stack index work");
+            if notification.payload() == payload {
+                return;
+            }
+        }
+    })
+    .await
+    .unwrap_or_else(|_| panic!("no stack index announcement with payload {payload:?}"));
+}
+
+async fn indexed_count(pool: &sqlx::PgPool, report_ids: &[ReportId]) -> i64 {
+    let ids = report_ids.iter().map(|id| id.0).collect::<Vec<_>>();
+
+    sqlx::query_scalar(
+        "SELECT count(DISTINCT report_id) FROM report_stack_signatures
+         WHERE report_id = ANY($1)",
+    )
+    .bind(ids)
+    .fetch_one(pool)
+    .await
+    .expect("count indexed reports")
+}
+
+async fn wait_until_indexed(pool: &sqlx::PgPool, report_ids: &[ReportId]) {
+    tokio::time::timeout(std::time::Duration::from_secs(30), async {
+        while indexed_count(pool, report_ids).await != report_ids.len() as i64 {
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        }
+    })
+    .await
+    .unwrap_or_else(|_| panic!("{} reports were not indexed in time", report_ids.len()));
+}
+
 async fn count_denied_sign_ins(pool: &sqlx::PgPool) -> i64 {
     sqlx::query_scalar("SELECT count(*) FROM audit_events WHERE action = 'session.denied'")
         .fetch_one(pool)
@@ -1849,6 +1928,9 @@ async fn insert_stack_report_for_matching(
     minutes_ago: i32,
 ) -> ReportId {
     let report_id = ReportId::new();
+    // One transaction, so the announcement that a report is ready is delivered
+    // only once its stack is there to be found.
+    let mut transaction = pool.begin().await.expect("begin matching test report");
     sqlx::query(
         "INSERT INTO reports (
             id, submission_id, manifest_digest, kind, client_version,
@@ -1862,7 +1944,7 @@ async fn insert_stack_report_for_matching(
     .bind(SubmissionId::new())
     .bind(UploadId::new())
     .bind(minutes_ago)
-    .execute(pool)
+    .execute(&mut *transaction)
     .await
     .expect("insert matching test report");
     sqlx::query(
@@ -1872,9 +1954,13 @@ async fn insert_stack_report_for_matching(
     )
     .bind(report_id)
     .bind(serde_json::json!(stack))
-    .execute(pool)
+    .execute(&mut *transaction)
     .await
     .expect("insert matching test stack");
+    transaction
+        .commit()
+        .await
+        .expect("commit matching test report");
     report_id
 }
 

@@ -14,7 +14,6 @@ pub use failure_reasons::FAILURE_REASON_BATCH_SIZE;
 pub(crate) use issues::validate_issue_text;
 pub use models::*;
 pub use reports::{REPORT_PAGE_SIZE, SEARCH_VALUE_LIMIT};
-pub use stack_signatures::STACK_INDEX_BATCH_SIZE;
 
 use sqlx::PgPool;
 
