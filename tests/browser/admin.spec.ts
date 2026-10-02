@@ -208,7 +208,8 @@ test.describe("authenticated management UI", () => {
     await expect(page.locator(".stack-frame-table")).toBeVisible();
     await expect(page.getByText("macOS", { exact: true }).first()).toBeVisible();
     await expect(page.getByText("arm64", { exact: true }).first()).toBeVisible();
-    await expect(page.locator(".definition-list > div")).toHaveCount(5);
+    // Type, version, platform, architecture, page URL and submission time.
+    await expect(page.locator(".definition-list > div")).toHaveCount(6);
     await expect(page.getByRole("heading", { name: "Additional fields" })).toBeVisible();
     await expect(page.locator(".report-field-value").filter({ hasText: "<script>" })).toBeVisible();
     await expect(page.getByRole("link", { name: "Filter reports by Stack trace" })).toHaveCount(0);
@@ -251,6 +252,31 @@ test.describe("authenticated management UI", () => {
     await expect(page.locator(`a[href="/reports/${reportId}"]`)).toBeVisible();
 
     expect(await page.evaluate(() => (window as any).fixtureWasExecuted)).toBeUndefined();
+  });
+
+  test("shows the page URL with the key facts instead of in the diagnostics", async ({ page }) => {
+    const pageUrl = "https://example.test/checkout?step=payment";
+    await page.goto(`/reports/${reportId}`);
+
+    const overview = page.getByRole("region", { name: "Overview" });
+    await expect(overview.locator("dt")).toHaveText([
+      "Report type",
+      "Browser version",
+      "Platform",
+      "Architecture",
+      "Page URL",
+      "Submitted",
+    ]);
+    await expect(overview.locator(".definition-list > div").filter({ hasText: "Page URL" }))
+      .toContainText(pageUrl);
+
+    // It is text, not a link to a page an anonymous user chose, and it appears once.
+    await expect(overview.getByRole("link", { name: /example\.test/ })).toHaveCount(0);
+    await expect(page.getByText(pageUrl)).toHaveCount(1);
+
+    await overview.getByRole("link", { name: "Filter reports by Page URL" }).click();
+    expect(new URL(page.url()).searchParams.get("q")).toContain("url:");
+    await expect(page.locator(`a[href="/reports/${reportId}"]`)).toBeVisible();
   });
 
   test("keeps report rows readable on desktop and mobile", async ({ page }) => {

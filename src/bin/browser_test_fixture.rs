@@ -159,7 +159,8 @@ async fn main() -> Result<()> {
             ($1, 'future-field', 'text', $6, false),
             ($1, 'git_commit', 'text', $7, true),
             ($1, 'build_configuration', 'text', $8, true),
-            ($1, 'cpp_compiler', 'text', $9, true)
+            ($1, 'cpp_compiler', 'text', $9, true),
+            ($1, 'url', 'text', $10, true)
          ON CONFLICT (report_id, key) DO NOTHING",
     )
     .bind(REPORT_ID.parse::<ReportId>().expect("valid fixture UUIDv7"))
@@ -175,6 +176,9 @@ async fn main() -> Result<()> {
     ))
     .bind(serde_json::json!("debug"))
     .bind(serde_json::json!("AppleClang 21.0.0.21000101"))
+    .bind(serde_json::json!(
+        "https://example.test/checkout?step=payment"
+    ))
     .execute(&mut *transaction)
     .await?;
 

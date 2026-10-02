@@ -442,6 +442,7 @@ pub async fn show(
     let platform = field_string(&details.fields, "platform").unwrap_or_else(|| "Unknown".into());
     let architecture =
         field_string(&details.fields, "architecture").unwrap_or_else(|| "Unknown".into());
+    let page_url = field_string(&details.fields, "url").filter(|url| !url.trim().is_empty());
 
     let mut overview = vec![
         OverviewField::searchable(
@@ -459,6 +460,14 @@ pub async fn show(
         OverviewField::searchable("Platform", &platform, "platform", &platform),
         OverviewField::searchable("Architecture", &architecture, "architecture", &architecture),
     ];
+
+    // Where the report came from belongs with the other facts at the top, but
+    // only when the client sent one.
+    if let Some(page_url) = &page_url {
+        let mut field = OverviewField::searchable("Page URL", page_url, "url", page_url);
+        field.full_width = true;
+        overview.push(field);
+    }
 
     overview.push(OverviewField {
         label: "Submitted",
@@ -514,7 +523,10 @@ pub async fn show(
         let is_stack = field.is_stack_trace();
         let key = field.key;
 
-        if matches!(key.as_str(), "platform" | "architecture") {
+        // Shown in the overview instead, as long as there is something to show.
+        if matches!(key.as_str(), "platform" | "architecture")
+            || (key == "url" && page_url.is_some())
+        {
             continue;
         }
 
