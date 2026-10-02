@@ -229,6 +229,8 @@ fn report_message(
         }
     }
 
+    embed_fields.extend(page_url_field(fields));
+
     DiscordWebhookMessage {
         username: "Ladybird Reports",
         embeds: vec![DiscordEmbed {
@@ -243,6 +245,34 @@ fn report_message(
         }],
         allowed_mentions: DiscordAllowedMentions { parse: Vec::new() },
     }
+}
+
+/// The page a report came from. It is shown as code so that Discord does not turn
+/// an address chosen by an anonymous user into a link anyone in the channel can
+/// click; a maintainer who wants to visit it copies it deliberately.
+fn page_url_field(fields: &serde_json::Map<String, Value>) -> Option<DiscordEmbedField> {
+    // Discord limits an embed field to 1024 characters, and the quotes need two.
+    const MAX_URL_CHARACTERS: usize = 1_000;
+
+    let url = fields.get("url")?.as_str()?.trim();
+    if url.is_empty() {
+        return None;
+    }
+
+    let url = url
+        .chars()
+        .map(|character| match character {
+            '`' => '′',
+            character if character.is_control() => ' ',
+            character => character,
+        })
+        .collect::<String>();
+
+    Some(DiscordEmbedField {
+        name: "Page URL".into(),
+        value: format!("`{}`", truncate_text(&url, MAX_URL_CHARACTERS)),
+        inline: false,
+    })
 }
 
 fn stack_description(stack: &str, configuration: &DiscordConfiguration) -> String {
@@ -344,7 +374,7 @@ mod tests {
         infrastructure::database::PendingDiscordNotification,
     };
 
-    use super::{report_message, retry_delay_seconds, stack_description};
+    use super::{page_url_field, report_message, retry_delay_seconds, stack_description};
 
     #[test]
     fn parsed_stack_preview_shows_functions_without_native_metadata() {
@@ -429,6 +459,109 @@ mod tests {
                 .any(|field| field.name == "Signal number" && field.value == "6")
         );
         assert!(message.allowed_mentions.parse.is_empty());
+    }
+
+    fn notification_with(fields: serde_json::Value) -> PendingDiscordNotification {
+        PendingDiscordNotification {
+            report_id: ReportId::new(),
+            lease_id: DiscordDeliveryLeaseId::new(),
+            title: "Web compatibility report".into(),
+            kind: ReportKind::WebCompat,
+            client_version: "Ladybird Nightly".into(),
+            build: String::new(),
+            fields,
+            created_at: Utc::now(),
+            attempt_count: 0,
+        }
+    }
+
+    fn page_url_in_message(fields: serde_json::Value) -> Option<String> {
+        let message = report_message(
+            &notification_with(fields),
+            "https://reports.example",
+            &DiscordConfiguration::default(),
+        );
+
+        message.embeds[0]
+            .fields
+            .iter()
+            .find(|field| field.name == "Page URL")
+            .map(|field| {
+                assert!(!field.inline, "a long address needs the full width");
+                field.value.clone()
+            })
+    }
+
+    #[test]
+    fn report_message_includes_the_page_url_when_the_report_has_one() {
+        assert_eq!(
+            page_url_in_message(serde_json::json!({ "url": "https://example.test/a?b=1" })),
+            Some("`https://example.test/a?b=1`".into())
+        );
+    }
+
+    #[test]
+    fn page_url_cannot_produce_a_website_preview() {
+        let url = "https://example.test/preview-me";
+        let message = report_message(
+            &notification_with(serde_json::json!({ "url": url })),
+            "https://reports.example",
+            &DiscordConfiguration::default(),
+        );
+        let json = serde_json::to_value(&message).expect("serialize message");
+
+        // Discord only previews links in the message content, so there is none.
+        let keys = json
+            .as_object()
+            .expect("message is an object")
+            .keys()
+            .map(String::as_str)
+            .collect::<std::collections::BTreeSet<_>>();
+        assert_eq!(
+            keys,
+            ["allowed_mentions", "embeds", "username"]
+                .into_iter()
+                .collect()
+        );
+
+        // Inside the embed it appears once, as code, which Discord never links.
+        let text = json.to_string();
+        assert_eq!(text.matches(url).count(), 1);
+        assert!(text.contains(&format!("`{url}`")));
+    }
+
+    #[test]
+    fn report_message_omits_a_missing_or_empty_page_url() {
+        for fields in [
+            serde_json::json!({}),
+            serde_json::json!({ "url": "" }),
+            serde_json::json!({ "url": "  \n " }),
+            serde_json::json!({ "url": 42 }),
+            serde_json::json!({ "hostname": "example.test" }),
+        ] {
+            assert_eq!(page_url_in_message(fields.clone()), None, "{fields}");
+        }
+    }
+
+    #[test]
+    fn page_url_cannot_break_out_of_its_code_quote_or_exceed_the_field_limit() {
+        let hostile = page_url_field(
+            serde_json::json!({ "url": "https://example.test/`**x**`\nsecond line\t" })
+                .as_object()
+                .expect("object"),
+        )
+        .expect("field");
+        assert_eq!(hostile.value, "`https://example.test/′**x**′ second line`");
+
+        let long = page_url_field(
+            serde_json::json!({ "url": format!("https://example.test/{}", "a".repeat(5_000)) })
+                .as_object()
+                .expect("object"),
+        )
+        .expect("field");
+        assert!(long.value.chars().count() <= 1_024);
+        assert!(long.value.starts_with('`') && long.value.ends_with('`'));
+        assert!(long.value.contains('…'));
     }
 
     #[test]

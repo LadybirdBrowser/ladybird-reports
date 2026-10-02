@@ -109,8 +109,10 @@ conflicting issue matches still notify maintainers. The admin process only claim
 stack reports after indexing, then claims the oldest eligible notification and
 sends a bounded report summary through the configured Discord webhook. The summary
 includes an excerpt of the native stack when one is available and links to the full
-report in the management interface. URLs, source addresses, and other report fields
-are not copied into the message by default.
+report in the management interface. The page URL a report came from, when it has
+one, is included as plain text in a code quote, so Discord does not make an address
+chosen by an anonymous user clickable. Source addresses and other report fields are
+not copied into the message.
 
 Only one delivery may be in progress across all admin replicas. An unsuccessful
 request pauses the complete queue and retries its oldest entry with exponential

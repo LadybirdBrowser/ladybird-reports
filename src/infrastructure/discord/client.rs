@@ -12,6 +12,10 @@ pub struct DiscordClient {
     http: Client,
 }
 
+/// A message made only of embeds. It deliberately has no `content`: Discord
+/// previews links found in a message's content, never in an embed's text, so an
+/// address that comes from a report cannot grow a website preview. The
+/// suppress-embeds flag is not an alternative; it would hide the report embed too.
 #[derive(Clone, Debug, Serialize)]
 pub struct DiscordWebhookMessage {
     pub username: &'static str,
