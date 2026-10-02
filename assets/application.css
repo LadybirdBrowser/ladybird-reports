@@ -127,8 +127,7 @@ h3 {
 }
 
 code,
-pre,
-.monospace {
+pre {
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 
@@ -1419,11 +1418,6 @@ tbody tr:hover {
 }
 
 /* Reports and issue actions */
-
-.report-id {
-    color: var(--ink-soft);
-    font-size: 0.76rem;
-}
 
 .issue-link-field {
     display: flex;

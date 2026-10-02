@@ -11,6 +11,7 @@ use crate::{
 
 use super::{
     GithubIssueAssignment, GithubIssueLink, IssueDetails, IssueRecord, IssueSummary, ReportSummary,
+    insert_audit_event,
 };
 
 impl AdminDatabase {
@@ -73,25 +74,14 @@ impl AdminDatabase {
         }
 
         sql.push(" GROUP BY issues.id ORDER BY issues.updated_at DESC LIMIT 200");
-        let rows = sql.build().fetch_all(&self.pool).await?;
-
-        Ok(rows
-            .into_iter()
-            .map(|row| IssueSummary {
-                id: row.get("id"),
-                title: row.get("title"),
-                state: row.get("state"),
-                resolved_at: row.get("resolved_at"),
-                github_number: row.get("github_number"),
-                github_state: row.get("github_state"),
-                report_count: row.get("report_count"),
-                created_at: row.get("created_at"),
-            })
-            .collect())
+        sql.build_query_as::<IssueSummary>()
+            .fetch_all(&self.pool)
+            .await
+            .map_err(Into::into)
     }
 
     pub async fn search_issues(&self, search: &str) -> Result<Vec<IssueSummary>> {
-        let rows = sqlx::query(
+        sqlx::query_as(
             "SELECT
                 issues.id,
                 issues.title,
@@ -125,21 +115,8 @@ impl AdminDatabase {
         )
         .bind(search)
         .fetch_all(&self.pool)
-        .await?;
-
-        Ok(rows
-            .into_iter()
-            .map(|row| IssueSummary {
-                id: row.get("id"),
-                title: row.get("title"),
-                state: row.get("state"),
-                resolved_at: row.get("resolved_at"),
-                github_number: row.get("github_number"),
-                github_state: row.get("github_state"),
-                report_count: row.get("report_count"),
-                created_at: row.get("created_at"),
-            })
-            .collect())
+        .await
+        .map_err(Into::into)
     }
 
     pub async fn issues_linked_to_github_numbers(
@@ -291,18 +268,17 @@ impl AdminDatabase {
             .execute(&mut *transaction)
             .await?;
 
-            sqlx::query(
-                "INSERT INTO audit_events (actor, action, entity_id, details)
-                 VALUES ($1, 'issue.create', $2, $3)",
+            insert_audit_event(
+                &mut *transaction,
+                Some(actor),
+                "issue.create",
+                Some(issue_id.0),
+                serde_json::json!({
+                    "github_number": issue.number,
+                    "github_url": issue.html_url,
+                    "report_id": report_id,
+                }),
             )
-            .bind(actor)
-            .bind(issue_id.0)
-            .bind(serde_json::json!({
-                "github_number": issue.number,
-                "github_url": issue.html_url,
-                "report_id": report_id,
-            }))
-            .execute(&mut *transaction)
             .await?;
 
             (issue_id, true)
@@ -346,17 +322,16 @@ impl AdminDatabase {
         }
 
         if previous.0 != Some(issue_id) {
-            sqlx::query(
-                "INSERT INTO audit_events (actor, action, entity_id, details)
-                 VALUES ($1, 'report.update_issue', $2, $3)",
+            insert_audit_event(
+                &mut *transaction,
+                Some(actor),
+                "report.update_issue",
+                Some(report_id.0),
+                serde_json::json!({
+                    "from": previous.0,
+                    "to": issue_id,
+                }),
             )
-            .bind(actor)
-            .bind(report_id.0)
-            .bind(serde_json::json!({
-                "from": previous.0,
-                "to": issue_id,
-            }))
-            .execute(&mut *transaction)
             .await?;
         }
 
@@ -383,33 +358,21 @@ impl AdminDatabase {
             return Ok(None);
         };
 
-        let report_rows = sqlx::query(
-            "SELECT id, kind, client_version, state, created_at
-             FROM reports
-             WHERE issue_id = $1
-                AND storage_state = 'ready'
-             ORDER BY created_at DESC",
-        )
-        .bind(issue_id)
-        .fetch_all(&self.pool)
-        .await?;
-
-        let mut reports = report_rows
-            .into_iter()
-            .map(|row| ReportSummary {
-                id: row.get("id"),
-                title: String::new(),
-                kind: row.get("kind"),
-                client_version: row.get("client_version"),
-                platform: None,
-                architecture: None,
-                state: row.get("state"),
-                created_at: row.get("created_at"),
-            })
-            .collect::<Vec<_>>();
-        self.populate_report_titles(&mut reports).await?;
-
-        let events = self.audit_events(issue_id.0).await?;
+        let load_reports = async {
+            let mut reports: Vec<ReportSummary> = sqlx::query_as(
+                "SELECT id, kind, client_version, state, created_at
+                 FROM reports
+                 WHERE issue_id = $1
+                    AND storage_state = 'ready'
+                 ORDER BY created_at DESC",
+            )
+            .bind(issue_id)
+            .fetch_all(&self.pool)
+            .await?;
+            self.populate_report_titles(&mut reports).await?;
+            Ok::<_, AppError>(reports)
+        };
+        let (reports, events) = tokio::try_join!(load_reports, self.audit_events(issue_id.0))?;
 
         Ok(Some(IssueDetails {
             issue,
@@ -509,15 +472,13 @@ impl AdminDatabase {
         .execute(&mut *transaction)
         .await?;
 
-        sqlx::query(
-            "INSERT INTO audit_events (actor, action, entity_id, details)
-             VALUES ($1, 'report.update_issue', $2,
-                jsonb_build_object('from', $3::uuid, 'to', NULL))",
+        insert_audit_event(
+            &mut *transaction,
+            Some(actor),
+            "report.update_issue",
+            Some(report_id.0),
+            serde_json::json!({ "from": issue_id, "to": null }),
         )
-        .bind(actor)
-        .bind(report_id.0)
-        .bind(issue_id)
-        .execute(&mut *transaction)
         .await?;
 
         if previous_state != "triage" {
@@ -622,20 +583,19 @@ impl AdminDatabase {
         .fetch_one(&mut *transaction)
         .await?;
 
-        sqlx::query(
-            "INSERT INTO audit_events (actor, action, entity_id, details)
-             VALUES ($1, 'issue.update_state', $2, $3)",
+        insert_audit_event(
+            &mut *transaction,
+            Some(actor),
+            "issue.update_state",
+            Some(issue_id.0),
+            serde_json::json!({
+                "from": previous_state,
+                "to": "rejected",
+                "report_action": if reject_reports { "reject" } else { "unlink" },
+                "reports_updated": reports_updated,
+                "merged_sources_rejected": merged_sources_rejected,
+            }),
         )
-        .bind(actor)
-        .bind(issue_id.0)
-        .bind(serde_json::json!({
-            "from": previous_state,
-            "to": "rejected",
-            "report_action": if reject_reports { "reject" } else { "unlink" },
-            "reports_updated": reports_updated,
-            "merged_sources_rejected": merged_sources_rejected,
-        }))
-        .execute(&mut *transaction)
         .await?;
 
         transaction.commit().await?;

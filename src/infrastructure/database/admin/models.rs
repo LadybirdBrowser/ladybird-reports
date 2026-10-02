@@ -2,7 +2,7 @@ use chrono::{DateTime, Duration, NaiveDate, Utc};
 use serde_json::Value;
 
 use crate::domain::{
-    AttachmentId, DiscordDeliveryLeaseId, IssueId, ReportId, ReportSearch, SubmissionId, UploadId,
+    AttachmentId, DiscordDeliveryLeaseId, IssueId, ReportId, ReportSearch, SubmissionId,
 };
 
 #[derive(Clone, Debug)]
@@ -42,13 +42,18 @@ pub struct ReportQuery {
     pub before_id: Option<ReportId>,
 }
 
-#[derive(Clone, Debug)]
+/// The title, platform and architecture are filled in after loading, so they
+/// are not read from the row.
+#[derive(Clone, Debug, sqlx::FromRow)]
 pub struct ReportSummary {
     pub id: ReportId,
+    #[sqlx(skip)]
     pub title: String,
     pub kind: String,
     pub client_version: String,
+    #[sqlx(skip)]
     pub platform: Option<String>,
+    #[sqlx(skip)]
     pub architecture: Option<String>,
     pub state: String,
     pub created_at: DateTime<Utc>,
@@ -120,7 +125,7 @@ pub struct StoredDiagnosticField {
     pub current_position: Option<i32>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, sqlx::FromRow)]
 pub struct StoredAttachment {
     pub id: AttachmentId,
     pub name: String,
@@ -143,7 +148,7 @@ pub struct BlockReportSourceOutcome {
     pub rejected_triage_reports: u64,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, sqlx::FromRow)]
 pub struct IssueSummary {
     pub id: IssueId,
     pub title: String,
@@ -189,7 +194,7 @@ pub struct IssueDetails {
     pub events: Vec<AuditEvent>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, sqlx::FromRow)]
 pub struct AuditEvent {
     pub id: i64,
     pub action: String,
@@ -211,10 +216,4 @@ pub struct FieldDefinitionRecord {
     pub label: String,
     pub kind: String,
     pub position: i32,
-}
-
-#[derive(Clone, Debug)]
-pub struct PendingStorageRecord {
-    pub report_id: ReportId,
-    pub staging_id: UploadId,
 }

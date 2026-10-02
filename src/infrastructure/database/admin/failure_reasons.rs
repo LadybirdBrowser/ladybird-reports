@@ -7,6 +7,9 @@ use crate::{
 
 use super::AdminDatabase;
 
+/// Attachments examined per backfill batch. A full batch means more may be waiting.
+pub const FAILURE_REASON_BATCH_SIZE: usize = 50;
+
 pub struct PendingFailureReason {
     pub attachment_id: AttachmentId,
     pub report_id: ReportId,
@@ -24,8 +27,9 @@ impl AdminDatabase {
                 AND attachments.media_type = 'text/plain'
                 AND reports.storage_state = 'ready'
              ORDER BY attachments.created_at
-             LIMIT 50",
+             LIMIT $1",
         )
+        .bind(FAILURE_REASON_BATCH_SIZE as i64)
         .fetch_all(&self.pool)
         .await?;
 

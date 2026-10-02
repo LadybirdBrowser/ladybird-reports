@@ -14,7 +14,10 @@ use crate::{
     infrastructure::database::AuditEvent,
 };
 
-use super::super::{AdminState, TemplateResponse, authentication::Navigation, session::Session};
+use super::super::{
+    AdminState, TemplateResponse, authentication::Navigation, session::Session,
+    templates::display_timestamp,
+};
 
 #[derive(Template)]
 #[template(path = "settings/show.html")]
@@ -83,8 +86,8 @@ pub async fn show(
         })
         .collect();
 
-    let configuration_json = serde_json::to_string_pretty(&configuration.value)
-        .map_err(|error| AppError::Internal(error.into()))?;
+    let configuration_json =
+        serde_json::to_string_pretty(&configuration.value).map_err(AppError::internal)?;
 
     Ok(TemplateResponse(SettingsTemplate {
         navigation: Some(Navigation::for_session(&state, &session)),
@@ -281,7 +284,7 @@ fn event_view(event: AuditEvent) -> EventView {
         target_label: target.as_ref().map(|(label, _)| label.clone()),
         target_url: target.and_then(|(_, url)| url),
         details: event.details.to_string(),
-        created_at: event.created_at.format("%d %b %Y, %H:%M UTC").to_string(),
+        created_at: display_timestamp(event.created_at),
     }
 }
 

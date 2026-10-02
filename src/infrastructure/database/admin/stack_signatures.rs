@@ -6,7 +6,10 @@ use crate::{
     infrastructure::database::AdminDatabase,
 };
 
-use super::{PotentialIssueMatch, ReportSummary};
+use super::{PotentialIssueMatch, ReportSummary, insert_audit_event};
+
+/// Stack traces indexed per batch.
+pub const STACK_INDEX_BATCH_SIZE: usize = 50;
 
 impl AdminDatabase {
     pub async fn potential_issue_matches(
@@ -53,7 +56,7 @@ impl AdminDatabase {
     }
 
     pub async fn issue_signature_matches(&self, issue_id: IssueId) -> Result<Vec<ReportSummary>> {
-        let rows = sqlx::query(
+        let mut reports: Vec<ReportSummary> = sqlx::query_as(
             "SELECT reports.id, reports.kind, reports.client_version,
                     reports.state, reports.created_at
              FROM reports
@@ -82,27 +85,16 @@ impl AdminDatabase {
         .bind(STACK_SIGNATURE_VERSION)
         .fetch_all(&self.pool)
         .await?;
-
-        let mut reports = rows
-            .into_iter()
-            .map(|row| ReportSummary {
-                id: row.get("id"),
-                title: String::new(),
-                kind: row.get("kind"),
-                client_version: row.get("client_version"),
-                platform: None,
-                architecture: None,
-                state: row.get("state"),
-                created_at: row.get("created_at"),
-            })
-            .collect::<Vec<_>>();
         self.populate_report_titles(&mut reports).await?;
         Ok(reports)
     }
 
     /// Rebuild a bounded batch. Old signatures are replaced when the algorithm changes.
+    /// A full batch (`STACK_INDEX_BATCH_SIZE`) means more may be waiting.
     pub async fn index_pending_stack_traces(&self) -> Result<usize> {
-        let pending = self.stack_traces_to_index(None, 50).await?;
+        let pending = self
+            .stack_traces_to_index(None, STACK_INDEX_BATCH_SIZE as i64)
+            .await?;
         let count = pending.len();
         self.store_stack_signatures(pending).await?;
         Ok(count)
@@ -290,30 +282,32 @@ impl AdminDatabase {
                 == 1;
 
             if assigned {
-                sqlx::query(
-                    "INSERT INTO audit_events (action, entity_id, details)
-                     VALUES ('report.update_issue', $1, $2)",
+                insert_audit_event(
+                    &mut **transaction,
+                    None,
+                    "report.update_issue",
+                    Some(trace.report_id.0),
+                    serde_json::json!({
+                        "from": null,
+                        "to": issue_id,
+                        "source": "stack_signature",
+                        "signature": fingerprint,
+                    }),
                 )
-                .bind(trace.report_id.0)
-                .bind(serde_json::json!({
-                    "from": null,
-                    "to": issue_id,
-                    "source": "stack_signature",
-                    "signature": fingerprint,
-                }))
-                .execute(&mut **transaction)
                 .await?;
 
                 if let Some(previous_state) = previous_state.filter(|state| state != "confirmed") {
-                    sqlx::query(
-                        "INSERT INTO audit_events (action, entity_id, details)
-                         VALUES ('report.update_state', $1,
-                            jsonb_build_object('from', $2::text, 'to', 'confirmed',
-                                'source', 'stack_signature'))",
+                    insert_audit_event(
+                        &mut **transaction,
+                        None,
+                        "report.update_state",
+                        Some(trace.report_id.0),
+                        serde_json::json!({
+                            "from": previous_state,
+                            "to": "confirmed",
+                            "source": "stack_signature",
+                        }),
                     )
-                    .bind(trace.report_id.0)
-                    .bind(previous_state)
-                    .execute(&mut **transaction)
                     .await?;
                 }
             }

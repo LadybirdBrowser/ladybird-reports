@@ -3,7 +3,7 @@ use sqlx::Row;
 
 use crate::{error::Result, infrastructure::database::AdminDatabase};
 
-use super::{NewSession, SessionRecord};
+use super::{NewSession, SessionRecord, insert_audit_event};
 
 impl AdminDatabase {
     pub async fn store_oauth_state(&self, state_hash: &str, return_to: &str) -> Result<()> {
@@ -84,12 +84,13 @@ impl AdminDatabase {
         .execute(&mut *transaction)
         .await?;
 
-        sqlx::query(
-            "INSERT INTO audit_events (actor, action)
-             VALUES ($1, 'session.signed_in')",
+        insert_audit_event(
+            &mut *transaction,
+            Some(session.github_id),
+            "session.signed_in",
+            None,
+            serde_json::json!({}),
         )
-        .bind(session.github_id)
-        .execute(&mut *transaction)
         .await?;
 
         transaction.commit().await?;
@@ -274,12 +275,13 @@ impl AdminDatabase {
     pub async fn delete_session(&self, token_hash: &str, github_id: i64) -> Result<()> {
         let mut transaction = self.pool.begin().await?;
 
-        sqlx::query(
-            "INSERT INTO audit_events (actor, action)
-             VALUES ($1, 'session.signed_out')",
+        insert_audit_event(
+            &mut *transaction,
+            Some(github_id),
+            "session.signed_out",
+            None,
+            serde_json::json!({}),
         )
-        .bind(github_id)
-        .execute(&mut *transaction)
         .await?;
 
         sqlx::query("DELETE FROM sessions WHERE token_hash = $1")

@@ -280,7 +280,7 @@ impl ReportIngestionService {
         Ok(())
     }
 
-    pub async fn configuration(&self) -> Result<RuntimeConfiguration> {
+    pub async fn configuration(&self) -> Result<Arc<RuntimeConfiguration>> {
         self.database.configuration().await
     }
 

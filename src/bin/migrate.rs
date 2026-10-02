@@ -23,7 +23,7 @@ async fn run() -> Result<()> {
     sqlx::migrate!("./migrations")
         .run(&pool)
         .await
-        .map_err(|error| AppError::Internal(error.into()))?;
+        .map_err(AppError::internal)?;
 
     tracing::info!(event = "database.migrations_complete", service = "migrate");
     Ok(())

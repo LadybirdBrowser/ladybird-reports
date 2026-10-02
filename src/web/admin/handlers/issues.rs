@@ -14,8 +14,10 @@ use crate::{
 };
 
 use super::super::{
-    AdminState, TemplateResponse, authentication::Navigation, session::Session,
-    templates::not_found,
+    AdminState, TemplateResponse,
+    authentication::Navigation,
+    session::Session,
+    templates::{HistoryEvent, not_found},
 };
 use super::github::ensure_github_reports_link;
 
@@ -74,7 +76,7 @@ pub struct IssueTemplate {
     issue: IssueView,
     reports: Vec<ReportView>,
     potential_matches: Vec<ReportView>,
-    events: Vec<EventView>,
+    events: Vec<HistoryEvent>,
     github_field_warning: bool,
 }
 
@@ -94,13 +96,6 @@ pub struct ReportView {
     id: crate::domain::ReportId,
     title: String,
     client_version: String,
-    created_at: DateTime<Utc>,
-}
-
-pub struct EventView {
-    action: String,
-    actor: String,
-    details: String,
     created_at: DateTime<Utc>,
 }
 
@@ -373,16 +368,7 @@ pub async fn show(
         })
         .collect();
 
-    let events = details
-        .events
-        .into_iter()
-        .map(|event| EventView {
-            action: event.action,
-            actor: event.actor_login.unwrap_or_else(|| "system".into()),
-            details: event.details.to_string(),
-            created_at: event.created_at,
-        })
-        .collect();
+    let events = details.events.into_iter().map(HistoryEvent::from).collect();
 
     Ok(TemplateResponse(IssueTemplate {
         navigation: Some(Navigation::for_session(&state, &session)),

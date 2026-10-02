@@ -451,6 +451,11 @@ pub const SETTING_DEFINITIONS: &[SettingDefinition] = &[
     ),
 ];
 
+/// Whether changing the setting at `path` must sign out every existing session.
+pub fn setting_invalidates_sessions(path: &str) -> bool {
+    path == "github_authorization_team"
+}
+
 const fn setting(
     key: &'static str,
     path: &'static str,

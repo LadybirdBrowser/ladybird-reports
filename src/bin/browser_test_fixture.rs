@@ -1,14 +1,15 @@
 use ladybird_reports::{
     application::backfill_failure_reasons,
-    domain::{AttachmentId, IssueId, ReportId, SubmissionId, UploadId},
+    domain::{AttachmentId, IssueId, ReportId, SubmissionId, UploadId, sha256_hex},
     error::Result,
     infrastructure::{
-        SecretCipher, attachments::FileAttachmentStore, database::AdminDatabase, hash_secret,
-        random_token, read_secret,
+        SecretCipher,
+        attachments::FileAttachmentStore,
+        database::{AdminDatabase, FAILURE_REASON_BATCH_SIZE, STACK_INDEX_BATCH_SIZE},
+        hash_secret, random_token, read_secret,
     },
     runtime::required_environment,
 };
-use sha2::{Digest, Sha256};
 use sqlx::postgres::PgPoolOptions;
 
 const REPORT_ID: &str = "01a0a536-01cd-7ac7-a3cf-ae6a2d5030e5";
@@ -203,7 +204,7 @@ async fn main() -> Result<()> {
     .bind(REPORT_ID.parse::<ReportId>().expect("valid fixture UUIDv7"))
     .bind("diagnostics")
     .bind(attachment_bytes.len() as i64)
-    .bind(hex::encode(Sha256::digest(&attachment_bytes)))
+    .bind(sha256_hex(&attachment_bytes))
     .bind(storage_key)
     .execute(&mut *transaction)
     .await?;
@@ -347,9 +348,9 @@ async fn main() -> Result<()> {
 
     // Exercise the same backfill used for reports submitted before deployment.
     let database = AdminDatabase::from_pool(pool);
-    while database.index_pending_stack_traces().await? == 50 {}
+    while database.index_pending_stack_traces().await? == STACK_INDEX_BATCH_SIZE {}
     let attachments = FileAttachmentStore::open(required_environment("ATTACHMENT_ROOT")?).await?;
-    while backfill_failure_reasons(&database, &attachments).await? == 50 {}
+    while backfill_failure_reasons(&database, &attachments).await? == FAILURE_REASON_BATCH_SIZE {}
 
     println!("{session_token}");
     Ok(())

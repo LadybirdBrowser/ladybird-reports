@@ -22,7 +22,7 @@ pub async fn initialize_database(
     sqlx::migrate!("./migrations")
         .run(&admin_pool)
         .await
-        .map_err(|error| AppError::Internal(error.into()))?;
+        .map_err(AppError::internal)?;
     tracing::info!(event = "database.migrations_complete");
 
     let generated_reporting_database_url = match reporting_database_url {

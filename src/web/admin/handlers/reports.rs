@@ -14,12 +14,14 @@ use crate::{
         parse_stack_trace, stack_fingerprint,
     },
     error::{AppError, Result},
-    infrastructure::database::ReportQuery,
+    infrastructure::database::{REPORT_PAGE_SIZE, ReportQuery, SEARCH_VALUE_LIMIT},
 };
 
 use super::super::{
-    AdminState, TemplateResponse, authentication::Navigation, session::Session,
-    templates::not_found,
+    AdminState, TemplateResponse,
+    authentication::Navigation,
+    session::Session,
+    templates::{HistoryEvent, display_timestamp, not_found},
 };
 
 #[derive(Deserialize)]
@@ -125,7 +127,7 @@ pub struct ReportTemplate {
     known_groups: Vec<FieldGroup>,
     unknown_groups: Vec<FieldGroup>,
     attachments: Vec<AttachmentView>,
-    events: Vec<EventView>,
+    events: Vec<HistoryEvent>,
 }
 
 pub struct ReportView {
@@ -189,13 +191,6 @@ pub struct AttachmentView {
     size: String,
 }
 
-pub struct EventView {
-    action: String,
-    actor: String,
-    details: String,
-    created_at: DateTime<Utc>,
-}
-
 pub async fn index(
     State(state): State<AdminState>,
     Extension(session): Extension<Session>,
@@ -237,8 +232,8 @@ async fn load_report_list(
     };
 
     let mut reports = state.database.list_reports(&query).await?;
-    let has_more = reports.len() > 50;
-    reports.truncate(50);
+    let has_more = reports.len() > REPORT_PAGE_SIZE;
+    reports.truncate(REPORT_PAGE_SIZE);
     let next_page = has_more
         .then(|| next_page_url(filters, reports.last()))
         .flatten();
@@ -257,7 +252,7 @@ async fn load_report_list(
                 ),
                 state_label,
                 state_tone,
-                received_at: report.created_at.format("%d %b %Y, %H:%M UTC").to_string(),
+                received_at: display_timestamp(report.created_at),
             }
         })
         .collect();
@@ -299,10 +294,7 @@ pub async fn search_options(
                 identifier: report.id.to_string(),
                 badge,
                 badge_tone,
-                footnote: format!(
-                    "Received {}",
-                    report.created_at.format("%d %b %Y, %H:%M UTC")
-                ),
+                footnote: format!("Received {}", display_timestamp(report.created_at)),
                 group: None,
             }
         })
@@ -369,7 +361,7 @@ pub async fn search_completions(
         "id" | "report" => Vec::new(),
         _ => {
             let values = state.database.report_search_values(&key).await?;
-            if values.len() > 25 {
+            if values.len() > SEARCH_VALUE_LIMIT {
                 Vec::new()
             } else {
                 values
@@ -473,11 +465,7 @@ pub async fn show(
 
     overview.push(OverviewField {
         label: "Submitted",
-        value: details
-            .report
-            .created_at
-            .format("%d %b %Y, %H:%M UTC")
-            .to_string(),
+        value: display_timestamp(details.report.created_at),
         filter_url: Some(submitted_date_filter_url(
             details.report.created_at.date_naive(),
         )),
@@ -586,16 +574,7 @@ pub async fn show(
         })
         .collect();
 
-    let events = details
-        .events
-        .into_iter()
-        .map(|event| EventView {
-            action: event.action,
-            actor: event.actor_login.unwrap_or_else(|| "system".into()),
-            details: event.details.to_string(),
-            created_at: event.created_at,
-        })
-        .collect();
+    let events = details.events.into_iter().map(HistoryEvent::from).collect();
 
     Ok(TemplateResponse(ReportTemplate {
         navigation: Some(Navigation::for_session(&state, &session)),
@@ -740,7 +719,7 @@ pub async fn unlink_from_issue(
         to = "none",
         actor = session.login,
     );
-    Ok(Redirect::to(&format!("/reports/{report_id}")))
+    Ok(report_redirect(report_id))
 }
 
 #[derive(Deserialize)]
@@ -757,6 +736,10 @@ impl ReportWorkflowState {
             Self::Confirmed => "confirmed",
         }
     }
+}
+
+fn report_redirect(report_id: ReportId) -> Redirect {
+    Redirect::to(&format!("/reports/{report_id}"))
 }
 
 #[derive(Deserialize)]
@@ -787,7 +770,7 @@ pub async fn set_state(
             actor = session.login,
         );
     }
-    Ok(Redirect::to(&format!("/reports/{report_id}")))
+    Ok(report_redirect(report_id))
 }
 
 pub async fn reject(
@@ -811,7 +794,7 @@ pub async fn reject(
             actor = session.login,
         );
     }
-    Ok(Redirect::to(&format!("/reports/{report_id}")))
+    Ok(report_redirect(report_id))
 }
 
 #[derive(Deserialize)]
@@ -842,7 +825,7 @@ pub async fn block_ip(
         actor = session.login,
     );
 
-    Ok(Redirect::to(&format!("/reports/{report_id}")))
+    Ok(report_redirect(report_id))
 }
 
 pub async fn unblock_ip(
@@ -865,7 +848,7 @@ pub async fn unblock_ip(
         actor = session.login,
     );
 
-    Ok(Redirect::to(&format!("/reports/{report_id}")))
+    Ok(report_redirect(report_id))
 }
 
 pub async fn attachment(

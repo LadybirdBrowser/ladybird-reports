@@ -6,7 +6,9 @@ use ladybird_reports::{
     infrastructure::{
         SecretCipher,
         attachments::FileAttachmentStore,
-        database::{AdminDatabase, initialize_database},
+        database::{
+            AdminDatabase, FAILURE_REASON_BATCH_SIZE, STACK_INDEX_BATCH_SIZE, initialize_database,
+        },
         discord::DiscordClient,
         github::GithubClient,
         read_secret,
@@ -168,7 +170,7 @@ async fn run_github_duplicates(state: AdminState) {
 async fn run_stack_indexer(database: AdminDatabase) {
     loop {
         let delay = match database.index_pending_stack_traces().await {
-            Ok(50) => std::time::Duration::from_millis(100),
+            Ok(STACK_INDEX_BATCH_SIZE) => std::time::Duration::from_millis(100),
             Ok(0) => std::time::Duration::from_secs(1),
             Ok(count) => {
                 tracing::info!(event = "stack_index.batch_complete", count);
@@ -186,7 +188,7 @@ async fn run_stack_indexer(database: AdminDatabase) {
 async fn run_failure_reason_backfill(state: AdminState) {
     loop {
         let delay = match backfill_failure_reasons(&state.database, &state.attachments).await {
-            Ok(50) => std::time::Duration::from_millis(100),
+            Ok(FAILURE_REASON_BATCH_SIZE) => std::time::Duration::from_millis(100),
             Ok(0) => std::time::Duration::from_secs(30),
             Ok(count) => {
                 tracing::info!(event = "failure_reason.backfill_batch_complete", count);

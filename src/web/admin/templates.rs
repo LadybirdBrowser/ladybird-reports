@@ -3,8 +3,9 @@ use axum::{
     http::{Method, StatusCode, Uri},
     response::{Html, IntoResponse, Response},
 };
+use chrono::{DateTime, Utc};
 
-use crate::error::AppError;
+use crate::{error::AppError, infrastructure::database::AuditEvent};
 
 pub struct TemplateResponse<T>(pub T);
 
@@ -19,6 +20,30 @@ where
                 tracing::error!(?error, "Could not render management template");
                 AppError::Unavailable.into_response()
             }
+        }
+    }
+}
+
+/// The timestamp format used throughout the admin UI.
+pub fn display_timestamp(timestamp: DateTime<Utc>) -> String {
+    timestamp.format("%d %b %Y, %H:%M UTC").to_string()
+}
+
+/// An audit event as listed in the activity section of a report or issue page.
+pub struct HistoryEvent {
+    pub action: String,
+    pub actor: String,
+    pub details: String,
+    pub created_at: DateTime<Utc>,
+}
+
+impl From<AuditEvent> for HistoryEvent {
+    fn from(event: AuditEvent) -> Self {
+        Self {
+            action: event.action,
+            actor: event.actor_login.unwrap_or_else(|| "system".into()),
+            details: event.details.to_string(),
+            created_at: event.created_at,
         }
     }
 }

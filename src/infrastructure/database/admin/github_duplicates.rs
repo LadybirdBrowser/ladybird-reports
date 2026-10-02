@@ -7,7 +7,7 @@ use crate::{
     infrastructure::{database::AdminDatabase, github::GithubIssue},
 };
 
-use super::issues::validate_issue_text;
+use super::{insert_audit_event, issues::validate_issue_text};
 
 pub struct GithubDuplicateJob {
     pub source_issue_id: IssueId,
@@ -168,17 +168,17 @@ impl AdminDatabase {
             .execute(&mut *transaction)
             .await?;
 
-            sqlx::query(
-                "INSERT INTO audit_events (action, entity_id, details)
-                 VALUES ('issue.merge', $1, $2)",
+            insert_audit_event(
+                &mut *transaction,
+                None,
+                "issue.merge",
+                Some(job.source_issue_id.0),
+                serde_json::json!({
+                    "source": "github_duplicate",
+                    "into": destination,
+                    "github_number": job.number,
+                }),
             )
-            .bind(job.source_issue_id.0)
-            .bind(serde_json::json!({
-                "source": "github_duplicate",
-                "into": destination,
-                "github_number": job.number,
-            }))
-            .execute(&mut *transaction)
             .await?;
         }
 
@@ -283,13 +283,13 @@ async fn ensure_destination(
     .execute(&mut **transaction)
     .await?;
 
-    sqlx::query(
-        "INSERT INTO audit_events (action, entity_id, details)
-         VALUES ('issue.create', $1, $2)",
+    insert_audit_event(
+        &mut **transaction,
+        None,
+        "issue.create",
+        Some(issue_id.0),
+        serde_json::json!({ "source": "github_duplicate", "github_number": issue.number }),
     )
-    .bind(issue_id.0)
-    .bind(serde_json::json!({ "source": "github_duplicate", "github_number": issue.number }))
-    .execute(&mut **transaction)
     .await?;
     Ok(issue_id)
 }

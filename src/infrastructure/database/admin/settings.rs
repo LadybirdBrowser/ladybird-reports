@@ -1,28 +1,31 @@
-use std::collections::{BTreeSet, HashSet};
+use std::{
+    collections::{BTreeSet, HashSet},
+    sync::Arc,
+};
 
 use serde_json::Value;
 use sqlx::Row;
 
 use crate::{
-    domain::{FieldKind, RuntimeConfiguration},
+    domain::{FieldKind, RuntimeConfiguration, is_valid_field_key, setting_invalidates_sessions},
     error::{AppError, Result},
     infrastructure::database::AdminDatabase,
 };
 
-use super::{ConfigurationRecord, FieldDefinitionRecord};
+use super::{ConfigurationRecord, FieldDefinitionRecord, insert_audit_event};
 
 impl AdminDatabase {
-    pub async fn configuration(&self) -> Result<RuntimeConfiguration> {
+    pub async fn configuration(&self) -> Result<Arc<RuntimeConfiguration>> {
         if let Some(configuration) = self.configuration_cache.get() {
             return Ok(configuration);
         }
 
         let record = self.configuration_record().await?;
-        let configuration: RuntimeConfiguration = serde_json::from_value(record.value)
-            .map_err(|error| AppError::Internal(error.into()))?;
+        let configuration: RuntimeConfiguration =
+            serde_json::from_value(record.value).map_err(AppError::internal)?;
 
         configuration.validate()?;
-        Ok(configuration)
+        Ok(Arc::new(configuration))
     }
 
     pub async fn configuration_record(&self) -> Result<ConfigurationRecord> {
@@ -47,8 +50,7 @@ impl AdminDatabase {
     ) -> Result<()> {
         configuration.validate()?;
 
-        let value = serde_json::to_value(configuration)
-            .map_err(|error| AppError::Internal(error.into()))?;
+        let value = serde_json::to_value(configuration).map_err(AppError::internal)?;
         let mut transaction = self.pool.begin().await?;
         let previous: Value = sqlx::query_scalar(
             "SELECT value FROM runtime_configuration WHERE singleton = true FOR UPDATE",
@@ -73,7 +75,7 @@ impl AdminDatabase {
 
         if changed
             .iter()
-            .any(|path| path == "github_authorization_team")
+            .any(|path| setting_invalidates_sessions(path))
         {
             // An authorization policy change must apply to sessions that were
             // verified under the old team, including the current session.
@@ -82,13 +84,13 @@ impl AdminDatabase {
                 .await?;
         }
 
-        sqlx::query(
-            "INSERT INTO audit_events (actor, action, details)
-             VALUES ($1, 'configuration.update', $2)",
+        insert_audit_event(
+            &mut *transaction,
+            Some(actor),
+            "configuration.update",
+            None,
+            serde_json::json!({ "changed": changed }),
         )
-        .bind(actor)
-        .bind(serde_json::json!({ "changed": changed }))
-        .execute(&mut *transaction)
         .await?;
 
         transaction.commit().await?;
@@ -162,18 +164,17 @@ impl AdminDatabase {
         .execute(&mut *transaction)
         .await?;
 
-        sqlx::query(
-            "INSERT INTO audit_events (actor, action, details)
-             VALUES ($1, $2, $3)",
+        insert_audit_event(
+            &mut *transaction,
+            Some(actor),
+            if old.is_some() {
+                "field_definition.update"
+            } else {
+                "field_definition.create"
+            },
+            None,
+            serde_json::json!({ "key": key, "from": old, "to": new }),
         )
-        .bind(actor)
-        .bind(if old.is_some() {
-            "field_definition.update"
-        } else {
-            "field_definition.create"
-        })
-        .bind(serde_json::json!({ "key": key, "from": old, "to": new }))
-        .execute(&mut *transaction)
         .await?;
 
         transaction.commit().await?;
@@ -230,16 +231,16 @@ impl AdminDatabase {
         .execute(&mut *transaction)
         .await?;
 
-        sqlx::query(
-            "INSERT INTO audit_events (actor, action, details)
-             VALUES ($1, 'field_definitions.reorder', $2)",
+        insert_audit_event(
+            &mut *transaction,
+            Some(actor),
+            "field_definitions.reorder",
+            None,
+            serde_json::json!({
+                "from": existing_order,
+                "to": keys,
+            }),
         )
-        .bind(actor)
-        .bind(serde_json::json!({
-            "from": existing_order,
-            "to": keys,
-        }))
-        .execute(&mut *transaction)
         .await?;
 
         transaction.commit().await?;
@@ -254,7 +255,7 @@ impl AdminDatabase {
         before_id: Option<i64>,
         limit: i64,
     ) -> Result<Vec<super::AuditEvent>> {
-        let rows = sqlx::query(
+        sqlx::query_as(
             "SELECT
                 audit_events.id,
                 audit_events.action,
@@ -271,19 +272,8 @@ impl AdminDatabase {
         .bind(before_id)
         .bind(limit)
         .fetch_all(&self.pool)
-        .await?;
-
-        Ok(rows
-            .into_iter()
-            .map(|row| super::AuditEvent {
-                id: row.get("id"),
-                action: row.get("action"),
-                actor_login: row.get("actor_login"),
-                entity_id: row.get("entity_id"),
-                details: row.get("details"),
-                created_at: row.get("created_at"),
-            })
-            .collect())
+        .await
+        .map_err(Into::into)
     }
 }
 
@@ -325,13 +315,7 @@ fn validate_field_definition(key: &str, label: &str) -> Result<()> {
 }
 
 fn validate_field_key(key: &str) -> Result<()> {
-    let valid_key = !key.is_empty()
-        && key.len() <= 64
-        && key
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || b"._-".contains(&byte));
-
-    if !valid_key {
+    if !is_valid_field_key(key) {
         return Err(AppError::InvalidRequest("Invalid field key"));
     }
 

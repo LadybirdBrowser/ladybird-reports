@@ -12,37 +12,76 @@ use sha2::{Digest, Sha256};
 
 use super::super::AdminState;
 
-const STYLESHEET: &str = include_str!("../../../../assets/application.css");
-const JAVASCRIPT: &str = include_str!("../../../../assets/application.js");
-const REPORTS_JAVASCRIPT: &str = include_str!("../../../../assets/reports.js");
-const AUDIT_LOG_JAVASCRIPT: &str = include_str!("../../../../assets/audit-log.js");
-const LIST_SEARCH_JAVASCRIPT: &str = include_str!("../../../../assets/list-search.js");
-const GITHUB_ICON: &str = include_str!("../../../../assets/github-icon.svg");
-const LADYBIRD_MARK: &[u8] = include_bytes!("../../../../assets/ladybird-mark.png");
+struct AssetSource {
+    name: &'static str,
+    content_type: &'static str,
+    body: &'static [u8],
+}
 
-static STYLESHEET_ETAG: LazyLock<HeaderValue> = LazyLock::new(|| asset_etag(STYLESHEET));
-static JAVASCRIPT_ETAG: LazyLock<HeaderValue> = LazyLock::new(|| asset_etag(JAVASCRIPT));
-static REPORTS_JAVASCRIPT_ETAG: LazyLock<HeaderValue> =
-    LazyLock::new(|| asset_etag(REPORTS_JAVASCRIPT));
-static AUDIT_LOG_JAVASCRIPT_ETAG: LazyLock<HeaderValue> =
-    LazyLock::new(|| asset_etag(AUDIT_LOG_JAVASCRIPT));
-static LIST_SEARCH_JAVASCRIPT_ETAG: LazyLock<HeaderValue> =
-    LazyLock::new(|| asset_etag(LIST_SEARCH_JAVASCRIPT));
-static GITHUB_ICON_ETAG: LazyLock<HeaderValue> = LazyLock::new(|| asset_etag(GITHUB_ICON));
-static LADYBIRD_MARK_ETAG: LazyLock<HeaderValue> = LazyLock::new(|| asset_etag(LADYBIRD_MARK));
+struct Asset {
+    name: &'static str,
+    content_type: &'static str,
+    body: &'static [u8],
+    etag: HeaderValue,
+}
+
+/// Every embedded asset. Adding one here is all that is needed to serve it and
+/// to include it in the content-derived asset version.
+const ASSET_SOURCES: [AssetSource; 7] = [
+    AssetSource {
+        name: "application.css",
+        content_type: "text/css; charset=utf-8",
+        body: include_bytes!("../../../../assets/application.css"),
+    },
+    AssetSource {
+        name: "application.js",
+        content_type: "text/javascript; charset=utf-8",
+        body: include_bytes!("../../../../assets/application.js"),
+    },
+    AssetSource {
+        name: "reports.js",
+        content_type: "text/javascript; charset=utf-8",
+        body: include_bytes!("../../../../assets/reports.js"),
+    },
+    AssetSource {
+        name: "audit-log.js",
+        content_type: "text/javascript; charset=utf-8",
+        body: include_bytes!("../../../../assets/audit-log.js"),
+    },
+    AssetSource {
+        name: "list-search.js",
+        content_type: "text/javascript; charset=utf-8",
+        body: include_bytes!("../../../../assets/list-search.js"),
+    },
+    AssetSource {
+        name: "github-icon.svg",
+        content_type: "image/svg+xml",
+        body: include_bytes!("../../../../assets/github-icon.svg"),
+    },
+    AssetSource {
+        name: "ladybird-mark.png",
+        content_type: "image/png",
+        body: include_bytes!("../../../../assets/ladybird-mark.png"),
+    },
+];
+
+static ASSETS: LazyLock<Vec<Asset>> = LazyLock::new(|| {
+    ASSET_SOURCES
+        .iter()
+        .map(|source| Asset {
+            name: source.name,
+            content_type: source.content_type,
+            body: source.body,
+            etag: asset_etag(source.body),
+        })
+        .collect()
+});
+
 static ASSET_VERSION: LazyLock<String> = LazyLock::new(|| {
     let mut digest = Sha256::new();
-    for asset in [
-        STYLESHEET.as_bytes(),
-        JAVASCRIPT.as_bytes(),
-        REPORTS_JAVASCRIPT.as_bytes(),
-        AUDIT_LOG_JAVASCRIPT.as_bytes(),
-        LIST_SEARCH_JAVASCRIPT.as_bytes(),
-        GITHUB_ICON.as_bytes(),
-        LADYBIRD_MARK,
-    ] {
-        digest.update((asset.len() as u64).to_be_bytes());
-        digest.update(asset);
+    for asset in ASSETS.iter() {
+        digest.update((asset.body.len() as u64).to_be_bytes());
+        digest.update(asset.body);
     }
     hex::encode(digest.finalize())
 });
@@ -51,87 +90,55 @@ pub fn asset_version() -> &'static str {
     ASSET_VERSION.as_str()
 }
 
+fn asset(name: &str) -> Option<&'static Asset> {
+    ASSETS.iter().find(|asset| asset.name == name)
+}
+
+fn with_caching(
+    mut response: Response,
+    cache_control: &'static str,
+    etag: &HeaderValue,
+) -> Response {
+    let headers = response.headers_mut();
+    headers.insert(
+        header::CACHE_CONTROL,
+        HeaderValue::from_static(cache_control),
+    );
+    headers.insert(header::ETAG, etag.clone());
+    response
+}
+
 pub async fn versioned_asset(Path((version, name)): Path<(String, String)>) -> Response {
     if version != asset_version() {
         return StatusCode::NOT_FOUND.into_response();
     }
 
-    let Some((body, content_type, etag)) = asset(&name) else {
+    let Some(asset) = asset(&name) else {
         return StatusCode::NOT_FOUND.into_response();
     };
 
-    let mut response = ([(header::CONTENT_TYPE, content_type)], body).into_response();
-    response.headers_mut().insert(
-        header::CACHE_CONTROL,
-        HeaderValue::from_static("public, max-age=31536000, immutable"),
-    );
-    response.headers_mut().insert(header::ETAG, etag.clone());
-    response
+    with_caching(
+        ([(header::CONTENT_TYPE, asset.content_type)], asset.body).into_response(),
+        "public, max-age=31536000, immutable",
+        &asset.etag,
+    )
 }
 
 pub async fn unversioned_asset(Path(name): Path<String>, headers: HeaderMap) -> Response {
-    let Some((body, content_type, etag)) = asset(&name) else {
+    let Some(asset) = asset(&name) else {
         return StatusCode::NOT_FOUND.into_response();
     };
-    static_asset_bytes(&headers, body, content_type, etag)
-}
 
-fn asset(name: &str) -> Option<(&'static [u8], &'static str, &'static HeaderValue)> {
-    Some(match name {
-        "application.css" => (
-            STYLESHEET.as_bytes(),
-            "text/css; charset=utf-8",
-            &STYLESHEET_ETAG,
-        ),
-        "application.js" => (
-            JAVASCRIPT.as_bytes(),
-            "text/javascript; charset=utf-8",
-            &JAVASCRIPT_ETAG,
-        ),
-        "reports.js" => (
-            REPORTS_JAVASCRIPT.as_bytes(),
-            "text/javascript; charset=utf-8",
-            &REPORTS_JAVASCRIPT_ETAG,
-        ),
-        "audit-log.js" => (
-            AUDIT_LOG_JAVASCRIPT.as_bytes(),
-            "text/javascript; charset=utf-8",
-            &AUDIT_LOG_JAVASCRIPT_ETAG,
-        ),
-        "list-search.js" => (
-            LIST_SEARCH_JAVASCRIPT.as_bytes(),
-            "text/javascript; charset=utf-8",
-            &LIST_SEARCH_JAVASCRIPT_ETAG,
-        ),
-        "github-icon.svg" => (GITHUB_ICON.as_bytes(), "image/svg+xml", &GITHUB_ICON_ETAG),
-        "ladybird-mark.png" => (LADYBIRD_MARK, "image/png", &LADYBIRD_MARK_ETAG),
-        _ => return None,
-    })
-}
-
-fn static_asset_bytes(
-    request_headers: &HeaderMap,
-    body: &'static [u8],
-    content_type: &'static str,
-    etag: &HeaderValue,
-) -> Response {
-    let is_current = request_headers
+    let is_current = headers
         .get(header::IF_NONE_MATCH)
-        .is_some_and(|candidates| etag_matches(candidates, etag));
-
-    let mut response = if is_current {
+        .is_some_and(|candidates| etag_matches(candidates, &asset.etag));
+    let response = if is_current {
         StatusCode::NOT_MODIFIED.into_response()
     } else {
-        ([(header::CONTENT_TYPE, content_type)], body).into_response()
+        ([(header::CONTENT_TYPE, asset.content_type)], asset.body).into_response()
     };
 
-    response.headers_mut().insert(
-        header::CACHE_CONTROL,
-        HeaderValue::from_static("public, max-age=0, must-revalidate"),
-    );
-    response.headers_mut().insert(header::ETAG, etag.clone());
-
-    response
+    with_caching(response, "public, max-age=0, must-revalidate", &asset.etag)
 }
 
 fn asset_etag(body: impl AsRef<[u8]>) -> HeaderValue {

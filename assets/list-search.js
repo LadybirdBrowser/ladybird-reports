@@ -180,14 +180,14 @@ class ListSearchController {
         }
 
         for (const [index, option] of this.options.entries()) {
-            const button = createReportElement("button", "search-completion");
+            const button = createElement("button", "search-completion");
             button.type = "button";
             button.role = "option";
             button.dataset.searchCompletion = String(index);
             button.setAttribute("aria-selected", String(index === this.activeOption));
             button.append(
-                createReportElement("strong", "", option.label),
-                createReportElement("span", "", option.description),
+                createElement("strong", "", option.label),
+                createElement("span", "", option.description),
             );
             this.completions.append(button);
         }
@@ -287,17 +287,6 @@ function activeTokenRange(value, caret) {
         }
     }
     return { start, end };
-}
-
-function createReportElement(tagName, className, text) {
-    const element = document.createElement(tagName);
-    if (className) {
-        element.className = className;
-    }
-    if (text !== undefined) {
-        element.textContent = text;
-    }
-    return element;
 }
 
 function initializeListSearches() {

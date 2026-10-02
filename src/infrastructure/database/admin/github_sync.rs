@@ -7,7 +7,7 @@ use crate::{
     infrastructure::{database::AdminDatabase, github::GithubIssue},
 };
 
-use super::issues::validate_issue_text;
+use super::{insert_audit_event, issues::validate_issue_text};
 
 impl AdminDatabase {
     pub async fn replace_github_issue(
@@ -133,18 +133,17 @@ impl AdminDatabase {
         .execute(&mut *transaction)
         .await?;
 
-        sqlx::query(
-            "INSERT INTO audit_events (actor, action, entity_id, details)
-             VALUES ($1, 'issue.update_github_link', $2, $3)",
+        insert_audit_event(
+            &mut *transaction,
+            Some(actor),
+            "issue.update_github_link",
+            Some(issue_id.0),
+            serde_json::json!({
+                "from": { "repository": old_repository, "number": old_number, "url": old_url },
+                "to": { "repository": repository, "number": replacement.number,
+                        "url": replacement.html_url },
+            }),
         )
-        .bind(actor)
-        .bind(issue_id.0)
-        .bind(serde_json::json!({
-            "from": { "repository": old_repository, "number": old_number, "url": old_url },
-            "to": { "repository": repository, "number": replacement.number,
-                    "url": replacement.html_url },
-        }))
-        .execute(&mut *transaction)
         .await?;
 
         transaction.commit().await?;
@@ -301,20 +300,19 @@ impl AdminDatabase {
             || previous_description != description
             || previous_url != issue.html_url
         {
-            sqlx::query(
-                "INSERT INTO audit_events (actor, action, entity_id, details)
-                 VALUES ($1, 'issue.sync_github', $2, $3)",
+            insert_audit_event(
+                &mut *transaction,
+                actor,
+                "issue.sync_github",
+                Some(issue_id.0),
+                serde_json::json!({
+                    "source": source,
+                    "state": { "from": previous_state, "to": state },
+                    "title_changed": previous_title != issue.title,
+                    "description_changed": previous_description != description,
+                    "url_changed": previous_url != issue.html_url,
+                }),
             )
-            .bind(actor)
-            .bind(issue_id.0)
-            .bind(serde_json::json!({
-                "source": source,
-                "state": { "from": previous_state, "to": state },
-                "title_changed": previous_title != issue.title,
-                "description_changed": previous_description != description,
-                "url_changed": previous_url != issue.html_url,
-            }))
-            .execute(&mut *transaction)
             .await?;
         }
 
@@ -377,16 +375,16 @@ impl AdminDatabase {
         .await?;
 
         if previous_state != state {
-            sqlx::query(
-                "INSERT INTO audit_events (action, entity_id, details)
-                 VALUES ('issue.sync_github', $1, $2)",
+            insert_audit_event(
+                &mut *transaction,
+                None,
+                "issue.sync_github",
+                Some(issue_id.0),
+                serde_json::json!({
+                    "source": source,
+                    "state": { "from": previous_state, "to": state },
+                }),
             )
-            .bind(issue_id.0)
-            .bind(serde_json::json!({
-                "source": source,
-                "state": { "from": previous_state, "to": state },
-            }))
-            .execute(&mut *transaction)
             .await?;
         }
 

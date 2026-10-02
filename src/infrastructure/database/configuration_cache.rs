@@ -16,11 +16,12 @@ const RETRY_DELAY: Duration = Duration::from_secs(5);
 
 #[derive(Clone, Default)]
 pub struct ConfigurationCache {
-    current: Arc<RwLock<Option<RuntimeConfiguration>>>,
+    current: Arc<RwLock<Option<Arc<RuntimeConfiguration>>>>,
 }
 
 impl ConfigurationCache {
-    pub fn get(&self) -> Option<RuntimeConfiguration> {
+    /// Returns a shared snapshot; reading it never copies the configuration.
+    pub fn get(&self) -> Option<Arc<RuntimeConfiguration>> {
         self.current
             .read()
             .expect("configuration cache lock is not poisoned")
@@ -31,7 +32,7 @@ impl ConfigurationCache {
         *self
             .current
             .write()
-            .expect("configuration cache lock is not poisoned") = Some(configuration);
+            .expect("configuration cache lock is not poisoned") = Some(Arc::new(configuration));
     }
 
     pub async fn start(&self, pool: &PgPool, query: &'static str) -> Result<JoinHandle<()>> {
@@ -68,7 +69,7 @@ impl ConfigurationCache {
     async fn reload(&self, pool: &PgPool, query: &'static str) -> Result<()> {
         let value: Value = sqlx::query_scalar(query).fetch_one(pool).await?;
         let configuration: RuntimeConfiguration =
-            serde_json::from_value(value).map_err(|error| AppError::Internal(error.into()))?;
+            serde_json::from_value(value).map_err(AppError::internal)?;
         configuration.validate()?;
         self.set(configuration);
         Ok(())

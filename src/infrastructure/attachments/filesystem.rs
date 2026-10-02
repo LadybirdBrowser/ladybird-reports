@@ -354,7 +354,7 @@ async fn validate_attachment_file(
         }
     })
     .await
-    .map_err(|error| AppError::Internal(error.into()))?
+    .map_err(AppError::internal)?
 }
 
 fn validate_utf8_text(path: &Path, maximum_bytes: usize) -> Result<()> {
@@ -418,7 +418,7 @@ fn validate_png(path: &Path, maximum_pixels: u64, maximum_decoded_bytes: usize) 
 async fn sync_directory(path: PathBuf) -> Result<()> {
     tokio::task::spawn_blocking(move || std::fs::File::open(path)?.sync_all())
         .await
-        .map_err(|error| AppError::Internal(error.into()))??;
+        .map_err(AppError::internal)??;
 
     Ok(())
 }

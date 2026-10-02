@@ -58,7 +58,7 @@ impl DiscordClient {
         let http = Client::builder()
             .user_agent("Ladybird-Reports/0.1")
             .build()
-            .map_err(|error| AppError::Internal(error.into()))?;
+            .map_err(AppError::internal)?;
 
         Ok(Self { http })
     }

@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
 use chrono::DateTime;
 use serde::Serialize;
@@ -86,7 +86,7 @@ impl IngestDatabase {
             .await
     }
 
-    pub async fn configuration(&self) -> Result<RuntimeConfiguration> {
+    pub async fn configuration(&self) -> Result<Arc<RuntimeConfiguration>> {
         if let Some(configuration) = self.configuration_cache.get() {
             return Ok(configuration);
         }
@@ -96,10 +96,10 @@ impl IngestDatabase {
             .await?;
 
         let configuration: RuntimeConfiguration =
-            serde_json::from_value(value).map_err(|error| AppError::Internal(error.into()))?;
+            serde_json::from_value(value).map_err(AppError::internal)?;
 
         configuration.validate()?;
-        Ok(configuration)
+        Ok(Arc::new(configuration))
     }
 
     pub async fn field_definitions(&self) -> Result<HashMap<String, FieldDefinition>> {

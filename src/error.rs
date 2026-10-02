@@ -49,6 +49,11 @@ pub enum AppError {
 }
 
 impl AppError {
+    /// Wraps any failure the caller cannot act on, for use with `map_err`.
+    pub fn internal(error: impl Into<anyhow::Error>) -> Self {
+        Self::Internal(error.into())
+    }
+
     pub fn status(&self) -> StatusCode {
         match self {
             Self::InvalidRequest(_) => StatusCode::BAD_REQUEST,

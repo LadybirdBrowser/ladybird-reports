@@ -169,12 +169,11 @@ impl GithubClient {
             .connect_timeout(Duration::from_secs(5))
             .timeout(Duration::from_secs(15))
             .build()
-            .map_err(|error| AppError::Internal(error.into()))?;
+            .map_err(AppError::internal)?;
 
         let api_base_url = std::env::var("GITHUB_API_BASE_URL")
             .unwrap_or_else(|_| "https://api.github.com".into());
-        let api_base_url =
-            reqwest::Url::parse(&api_base_url).map_err(|error| AppError::Internal(error.into()))?;
+        let api_base_url = reqwest::Url::parse(&api_base_url).map_err(AppError::internal)?;
 
         // Browser tests use a local OAuth endpoint. Release builds always use
         // GitHub's endpoint, regardless of the surrounding environment.
@@ -183,8 +182,7 @@ impl GithubClient {
             .unwrap_or_else(|_| "https://github.com".into());
         #[cfg(not(debug_assertions))]
         let oauth_base_url = "https://github.com".to_owned();
-        let oauth_base_url = reqwest::Url::parse(&oauth_base_url)
-            .map_err(|error| AppError::Internal(error.into()))?;
+        let oauth_base_url = reqwest::Url::parse(&oauth_base_url).map_err(AppError::internal)?;
         #[cfg(debug_assertions)]
         if std::env::var_os("GITHUB_TEST_OAUTH_BASE_URL").is_some()
             && !matches!(
@@ -202,9 +200,8 @@ impl GithubClient {
             .map(|encoded| {
                 let pem = base64::engine::general_purpose::STANDARD
                     .decode(encoded)
-                    .map_err(|error| AppError::Internal(error.into()))?;
-                let key = EncodingKey::from_rsa_pem(&pem)
-                    .map_err(|error| AppError::Internal(error.into()))?;
+                    .map_err(AppError::internal)?;
+                let key = EncodingKey::from_rsa_pem(&pem).map_err(AppError::internal)?;
                 Ok::<_, AppError>(Arc::new(key))
             })
             .transpose()?;
@@ -235,7 +232,7 @@ impl GithubClient {
             },
             key,
         )
-        .map_err(|error| AppError::Internal(error.into()))?;
+        .map_err(AppError::internal)?;
         let path = format!("/app/installations/{installation_id}/access_tokens");
         let result: InstallationToken = self
             .request_json(
@@ -350,7 +347,7 @@ impl GithubClient {
             ])
             .send()
             .await
-            .map_err(|error| AppError::Internal(error.into()))?;
+            .map_err(AppError::internal)?;
 
         decode_github_response(response).await
     }
@@ -372,13 +369,10 @@ impl GithubClient {
             ])
             .send()
             .await
-            .map_err(|error| AppError::Internal(error.into()))?;
+            .map_err(AppError::internal)?;
 
         let status = response.status();
-        let body: serde_json::Value = response
-            .json()
-            .await
-            .map_err(|error| AppError::Internal(error.into()))?;
+        let body: serde_json::Value = response.json().await.map_err(AppError::internal)?;
 
         if body.get("error").and_then(serde_json::Value::as_str) == Some("bad_refresh_token") {
             return Err(AppError::AuthenticationRequired);
@@ -388,7 +382,7 @@ impl GithubClient {
             return Err(AppError::Unavailable);
         }
 
-        serde_json::from_value(body).map_err(|error| AppError::Internal(error.into()))
+        serde_json::from_value(body).map_err(AppError::internal)
     }
 
     pub async fn current_user(&self, token: &str) -> Result<GithubUser> {
@@ -537,9 +531,7 @@ impl GithubClient {
     }
 
     fn api_url(&self, path: &str) -> Result<reqwest::Url> {
-        self.api_base_url
-            .join(path)
-            .map_err(|error| AppError::Internal(error.into()))
+        self.api_base_url.join(path).map_err(AppError::internal)
     }
 
     async fn request_json_url<T, B>(
@@ -580,10 +572,7 @@ impl GithubClient {
             request = request.json(body);
         }
 
-        let response = request
-            .send()
-            .await
-            .map_err(|error| AppError::Internal(error.into()))?;
+        let response = request.send().await.map_err(AppError::internal)?;
 
         decode_github_response(response).await
     }
@@ -598,10 +587,7 @@ fn team_membership_path(authorization_team: &str, login: &str) -> String {
 
 async fn decode_github_response<T: DeserializeOwned>(response: reqwest::Response) -> Result<T> {
     match response.status() {
-        status if status.is_success() => response
-            .json()
-            .await
-            .map_err(|error| AppError::Internal(error.into())),
+        status if status.is_success() => response.json().await.map_err(AppError::internal),
         StatusCode::NOT_FOUND => Err(AppError::NotFound("GitHub resource not found")),
         StatusCode::GONE => Err(AppError::Gone("GitHub issue was deleted")),
         StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => {

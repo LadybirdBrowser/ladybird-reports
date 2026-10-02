@@ -13,7 +13,7 @@ use crate::{
 
 use super::{
     AuditEvent, BlockReportSourceOutcome, ReportDetails, ReportQuery, ReportRecord,
-    ReportSearchResult, ReportSummary, StoredAttachment, StoredDiagnosticField,
+    ReportSearchResult, ReportSummary, StoredAttachment, StoredDiagnosticField, insert_audit_event,
 };
 
 #[derive(Default)]
@@ -38,6 +38,16 @@ impl TitleFields {
     }
 }
 
+/// Reports per page. `list_reports` loads one extra row so a caller can tell
+/// whether another page exists.
+pub const REPORT_PAGE_SIZE: usize = 50;
+
+/// The most distinct values offered as completions for a search key. One more
+/// is loaded, so a key with too many values to be useful can be recognised.
+pub const SEARCH_VALUE_LIMIT: usize = 25;
+
+const SEARCH_VALUE_QUERY_LIMIT: i64 = SEARCH_VALUE_LIMIT as i64 + 1;
+
 impl AdminDatabase {
     pub async fn ensure_report_unassigned(&self, report_id: ReportId) -> Result<()> {
         let issue_id: Option<Option<IssueId>> = sqlx::query_scalar(
@@ -61,7 +71,7 @@ impl AdminDatabase {
         &self,
         attachment_id: AttachmentId,
     ) -> Result<Option<StoredAttachment>> {
-        let row = sqlx::query(
+        sqlx::query_as(
             "SELECT
                 attachments.id,
                 attachments.name,
@@ -76,16 +86,8 @@ impl AdminDatabase {
         )
         .bind(attachment_id)
         .fetch_optional(&self.pool)
-        .await?;
-
-        Ok(row.map(|row| StoredAttachment {
-            id: row.get("id"),
-            name: row.get("name"),
-            media_type: row.get("media_type"),
-            size: row.get("size"),
-            sha256: row.get("sha256"),
-            storage_key: row.get("storage_key"),
-        }))
+        .await
+        .map_err(Into::into)
     }
 
     pub async fn list_reports(&self, query: &ReportQuery) -> Result<Vec<ReportSummary>> {
@@ -138,22 +140,13 @@ impl AdminDatabase {
             .push_bind(query.before)
             .push(", ")
             .push_bind(query.before_id)
-            .push(")) ORDER BY reports.created_at DESC, reports.id DESC LIMIT 51");
+            .push(")) ORDER BY reports.created_at DESC, reports.id DESC LIMIT ")
+            .push_bind((REPORT_PAGE_SIZE + 1) as i64);
 
-        let rows = sql.build().fetch_all(&self.pool).await?;
-        let mut reports = rows
-            .into_iter()
-            .map(|row| ReportSummary {
-                id: row.get("id"),
-                title: String::new(),
-                kind: row.get("kind"),
-                client_version: row.get("client_version"),
-                platform: None,
-                architecture: None,
-                state: row.get("state"),
-                created_at: row.get("created_at"),
-            })
-            .collect::<Vec<_>>();
+        let mut reports = sql
+            .build_query_as::<ReportSummary>()
+            .fetch_all(&self.pool)
+            .await?;
         self.populate_report_titles(&mut reports).await?;
         Ok(reports)
     }
@@ -314,9 +307,11 @@ impl AdminDatabase {
             return Ok(None);
         };
 
-        let fields = self.report_fields(report_id).await?;
-        let attachments = self.report_attachments(report_id).await?;
-        let events = self.audit_events(report_id.0).await?;
+        let (fields, attachments, events) = tokio::try_join!(
+            self.report_fields(report_id),
+            self.report_attachments(report_id),
+            self.audit_events(report_id.0),
+        )?;
 
         Ok(Some(ReportDetails {
             report,
@@ -420,7 +415,7 @@ impl AdminDatabase {
     }
 
     async fn report_attachments(&self, report_id: ReportId) -> Result<Vec<StoredAttachment>> {
-        let rows = sqlx::query(
+        sqlx::query_as(
             "SELECT id, name, media_type, size, sha256, storage_key
              FROM attachments
              WHERE report_id = $1
@@ -428,19 +423,8 @@ impl AdminDatabase {
         )
         .bind(report_id)
         .fetch_all(&self.pool)
-        .await?;
-
-        Ok(rows
-            .into_iter()
-            .map(|row| StoredAttachment {
-                id: row.get("id"),
-                name: row.get("name"),
-                media_type: row.get("media_type"),
-                size: row.get("size"),
-                sha256: row.get("sha256"),
-                storage_key: row.get("storage_key"),
-            })
-            .collect())
+        .await
+        .map_err(Into::into)
     }
 
     pub async fn assign_report_to_issue(
@@ -510,17 +494,16 @@ impl AdminDatabase {
         .await?;
 
         if previous.0 != Some(issue_id) {
-            sqlx::query(
-                "INSERT INTO audit_events (actor, action, entity_id, details)
-                 VALUES ($1, 'report.update_issue', $2, $3)",
+            insert_audit_event(
+                &mut *transaction,
+                Some(actor),
+                "report.update_issue",
+                Some(report_id.0),
+                serde_json::json!({
+                    "from": previous.0,
+                    "to": issue_id,
+                }),
             )
-            .bind(actor)
-            .bind(report_id.0)
-            .bind(serde_json::json!({
-                "from": previous.0,
-                "to": issue_id,
-            }))
-            .execute(&mut *transaction)
             .await?;
         }
 
@@ -607,18 +590,14 @@ impl AdminDatabase {
         from: &str,
         to: &str,
     ) -> Result<()> {
-        sqlx::query(
-            "INSERT INTO audit_events (actor, action, entity_id, details)
-             VALUES ($1, 'report.update_state', $2,
-                jsonb_build_object('from', $3::text, 'to', $4::text))",
+        insert_audit_event(
+            &mut **transaction,
+            Some(actor),
+            "report.update_state",
+            Some(report_id.0),
+            serde_json::json!({ "from": from, "to": to }),
         )
-        .bind(actor)
-        .bind(report_id.0)
-        .bind(from)
-        .bind(to)
-        .execute(&mut **transaction)
-        .await?;
-        Ok(())
+        .await
     }
 
     pub async fn report_search_values(&self, key: &str) -> Result<Vec<String>> {
@@ -629,8 +608,9 @@ impl AdminDatabase {
                      FROM reports
                      WHERE storage_state = 'ready'
                      ORDER BY client_version
-                     LIMIT 26",
+                     LIMIT $1",
                 )
+                .bind(SEARCH_VALUE_QUERY_LIMIT)
                 .fetch_all(&self.pool)
                 .await?
             }
@@ -641,8 +621,9 @@ impl AdminDatabase {
                      WHERE storage_state = 'ready'
                         AND build <> ''
                      ORDER BY build
-                     LIMIT 26",
+                     LIMIT $1",
                 )
+                .bind(SEARCH_VALUE_QUERY_LIMIT)
                 .fetch_all(&self.pool)
                 .await?
             }
@@ -656,9 +637,10 @@ impl AdminDatabase {
                         AND reports.storage_state = 'ready'
                         AND length(report_fields.value #>> '{}') <= 128
                      ORDER BY report_fields.value #>> '{}'
-                     LIMIT 26",
+                     LIMIT $2",
                 )
                 .bind(key)
+                .bind(SEARCH_VALUE_QUERY_LIMIT)
                 .fetch_all(&self.pool)
                 .await?
             }
@@ -752,23 +734,17 @@ impl AdminDatabase {
             .await?;
         }
 
-        sqlx::query(
-            "INSERT INTO audit_events (actor, action, entity_id, details)
-             VALUES (
-                $1,
-                'submission_source.update_state',
-                $2,
-                jsonb_build_object(
-                    'from', 'allowed',
-                    'to', 'blocked',
-                    'triage_reports_rejected', $3::bigint
-                )
-             )",
+        insert_audit_event(
+            &mut *transaction,
+            Some(actor),
+            "submission_source.update_state",
+            Some(report_id.0),
+            serde_json::json!({
+                "from": "allowed",
+                "to": "blocked",
+                "triage_reports_rejected": rejected_report_ids.len(),
+            }),
         )
-        .bind(actor)
-        .bind(report_id.0)
-        .bind(rejected_report_ids.len() as i64)
-        .execute(&mut *transaction)
         .await?;
 
         transaction.commit().await?;
@@ -799,18 +775,13 @@ impl AdminDatabase {
             return Err(AppError::InvalidRequest("Submission source is not blocked"));
         }
 
-        sqlx::query(
-            "INSERT INTO audit_events (actor, action, entity_id, details)
-             VALUES (
-                $1,
-                'submission_source.update_state',
-                $2,
-                jsonb_build_object('from', 'blocked', 'to', 'allowed')
-             )",
+        insert_audit_event(
+            &mut *transaction,
+            Some(actor),
+            "submission_source.update_state",
+            Some(report_id.0),
+            serde_json::json!({ "from": "blocked", "to": "allowed" }),
         )
-        .bind(actor)
-        .bind(report_id.0)
-        .execute(&mut *transaction)
         .await?;
 
         transaction.commit().await?;
@@ -818,7 +789,7 @@ impl AdminDatabase {
     }
 
     pub(super) async fn audit_events(&self, entity_id: uuid::Uuid) -> Result<Vec<AuditEvent>> {
-        let rows = sqlx::query(
+        sqlx::query_as(
             "SELECT
                 audit_events.id,
                 audit_events.action,
@@ -834,19 +805,8 @@ impl AdminDatabase {
         )
         .bind(entity_id)
         .fetch_all(&self.pool)
-        .await?;
-
-        Ok(rows
-            .into_iter()
-            .map(|row| AuditEvent {
-                id: row.get("id"),
-                action: row.get("action"),
-                actor_login: row.get("actor_login"),
-                entity_id: row.get("entity_id"),
-                details: row.get("details"),
-                created_at: row.get("created_at"),
-            })
-            .collect())
+        .await
+        .map_err(Into::into)
     }
 }
 

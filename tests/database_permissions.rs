@@ -207,15 +207,7 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
         client_address_key: Arc::new([29; 32]),
     });
     let peer = ConnectInfo("127.0.0.1:12345".parse::<SocketAddr>().unwrap());
-    let challenge_request = Request::builder()
-        .method("POST")
-        .uri("/api/v1/challenges")
-        .header(CONTENT_TYPE, "application/json")
-        .extension(peer)
-        .body(Body::from(
-            serde_json::json!({ "manifest_digest": manifest_digest }).to_string(),
-        ))
-        .expect("build challenge request");
+    let challenge_request = post_challenge(peer, &manifest_digest);
     let challenge_response = application
         .clone()
         .oneshot(challenge_request)
@@ -376,22 +368,11 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
         Some(600),
         "the migration backfills the setting"
     );
-    let original_team = configuration.github_authorization_team;
+    let original_team = configuration.github_authorization_team.clone();
 
     let integration_session_hash = "9".repeat(64);
     admin_database
-        .create_session(NewSession {
-            github_id: 999,
-            login: "integration-test",
-            authorized_team: &original_team,
-            token_hash: &integration_session_hash,
-            encrypted_access_token: "encrypted-token",
-            encrypted_refresh_token: None,
-            access_token_expires_at: None,
-            refresh_token_expires_at: None,
-            csrf_token: "integration-csrf",
-            lifetime: Duration::minutes(5),
-        })
+        .create_session(new_session(&original_team, &integration_session_hash))
         .await
         .expect("create audited session");
     admin_database
@@ -494,16 +475,10 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
     let team_change_session_hash = "8".repeat(64);
     admin_database
         .create_session(NewSession {
-            github_id: 999,
-            login: "integration-test",
-            authorized_team: &original_team,
-            token_hash: &team_change_session_hash,
-            encrypted_access_token: "encrypted-token",
             encrypted_refresh_token: Some("encrypted-refresh-token"),
             access_token_expires_at: Some(Utc::now() + Duration::hours(8)),
             refresh_token_expires_at: Some(Utc::now() + Duration::days(180)),
-            csrf_token: "integration-csrf",
-            lifetime: Duration::minutes(5),
+            ..new_session(&original_team, &team_change_session_hash)
         })
         .await
         .expect("create session under original team policy");
@@ -523,10 +498,12 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
     .expect("read extended session expiry");
     assert!(extended_lifetime > 23.0 * 60.0 * 60.0);
 
-    let mut configuration = admin_database
-        .configuration()
-        .await
-        .expect("load runtime configuration");
+    let mut configuration = Arc::unwrap_or_clone(
+        admin_database
+            .configuration()
+            .await
+            .expect("load runtime configuration"),
+    );
     let admin_listener = admin_database
         .start_configuration_cache()
         .await
@@ -574,18 +551,7 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
     .expect("reporting process received configuration notification");
     assert!(
         admin_database
-            .create_session(NewSession {
-                github_id: 999,
-                login: "integration-test",
-                authorized_team: &original_team,
-                token_hash: &"7".repeat(64),
-                encrypted_access_token: "encrypted-token",
-                encrypted_refresh_token: None,
-                access_token_expires_at: None,
-                refresh_token_expires_at: None,
-                csrf_token: "integration-csrf",
-                lifetime: Duration::minutes(5),
-            })
+            .create_session(new_session(&original_team, &"7".repeat(64)))
             .await
             .is_err(),
         "a login verified under the old team must be rejected"
@@ -607,15 +573,7 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
         .await
         .expect("block report source");
 
-    let blocked_challenge_request = Request::builder()
-        .method("POST")
-        .uri("/api/v1/challenges")
-        .header(CONTENT_TYPE, "application/json")
-        .extension(peer)
-        .body(Body::from(
-            serde_json::json!({ "manifest_digest": manifest_digest }).to_string(),
-        ))
-        .expect("build blocked challenge request");
+    let blocked_challenge_request = post_challenge(peer, &manifest_digest);
     let blocked_challenge_response = application
         .clone()
         .oneshot(blocked_challenge_request)
@@ -631,15 +589,7 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
         .await
         .expect("unblock report source");
 
-    let unblocked_challenge_request = Request::builder()
-        .method("POST")
-        .uri("/api/v1/challenges")
-        .header(CONTENT_TYPE, "application/json")
-        .extension(peer)
-        .body(Body::from(
-            serde_json::json!({ "manifest_digest": manifest_digest }).to_string(),
-        ))
-        .expect("build unblocked challenge request");
+    let unblocked_challenge_request = post_challenge(peer, &manifest_digest);
     let unblocked_challenge_response = application
         .oneshot(unblocked_challenge_request)
         .await
@@ -1785,6 +1735,33 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
     .await
     .expect("count canonical issues");
     assert_eq!(destination_count, 1);
+}
+
+fn new_session<'a>(authorized_team: &'a str, token_hash: &'a str) -> NewSession<'a> {
+    NewSession {
+        github_id: 999,
+        login: "integration-test",
+        authorized_team,
+        token_hash,
+        encrypted_access_token: "encrypted-token",
+        encrypted_refresh_token: None,
+        access_token_expires_at: None,
+        refresh_token_expires_at: None,
+        csrf_token: "integration-csrf",
+        lifetime: Duration::minutes(5),
+    }
+}
+
+fn post_challenge(peer: ConnectInfo<SocketAddr>, manifest_digest: &str) -> Request<Body> {
+    Request::builder()
+        .method("POST")
+        .uri("/api/v1/challenges")
+        .header(CONTENT_TYPE, "application/json")
+        .extension(peer)
+        .body(Body::from(
+            serde_json::json!({ "manifest_digest": manifest_digest }).to_string(),
+        ))
+        .expect("build challenge request")
 }
 
 async fn count_denied_sign_ins(pool: &sqlx::PgPool) -> i64 {

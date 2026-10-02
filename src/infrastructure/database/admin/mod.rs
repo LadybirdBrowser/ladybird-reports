@@ -10,8 +10,11 @@ mod reports;
 mod settings;
 mod stack_signatures;
 
+pub use failure_reasons::FAILURE_REASON_BATCH_SIZE;
 pub(crate) use issues::validate_issue_text;
 pub use models::*;
+pub use reports::{REPORT_PAGE_SIZE, SEARCH_VALUE_LIMIT};
+pub use stack_signatures::STACK_INDEX_BATCH_SIZE;
 
 use sqlx::PgPool;
 
@@ -53,4 +56,27 @@ impl AdminDatabase {
         sqlx::query("SELECT 1").execute(&self.pool).await?;
         Ok(())
     }
+}
+
+/// Appends one row to the audit log. Pass `serde_json::json!({})` when the
+/// event has no details; that is what the column defaults to.
+async fn insert_audit_event<'e>(
+    executor: impl sqlx::PgExecutor<'e>,
+    actor: Option<i64>,
+    action: &str,
+    entity_id: Option<uuid::Uuid>,
+    details: serde_json::Value,
+) -> Result<()> {
+    sqlx::query(
+        "INSERT INTO audit_events (actor, action, entity_id, details)
+         VALUES ($1, $2, $3, $4)",
+    )
+    .bind(actor)
+    .bind(action)
+    .bind(entity_id)
+    .bind(details)
+    .execute(executor)
+    .await?;
+
+    Ok(())
 }

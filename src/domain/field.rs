@@ -146,14 +146,17 @@ pub fn validate_fields(
     Ok(())
 }
 
-fn validate_field_key(key: &str) -> Result<()> {
-    let valid = !key.is_empty()
+/// The shape of a diagnostic field key, shared by submissions and field definitions.
+pub fn is_valid_field_key(key: &str) -> bool {
+    !key.is_empty()
         && key.len() <= 64
         && key
             .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || b"._-".contains(&byte));
+            .all(|byte| byte.is_ascii_alphanumeric() || b"._-".contains(&byte))
+}
 
-    if !valid {
+fn validate_field_key(key: &str) -> Result<()> {
+    if !is_valid_field_key(key) {
         return Err(AppError::InvalidRequest("Invalid diagnostic field key"));
     }
 
