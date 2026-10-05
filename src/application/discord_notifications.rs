@@ -210,25 +210,17 @@ fn report_message(
             inline: true,
         });
     }
-    for (key, label) in [
-        ("platform", "Platform"),
-        ("architecture", "Architecture"),
-        ("signal", "Signal"),
-        ("signal_number", "Signal number"),
-    ] {
+    for (key, label) in [("platform", "Platform"), ("architecture", "Architecture")] {
         if let Some(value) = fields.get(key) {
-            let value = value
-                .as_str()
-                .map(str::to_owned)
-                .unwrap_or_else(|| value.to_string());
             embed_fields.push(DiscordEmbedField {
                 name: label.into(),
-                value: truncate_text(&value, 256),
+                value: truncate_text(&field_text(value), 256),
                 inline: true,
             });
         }
     }
 
+    embed_fields.extend(signal_field(fields));
     embed_fields.extend(page_url_field(fields));
 
     DiscordWebhookMessage {
@@ -245,6 +237,35 @@ fn report_message(
         }],
         allowed_mentions: DiscordAllowedMentions { parse: Vec::new() },
     }
+}
+
+fn field_text(value: &Value) -> String {
+    value
+        .as_str()
+        .map(str::to_owned)
+        .unwrap_or_else(|| value.to_string())
+}
+
+/// The signal that ended the process, by name and number as in `SIGSEGV (11)`.
+/// A report may carry only one of the two.
+fn signal_field(fields: &serde_json::Map<String, Value>) -> Option<DiscordEmbedField> {
+    let text = |key: &str, maximum_characters: usize| {
+        let text = field_text(fields.get(key)?);
+        let text = text.trim();
+        (!text.is_empty()).then(|| truncate_text(text, maximum_characters))
+    };
+
+    let value = match (text("signal", 200), text("signal_number", 32)) {
+        (Some(name), Some(number)) => format!("{name} ({number})"),
+        (Some(value), None) | (None, Some(value)) => value,
+        (None, None) => return None,
+    };
+
+    Some(DiscordEmbedField {
+        name: "Signal".into(),
+        value,
+        inline: true,
+    })
 }
 
 /// The page a report came from. It is shown as code so that Discord does not turn
@@ -456,7 +477,13 @@ mod tests {
             embed
                 .fields
                 .iter()
-                .any(|field| field.name == "Signal number" && field.value == "6")
+                .any(|field| field.name == "Signal" && field.value == "SIGABRT (6)")
+        );
+        assert!(
+            embed
+                .fields
+                .iter()
+                .all(|field| field.name != "Signal number")
         );
         assert!(message.allowed_mentions.parse.is_empty());
     }
@@ -473,6 +500,61 @@ mod tests {
             created_at: Utc::now(),
             attempt_count: 0,
         }
+    }
+
+    fn signal_in_message(fields: serde_json::Value) -> Option<String> {
+        let message = report_message(
+            &notification_with(fields),
+            "https://reports.example",
+            &DiscordConfiguration::default(),
+        );
+        let mut signals = message.embeds[0]
+            .fields
+            .iter()
+            .filter(|field| field.name.starts_with("Signal"));
+        let signal = signals.next().map(|field| field.value.clone());
+
+        assert!(signals.next().is_none(), "the signal is a single field");
+        signal
+    }
+
+    #[test]
+    fn report_message_combines_the_signal_name_and_number() {
+        assert_eq!(
+            signal_in_message(serde_json::json!({ "signal": "SIGSEGV", "signal_number": 11 })),
+            Some("SIGSEGV (11)".into())
+        );
+        assert_eq!(
+            signal_in_message(serde_json::json!({ "signal": "SIGSEGV", "signal_number": "11" })),
+            Some("SIGSEGV (11)".into())
+        );
+    }
+
+    #[test]
+    fn report_message_shows_whichever_part_of_the_signal_is_present() {
+        assert_eq!(
+            signal_in_message(serde_json::json!({ "signal": "SIGABRT" })),
+            Some("SIGABRT".into())
+        );
+        assert_eq!(
+            signal_in_message(serde_json::json!({ "signal_number": 6 })),
+            Some("6".into())
+        );
+        assert_eq!(
+            signal_in_message(serde_json::json!({ "signal": " ", "signal_number": 6 })),
+            Some("6".into())
+        );
+        assert_eq!(signal_in_message(serde_json::json!({})), None);
+    }
+
+    #[test]
+    fn a_long_signal_name_keeps_the_number() {
+        let name = "SIG".repeat(200);
+        let signal = signal_in_message(serde_json::json!({ "signal": name, "signal_number": 11 }))
+            .expect("signal field");
+
+        assert!(signal.ends_with("… (11)"));
+        assert!(signal.chars().count() <= 256);
     }
 
     fn page_url_in_message(fields: serde_json::Value) -> Option<String> {
