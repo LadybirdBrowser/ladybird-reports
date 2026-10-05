@@ -13,6 +13,7 @@ mod report_search;
 mod report_title;
 mod stack_trace;
 mod states;
+mod trusted_proxy;
 
 pub use audit::*;
 pub use configuration::*;
@@ -26,3 +27,4 @@ pub use report_search::*;
 pub use report_title::*;
 pub use stack_trace::*;
 pub use states::*;
+pub use trusted_proxy::*;

@@ -1,6 +1,9 @@
+use std::{collections::HashMap, net::IpAddr};
+
 use ipnet::IpNet;
 use serde::{Deserialize, Serialize};
 
+use super::TrustedProxy;
 use crate::error::{AppError, Result};
 
 pub const HARD_MAX_BODY_BYTES: usize = 66 * 1024 * 1024;
@@ -19,7 +22,11 @@ pub struct RuntimeConfiguration {
     pub github_authorization_team: String,
     #[serde(default)]
     pub github_reports_issue_field_id: Option<i64>,
-    pub trusted_proxies: Vec<IpNet>,
+    pub trusted_proxies: Vec<TrustedProxy>,
+    /// The addresses `trusted_proxies` stands for. Only the process that
+    /// resolves the configured names fills this in, so it is never stored.
+    #[serde(skip)]
+    pub trusted_networks: Vec<IpNet>,
     pub limits: IngestionLimits,
     pub proof_of_work: ProofOfWorkConfiguration,
     pub maintenance: MaintenanceConfiguration,
@@ -111,6 +118,7 @@ impl Default for RuntimeConfiguration {
             github_authorization_team: default_github_authorization_team(),
             github_reports_issue_field_id: None,
             trusted_proxies: Vec::new(),
+            trusted_networks: Vec::new(),
             limits: IngestionLimits::default(),
             proof_of_work: ProofOfWorkConfiguration {
                 expected_work: 5_244_236,
@@ -180,8 +188,8 @@ pub const SETTING_DEFINITIONS: &[SettingDefinition] = &[
         "trusted_proxies",
         "trusted_proxies",
         "Trusted proxies",
-        "Proxy networks whose forwarding headers may identify the original client address.",
-        "A JSON list of IPv4 or IPv6 CIDR ranges.",
+        "Proxies whose forwarding headers may identify the original client address. The public API resolves DNS names itself and uses the addresses for at most five minutes.",
+        "A JSON list of IPv4 or IPv6 CIDR ranges or DNS names.",
     ),
     setting(
         "public_requests_per_minute",
@@ -515,6 +523,33 @@ impl Default for DiscordConfiguration {
 }
 
 impl RuntimeConfiguration {
+    /// The DNS names among the trusted proxies, which still need resolving.
+    pub fn trusted_proxy_hosts(&self) -> impl Iterator<Item = &str> {
+        self.trusted_proxies.iter().filter_map(|proxy| match proxy {
+            TrustedProxy::Host(host) => Some(host.as_str()),
+            TrustedProxy::Network(_) => None,
+        })
+    }
+
+    /// Replaces `trusted_networks` with the configured networks plus the
+    /// addresses resolved for each configured name. A name that is not in
+    /// `resolved` contributes nothing.
+    pub fn resolve_trusted_networks(&mut self, resolved: &HashMap<String, Vec<IpAddr>>) {
+        self.trusted_networks = self
+            .trusted_proxies
+            .iter()
+            .flat_map(|proxy| match proxy {
+                TrustedProxy::Network(network) => vec![*network],
+                TrustedProxy::Host(host) => resolved
+                    .get(host)
+                    .into_iter()
+                    .flatten()
+                    .map(|address| IpNet::from(*address))
+                    .collect(),
+            })
+            .collect();
+    }
+
     pub fn validate(&self) -> Result<()> {
         self.validate_public_url()?;
         validate_origin(&self.admin_base_url, "Invalid admin URL")?;
@@ -747,6 +782,57 @@ mod tests {
             .collect::<BTreeSet<_>>();
 
         assert_eq!(documented_paths, configuration_paths);
+    }
+
+    #[test]
+    fn trusted_networks_combine_configured_ranges_with_resolved_names() {
+        let mut configuration = RuntimeConfiguration {
+            trusted_proxies: vec![
+                "10.200.0.2/32".parse().unwrap(),
+                "coolify-proxy".parse().unwrap(),
+                "unresolved-proxy".parse().unwrap(),
+            ],
+            ..RuntimeConfiguration::default()
+        };
+        let resolved = HashMap::from([(
+            "coolify-proxy".to_owned(),
+            vec![
+                "172.16.1.6".parse::<IpAddr>().unwrap(),
+                "fd44:d044:fd92::6".parse().unwrap(),
+            ],
+        )]);
+
+        configuration.resolve_trusted_networks(&resolved);
+
+        assert_eq!(
+            configuration.trusted_networks,
+            ["10.200.0.2/32", "172.16.1.6/32", "fd44:d044:fd92::6/128"]
+                .map(|network| network.parse::<IpNet>().unwrap())
+        );
+        assert_eq!(
+            configuration.trusted_proxy_hosts().collect::<Vec<_>>(),
+            ["coolify-proxy", "unresolved-proxy"]
+        );
+    }
+
+    #[test]
+    fn resolved_addresses_are_never_stored() {
+        let mut configuration = RuntimeConfiguration {
+            trusted_proxies: vec!["coolify-proxy".parse().unwrap()],
+            ..RuntimeConfiguration::default()
+        };
+        configuration.resolve_trusted_networks(&HashMap::from([(
+            "coolify-proxy".to_owned(),
+            vec!["172.16.1.6".parse().unwrap()],
+        )]));
+
+        let stored = serde_json::to_value(&configuration).expect("serialize configuration");
+
+        assert_eq!(
+            stored["trusted_proxies"],
+            serde_json::json!(["coolify-proxy"])
+        );
+        assert!(stored.get("trusted_networks").is_none());
     }
 
     #[test]

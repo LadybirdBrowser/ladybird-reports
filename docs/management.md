@@ -90,6 +90,15 @@ The `audit` object controls audit log behavior. `denied_sign_in_window_seconds`
 (default 600) limits how often one GitHub account that is denied at sign-in is
 recorded; set it to 0 to record every denial.
 
+`trusted_proxies` lists the proxies whose forwarding headers identify the original
+client address. Each entry is a CIDR range or a DNS name. The public API resolves
+names itself and trusts only the addresses it received, never the name. It uses a
+resolution for at most five minutes, so a proxy that gets a new address is trusted
+at that address within that time. If a name cannot be resolved again, the previous
+addresses stay in use and a warning is logged. The public API refuses to start when
+a name does not resolve at all. Deploy a release that understands names before
+saving one, because an older public API cannot read the configuration afterwards.
+
 Recognized field definitions control labels, value types, and display order.
 Drag a row handle to reorder it; the new order is saved immediately. Unknown
 fields remain available in reports until a definition is added.

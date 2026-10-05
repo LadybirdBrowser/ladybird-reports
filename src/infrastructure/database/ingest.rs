@@ -76,7 +76,7 @@ impl IngestDatabase {
     pub async fn connect(database_url: &str) -> Result<Self> {
         Ok(Self {
             pool: connect_pool(database_url, 16).await?,
-            configuration_cache: ConfigurationCache::default(),
+            configuration_cache: ConfigurationCache::resolving_proxy_hosts(),
         })
     }
 
@@ -95,10 +95,18 @@ impl IngestDatabase {
             .fetch_one(&self.pool)
             .await?;
 
-        let configuration: RuntimeConfiguration =
+        let mut configuration: RuntimeConfiguration =
             serde_json::from_value(value).map_err(AppError::internal)?;
 
         configuration.validate()?;
+
+        // Only the running cache resolves DNS names. Without it a name would
+        // silently stop being trusted, so refuse to serve that configuration.
+        if configuration.trusted_proxy_hosts().next().is_some() {
+            return Err(AppError::Unavailable);
+        }
+
+        configuration.resolve_trusted_networks(&HashMap::new());
         Ok(Arc::new(configuration))
     }
 

@@ -2,6 +2,7 @@ mod admin;
 mod configuration_cache;
 mod ingest;
 mod permissions;
+mod proxy_addresses;
 
 pub use admin::*;
 pub use configuration_cache::*;

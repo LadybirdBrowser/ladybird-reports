@@ -130,7 +130,7 @@ fn resolve_client_address(
 ) -> Result<IpAddr> {
     let trusted = |address: &IpAddr| {
         configuration
-            .trusted_proxies
+            .trusted_networks
             .iter()
             .any(|network| network.contains(address))
     };
@@ -193,6 +193,8 @@ fn normalize_address(address: IpAddr) -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+
     use super::*;
 
     #[test]
@@ -209,10 +211,11 @@ mod tests {
 
     #[test]
     fn stops_at_first_untrusted_proxy_hop() {
-        let configuration = RuntimeConfiguration {
+        let mut configuration = RuntimeConfiguration {
             trusted_proxies: vec!["10.0.0.0/8".parse().unwrap()],
             ..RuntimeConfiguration::default()
         };
+        configuration.resolve_trusted_networks(&HashMap::new());
 
         let mut headers = HeaderMap::new();
         headers.insert(
@@ -225,5 +228,43 @@ mod tests {
                 .expect("resolve address");
 
         assert_eq!(resolved, "8.8.8.8".parse::<IpAddr>().unwrap());
+    }
+
+    #[test]
+    fn trusts_the_addresses_a_proxy_host_name_resolved_to() {
+        let mut configuration = RuntimeConfiguration {
+            trusted_proxies: vec![
+                "coolify-proxy".parse().unwrap(),
+                "10.200.0.2/32".parse().unwrap(),
+            ],
+            ..RuntimeConfiguration::default()
+        };
+        configuration.resolve_trusted_networks(&HashMap::from([(
+            "coolify-proxy".to_owned(),
+            vec![
+                "172.16.1.6".parse().unwrap(),
+                "fd44:d044:fd92::6".parse().unwrap(),
+            ],
+        )]));
+
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "x-forwarded-for",
+            "203.0.113.9, 10.200.0.2".parse().unwrap(),
+        );
+
+        for proxy in ["172.16.1.6", "fd44:d044:fd92::6"] {
+            let resolved = resolve_client_address(proxy.parse().unwrap(), &headers, &configuration)
+                .expect("resolve address");
+
+            assert_eq!(resolved, "203.0.113.9".parse::<IpAddr>().unwrap());
+        }
+
+        // The proxy moved to an address nobody resolved: nothing is trusted.
+        let resolved =
+            resolve_client_address("172.16.1.7".parse().unwrap(), &headers, &configuration)
+                .expect("resolve address");
+
+        assert_eq!(resolved, "172.16.1.7".parse::<IpAddr>().unwrap());
     }
 }
