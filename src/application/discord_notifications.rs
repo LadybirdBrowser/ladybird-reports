@@ -268,14 +268,16 @@ fn signal_field(fields: &serde_json::Map<String, Value>) -> Option<DiscordEmbedF
     })
 }
 
-/// The page a report came from. It is shown as code so that Discord does not turn
-/// an address chosen by an anonymous user into a link anyone in the channel can
+/// The page a report came from, without its query or fragment, which can carry
+/// tokens or personal data. It is shown as code so that Discord does not turn an
+/// address chosen by an anonymous user into a link anyone in the channel can
 /// click; a maintainer who wants to visit it copies it deliberately.
 fn page_url_field(fields: &serde_json::Map<String, Value>) -> Option<DiscordEmbedField> {
     // Discord limits an embed field to 1024 characters, and the quotes need two.
     const MAX_URL_CHARACTERS: usize = 1_000;
 
-    let url = fields.get("url")?.as_str()?.trim();
+    let url = fields.get("url")?.as_str()?;
+    let url = url.split(['?', '#']).next().unwrap_or_default().trim();
     if url.is_empty() {
         return None;
     }
@@ -577,9 +579,33 @@ mod tests {
     #[test]
     fn report_message_includes_the_page_url_when_the_report_has_one() {
         assert_eq!(
-            page_url_in_message(serde_json::json!({ "url": "https://example.test/a?b=1" })),
-            Some("`https://example.test/a?b=1`".into())
+            page_url_in_message(serde_json::json!({ "url": "https://example.test/a/b" })),
+            Some("`https://example.test/a/b`".into())
         );
+    }
+
+    #[test]
+    fn page_url_leaves_out_the_query_and_fragment() {
+        for (url, shown) in [
+            (
+                "https://example.test/a?token=secret",
+                "https://example.test/a",
+            ),
+            ("https://example.test/a#section", "https://example.test/a"),
+            ("https://example.test/a?b=1#c", "https://example.test/a"),
+            (
+                "https://example.test/#/route?token=secret",
+                "https://example.test/",
+            ),
+            ("https://example.test?token=secret", "https://example.test"),
+            ("https://example.test/a?", "https://example.test/a"),
+        ] {
+            assert_eq!(
+                page_url_in_message(serde_json::json!({ "url": url })),
+                Some(format!("`{shown}`")),
+                "{url}"
+            );
+        }
     }
 
     #[test]
@@ -618,6 +644,8 @@ mod tests {
             serde_json::json!({}),
             serde_json::json!({ "url": "" }),
             serde_json::json!({ "url": "  \n " }),
+            serde_json::json!({ "url": "?token=secret" }),
+            serde_json::json!({ "url": "#fragment" }),
             serde_json::json!({ "url": 42 }),
             serde_json::json!({ "hostname": "example.test" }),
         ] {
