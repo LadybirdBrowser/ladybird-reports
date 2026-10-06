@@ -2032,23 +2032,91 @@ details[open] summary {
     word-break: break-word;
 }
 
-.field-filter-button {
+.icon-button {
     position: relative;
     display: grid;
     width: 2rem;
     height: 2rem;
+    padding: 0;
     flex: 0 0 auto;
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);
     background: var(--surface);
-    color: var(--ink-faint);
+    color: var(--ink-soft);
+    cursor: pointer;
+    font: inherit;
     place-items: center;
+    text-decoration: none;
 }
 
-.field-filter-button:hover {
+.icon-button:hover,
+.icon-button:focus-visible {
     border-color: var(--brand);
     background: var(--brand-soft);
     color: var(--brand);
+}
+
+.icon-button:focus-visible {
+    outline: 2px solid var(--brand);
+    outline-offset: 1px;
+}
+
+.icon-button svg {
+    width: 1rem;
+    height: 1rem;
+}
+
+/* Adjacent buttons that act on the same thing share their borders. */
+.button-group {
+    display: inline-flex;
+    flex: 0 0 auto;
+}
+
+.button-group > .icon-button {
+    margin-left: -1px;
+    border-radius: 0;
+}
+
+.button-group > .icon-button:first-child {
+    margin-left: 0;
+    border-top-left-radius: var(--radius-sm);
+    border-bottom-left-radius: var(--radius-sm);
+}
+
+.button-group > .icon-button:last-child {
+    border-top-right-radius: var(--radius-sm);
+    border-bottom-right-radius: var(--radius-sm);
+}
+
+.button-group > .icon-button:hover,
+.button-group > .icon-button:focus-visible {
+    z-index: 1;
+}
+
+.copy-button .icon-check,
+.copy-button .icon-failed {
+    display: none;
+}
+
+.copy-button[data-copy-state="copied"] {
+    border-color: var(--success);
+    background: var(--success-soft);
+    color: var(--success);
+}
+
+.copy-button[data-copy-state="failed"] {
+    border-color: var(--danger);
+    background: var(--danger-soft);
+    color: var(--danger);
+}
+
+.copy-button[data-copy-state] .icon-copy {
+    display: none;
+}
+
+.copy-button[data-copy-state="copied"] .icon-check,
+.copy-button[data-copy-state="failed"] .icon-failed {
+    display: block;
 }
 
 .field-filter-button span {
@@ -2289,30 +2357,6 @@ pre {
 .attachment-actions {
     display: flex;
     justify-content: flex-end;
-    gap: 0.35rem;
-}
-
-.attachment-actions a {
-    display: grid;
-    place-items: center;
-    width: 2rem;
-    height: 2rem;
-    color: var(--ink-soft);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    text-decoration: none;
-}
-
-.attachment-actions a:hover,
-.attachment-actions a:focus-visible {
-    color: var(--ink);
-    background: var(--surface-raised);
-    border-color: var(--brand);
-}
-
-.attachment-actions svg {
-    width: 1rem;
-    height: 1rem;
 }
 
 .history {

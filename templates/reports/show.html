@@ -30,18 +30,9 @@
                     {% for field in report.overview %}
                         <div{% if field.full_width %} class="overview-wide"{% endif %}>
                             <dt>{{ field.label }}</dt>
-                            <dd class="overview-value">
-                                {{ field.value }}
-                                {% if let Some(filter_url) = field.filter_url %}
-                                    <a
-                                        class="field-filter-button"
-                                        href="{{ filter_url }}"
-                                        aria-label="Filter reports by {{ field.label }}"
-                                        title="Find reports with this value"
-                                    >
-                                        <span aria-hidden="true"></span>
-                                    </a>
-                                {% endif %}
+                            <dd class="overview-value" data-copy-scope>
+                                <span data-copy-source>{{ field.value }}</span>
+                                {% include "reports/_field_value_actions.html" %}
                             </dd>
                         </div>
                     {% endfor %}
@@ -91,14 +82,14 @@
                                         <td>{{ attachment.media_type }}</td>
                                         <td>{{ attachment.size }}</td>
                                         <td>
-                                            <div class="attachment-actions">
-                                                <a href="/attachments/{{ attachment.id }}?inline=true" aria-label="View {{ attachment.name }}" title="View">
+                                            <div class="attachment-actions button-group">
+                                                <a class="icon-button" href="/attachments/{{ attachment.id }}?inline=true" aria-label="View {{ attachment.name }}" title="View">
                                                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                                                         <path d="M2 12s3.6-6 10-6 10 6 10 6-3.6 6-10 6S2 12 2 12Z"/>
                                                         <circle cx="12" cy="12" r="3"/>
                                                     </svg>
                                                 </a>
-                                                <a href="/attachments/{{ attachment.id }}" aria-label="Download {{ attachment.name }}" title="Download">
+                                                <a class="icon-button" href="/attachments/{{ attachment.id }}" aria-label="Download {{ attachment.name }}" title="Download">
                                                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                                                         <path d="M12 3v12m-4-4 4 4 4-4M4 17v3h16v-3"/>
                                                     </svg>

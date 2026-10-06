@@ -1,0 +1,6 @@
+<div class="button-group">
+    {% include "reports/_copy_button.html" %}
+    {% if let Some(filter_url) = field.filter_url %}
+        {% include "reports/_filter_button.html" %}
+    {% endif %}
+</div>

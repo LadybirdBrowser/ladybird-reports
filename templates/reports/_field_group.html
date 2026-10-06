@@ -11,18 +11,9 @@
                             {% endif %}
                         </th>
                         <td>
-                            <div class="report-field-value">
-                                <span>{{ field.value }}</span>
-                                {% if let Some(filter_url) = field.filter_url %}
-                                    <a
-                                        class="field-filter-button"
-                                        href="{{ filter_url }}"
-                                        aria-label="Filter reports by {{ field.label }}"
-                                        title="Find reports with this value"
-                                    >
-                                        <span aria-hidden="true"></span>
-                                    </a>
-                                {% endif %}
+                            <div class="report-field-value" data-copy-scope>
+                                <span data-copy-source>{{ field.value }}</span>
+                                {% include "reports/_field_value_actions.html" %}
                             </div>
                         </td>
                     </tr>
@@ -32,7 +23,7 @@
     </div>
 {% else %}
     {% for field in group.fields %}
-        <article class="report-field">
+        <article class="report-field" data-copy-scope>
             <header class="report-field-header">
                 <div>
                     <h3>{{ field.label }}</h3>
@@ -42,12 +33,14 @@
                 </div>
                 {% if field.stack.is_some() %}
                     {% include "reports/_stack_trace_controls.html" %}
+                {% else %}
+                    {% include "reports/_field_value_actions.html" %}
                 {% endif %}
             </header>
             {% if let Some(stack) = field.stack %}
                 {% include "reports/_stack_trace.html" %}
             {% else %}
-                <pre>{{ field.value }}</pre>
+                <pre data-copy-source>{{ field.value }}</pre>
             {% endif %}
         </article>
     {% endfor %}

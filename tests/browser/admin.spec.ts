@@ -279,6 +279,65 @@ test.describe("authenticated management UI", () => {
     await expect(page.locator(`a[href="/reports/${reportId}"]`)).toBeVisible();
   });
 
+  test("copies field values from button groups that sit before the filter button", async ({ page, context }) => {
+    await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+    await page.goto(`/reports/${reportId}`);
+    const clipboard = () => page.evaluate(() => navigator.clipboard.readText());
+
+    // In a group, the copy button comes first and the filter button follows.
+    const overview = page.getByRole("region", { name: "Overview" });
+    const platform = overview.locator(".definition-list > div").filter({ hasText: "Platform" });
+    const platformButtons = platform.locator(".button-group > .icon-button");
+    await expect(platformButtons).toHaveCount(2);
+    await expect(platformButtons.nth(0)).toHaveAccessibleName("Copy Platform");
+    await expect(platformButtons.nth(1)).toHaveAccessibleName("Filter reports by Platform");
+    await platformButtons.nth(0).click();
+    await expect(platformButtons.nth(0)).toHaveAttribute("data-copy-state", "copied");
+    expect(await clipboard()).toBe("macOS");
+    await expect(platformButtons.nth(0)).not.toHaveAttribute("data-copy-state");
+
+    // A diagnostic field copies exactly the value it shows.
+    await page.getByRole("button", { name: "Copy Git commit" }).click();
+    expect(await clipboard()).toBe("654cf9b187384fa8855eac4fbafaa70e75497083");
+    const unknownValue = page.locator(".report-field-value").filter({ hasText: "<script>" });
+    await unknownValue.getByRole("button", { name: /^Copy / }).click();
+    expect(await clipboard()).toBe(await unknownValue.locator("[data-copy-source]").innerText());
+    expect(await clipboard()).toContain("<script>");
+
+    // A stack trace copies its original text and has no filter button.
+    const stackHeader = page.locator(".report-field-header").filter({
+      has: page.getByRole("heading", { name: "Stack trace" }),
+    });
+    await expect(stackHeader.locator(".button-group > .icon-button")).toHaveCount(1);
+    await stackHeader.getByRole("button", { name: "Copy Stack trace" }).click();
+    const rawStack = await page.locator(".stack-raw-text").evaluate((pre) => pre.textContent);
+    expect(await clipboard()).toBe(rawStack);
+    expect(await clipboard()).toContain("Native stack (binary build ID, object address):");
+  });
+
+  test("joins the attachment buttons", async ({ page }) => {
+    await page.goto(`/reports/${reportId}`);
+
+    const buttons = page.locator(".attachment-actions.button-group > .icon-button");
+    await expect(buttons).toHaveCount(2);
+    const [first, second] = await buttons.evaluateAll((elements) =>
+      elements.map((element) => {
+        const style = getComputedStyle(element);
+        const box = element.getBoundingClientRect();
+        return {
+          left: box.left,
+          right: box.right,
+          topLeft: style.borderTopLeftRadius,
+          topRight: style.borderTopRightRadius,
+        };
+      }));
+    expect(first.topRight).toBe("0px");
+    expect(second.topLeft).toBe("0px");
+    expect(first.topLeft).not.toBe("0px");
+    expect(second.topRight).not.toBe("0px");
+    expect(second.left).toBeLessThanOrEqual(first.right);
+  });
+
   test("keeps report rows readable on desktop and mobile", async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.goto("/");
