@@ -110,11 +110,12 @@ stack reports after indexing, then claims the oldest eligible notification and
 sends a bounded report summary through the configured Discord webhook. The summary
 includes an excerpt of the native stack when one is available, with each run of
 consecutive frames that have no symbol shown as one line with its frame range, and
-links to the full report in the management interface. The page URL a report came
-from, when it has one, is included without its query and fragment, as plain text in
-a code quote, so Discord does not make an address chosen by an anonymous user
-clickable. Source addresses and other report fields are not copied into the
-message.
+links to the full report in the management interface. The build's commit, when it
+is a plain commit ID, is shown shortened and linked to that commit in the
+configured GitHub repository. The page URL a report came from, when it has one, is
+included without its query and fragment, as plain text in a code quote, so Discord
+does not make an address chosen by an anonymous user clickable. Source addresses
+and other report fields are not copied into the message.
 
 Only one delivery may be in progress across all admin replicas. An unsuccessful
 request pauses the complete queue and retries its oldest entry with exponential

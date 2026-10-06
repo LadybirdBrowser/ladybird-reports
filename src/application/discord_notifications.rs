@@ -64,7 +64,12 @@ impl DiscordNotificationService {
             }
         };
 
-        let message = report_message(&notification, &configuration.admin_base_url, discord);
+        let message = report_message(
+            &notification,
+            &configuration.admin_base_url,
+            &configuration.github_repository,
+            discord,
+        );
         let result = self
             .client
             .send(
@@ -170,6 +175,7 @@ fn retry_delay_seconds(
 fn report_message(
     notification: &PendingDiscordNotification,
     admin_base_url: &str,
+    github_repository: &str,
     configuration: &DiscordConfiguration,
 ) -> DiscordWebhookMessage {
     let report_url = format!(
@@ -210,6 +216,7 @@ fn report_message(
             inline: true,
         });
     }
+    embed_fields.extend(commit_field(fields, github_repository));
     for (key, label) in [("platform", "Platform"), ("architecture", "Architecture")] {
         if let Some(value) = fields.get(key) {
             embed_fields.push(DiscordEmbedField {
@@ -237,6 +244,35 @@ fn report_message(
         }],
         allowed_mentions: DiscordAllowedMentions { parse: Vec::new() },
     }
+}
+
+/// The commit a build was made from, as a short link to it in the repository.
+///
+/// The value comes from an anonymous client, so it only becomes a link when it
+/// is a plain hexadecimal commit ID; the address is built from that and the
+/// configured repository, never from anything the client wrote.
+fn commit_field(
+    fields: &serde_json::Map<String, Value>,
+    github_repository: &str,
+) -> Option<DiscordEmbedField> {
+    const SHORT_COMMIT_CHARACTERS: usize = 7;
+
+    let commit = fields.get("git_commit")?.as_str()?.trim();
+    if !(SHORT_COMMIT_CHARACTERS..=64).contains(&commit.len())
+        || !commit.bytes().all(|byte| byte.is_ascii_hexdigit())
+    {
+        return None;
+    }
+
+    let commit = commit.to_ascii_lowercase();
+    Some(DiscordEmbedField {
+        name: "Commit".into(),
+        value: format!(
+            "[{}](https://github.com/{github_repository}/commit/{commit})",
+            &commit[..SHORT_COMMIT_CHARACTERS]
+        ),
+        inline: true,
+    })
 }
 
 fn field_text(value: &Value) -> String {
@@ -513,7 +549,12 @@ mod tests {
             attempt_count: 0,
         };
 
-        let message = report_message(&notification, "https://reports.example", &configuration);
+        let message = report_message(
+            &notification,
+            "https://reports.example",
+            "LadybirdBrowser/ladybird",
+            &configuration,
+        );
         let embed = &message.embeds[0];
 
         assert_eq!(
@@ -563,6 +604,7 @@ mod tests {
         let message = report_message(
             &notification_with(fields),
             "https://reports.example",
+            "LadybirdBrowser/ladybird",
             &DiscordConfiguration::default(),
         );
         let mut signals = message.embeds[0]
@@ -612,6 +654,99 @@ mod tests {
 
         assert!(signal.ends_with("… (11)"));
         assert!(signal.chars().count() <= 256);
+    }
+
+    fn commit_in_message(fields: serde_json::Value) -> Option<String> {
+        let message = report_message(
+            &notification_with(fields),
+            "https://reports.example",
+            "LadybirdBrowser/ladybird",
+            &DiscordConfiguration::default(),
+        );
+
+        message.embeds[0]
+            .fields
+            .iter()
+            .find(|field| field.name == "Commit")
+            .map(|field| {
+                assert!(field.inline, "a short commit does not need the full width");
+                field.value.clone()
+            })
+    }
+
+    #[test]
+    fn report_message_links_a_short_commit_to_the_upstream_repository() {
+        let commit = "a71cffae5ad9d29729bb3364a49a637895286e1f";
+
+        assert_eq!(
+            commit_in_message(serde_json::json!({ "git_commit": commit })),
+            Some(format!(
+                "[a71cffa](https://github.com/LadybirdBrowser/ladybird/commit/{commit})"
+            ))
+        );
+        assert_eq!(
+            commit_in_message(serde_json::json!({ "git_commit": commit.to_uppercase() })),
+            Some(format!(
+                "[a71cffa](https://github.com/LadybirdBrowser/ladybird/commit/{commit})"
+            ))
+        );
+    }
+
+    #[test]
+    fn the_commit_link_uses_the_configured_repository() {
+        let message = report_message(
+            &notification_with(serde_json::json!({ "git_commit": "a71cffae5ad9" })),
+            "https://reports.example",
+            "Example/fork",
+            &DiscordConfiguration::default(),
+        );
+
+        assert!(message.embeds[0].fields.iter().any(|field| {
+            field.name == "Commit"
+                && field.value == "[a71cffa](https://github.com/Example/fork/commit/a71cffae5ad9)"
+        }));
+    }
+
+    #[test]
+    fn only_a_plain_commit_id_becomes_a_link() {
+        for value in [
+            serde_json::json!("abc123"),
+            serde_json::json!("a71cffa](https://evil.example)"),
+            serde_json::json!("a71cffa https://evil.example"),
+            serde_json::json!("not-a-commit-id"),
+            serde_json::json!(""),
+            serde_json::json!(" "),
+            serde_json::json!("a".repeat(65)),
+            serde_json::json!(1234567),
+        ] {
+            assert_eq!(
+                commit_in_message(serde_json::json!({ "git_commit": value })),
+                None,
+                "{value}"
+            );
+        }
+        assert_eq!(commit_in_message(serde_json::json!({})), None);
+    }
+
+    #[test]
+    fn the_commit_follows_the_version_and_build() {
+        let mut notification = notification_with(
+            serde_json::json!({ "git_commit": "a71cffae5ad9", "platform": "macOS" }),
+        );
+        notification.build = "release".into();
+        let message = report_message(
+            &notification,
+            "https://reports.example",
+            "LadybirdBrowser/ladybird",
+            &DiscordConfiguration::default(),
+        );
+        let names = message.embeds[0]
+            .fields
+            .iter()
+            .map(|field| field.name.as_str())
+            .collect::<Vec<_>>();
+
+        assert_eq!(names, ["Version", "Build", "Commit", "Platform"]);
     }
 
     fn preview(stack: &str) -> String {
@@ -688,6 +823,7 @@ mod tests {
         let message = report_message(
             &notification_with(fields),
             "https://reports.example",
+            "LadybirdBrowser/ladybird",
             &DiscordConfiguration::default(),
         );
 
@@ -739,6 +875,7 @@ mod tests {
         let message = report_message(
             &notification_with(serde_json::json!({ "url": url })),
             "https://reports.example",
+            "LadybirdBrowser/ladybird",
             &DiscordConfiguration::default(),
         );
         let json = serde_json::to_value(&message).expect("serialize message");
