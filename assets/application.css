@@ -901,6 +901,7 @@ textarea:focus {
     padding: 0.18rem 0.45rem;
     border-radius: 999px;
     background: var(--surface-subtle);
+    box-shadow: 0 0 0.6rem var(--pill-glow, transparent);
     color: var(--ink-soft);
     font-size: 0.62rem;
     font-weight: 720;
@@ -1324,10 +1325,35 @@ tbody tr:hover {
     flex: 0 0 auto;
     border: 1px solid transparent;
     border-radius: 999px;
+    box-shadow: 0 0 0.6rem var(--pill-glow, transparent);
     font-size: 0.72rem;
     font-weight: 750;
     line-height: 1;
     white-space: nowrap;
+}
+
+/* Every pill glows in the color of its tone. */
+.badge-triage,
+.badge-warning,
+.entity-selector-badge.is-triage {
+    --pill-glow: color-mix(in srgb, var(--warning) 30%, transparent);
+}
+
+.badge-success,
+.badge-confirmed,
+.entity-selector-badge.is-assigned,
+.entity-selector-badge.is-confirmed {
+    --pill-glow: color-mix(in srgb, var(--success) 30%, transparent);
+}
+
+.badge-rejected,
+.entity-selector-badge.is-rejected {
+    --pill-glow: color-mix(in srgb, var(--danger) 30%, transparent);
+}
+
+.badge-neutral,
+.entity-selector-badge {
+    --pill-glow: color-mix(in srgb, var(--ink-faint) 24%, transparent);
 }
 
 .badge-triage,
