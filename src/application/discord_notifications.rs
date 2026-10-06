@@ -298,6 +298,33 @@ fn page_url_field(fields: &serde_json::Map<String, Value>) -> Option<DiscordEmbe
     })
 }
 
+/// One line of the stack preview: a frame, or a run of consecutive frames the
+/// client sent no symbol for.
+struct PreviewLine {
+    first: u32,
+    last: u32,
+    symbol: Option<String>,
+}
+
+impl PreviewLine {
+    fn frame_count(&self) -> usize {
+        (self.last - self.first) as usize + 1
+    }
+
+    fn render(&self) -> String {
+        let frames = if self.first == self.last {
+            format!("#{}", self.first)
+        } else {
+            format!("#{}–#{}", self.first, self.last)
+        };
+
+        format!(
+            "`{frames}` `{}`\n",
+            self.symbol.as_deref().unwrap_or("Unavailable")
+        )
+    }
+}
+
 fn stack_description(stack: &str, configuration: &DiscordConfiguration) -> String {
     const MAX_FUNCTION_CHARACTERS: usize = 96;
     const MORE_FRAMES: &str = "*More frames in the full report.*";
@@ -313,33 +340,61 @@ fn stack_description(stack: &str, configuration: &DiscordConfiguration) -> Strin
         return raw_stack_description(stack, configuration);
     }
 
-    let mut description = String::from("**Stack trace**\n");
-    let mut displayed_frames = 0;
     let has_relevant_frames = frames.iter().any(|row| row.relevant);
+    let mut lines: Vec<PreviewLine> = Vec::new();
 
     for frame in &frames {
-        if displayed_frames >= configuration.stack_trace_lines {
-            break;
-        }
         if has_relevant_frames && !frame.top && !frame.relevant {
             continue;
         }
 
-        let symbol =
-            concise_function_name(&frame.symbol, MAX_FUNCTION_CHARACTERS).unwrap_or_else(|| {
-                truncate_text(&frame.symbol.replace('`', "′"), MAX_FUNCTION_CHARACTERS)
-            });
-        let line = format!("`#{}` `{symbol}`\n", frame.number.unwrap());
-        if description.chars().count() + line.chars().count() + MORE_FRAMES.chars().count()
+        let number = frame.number.unwrap();
+        if frame.unavailable
+            && let Some(run) = lines
+                .last_mut()
+                .filter(|run| run.symbol.is_none() && run.last + 1 == number)
+        {
+            run.last = number;
+            continue;
+        }
+
+        let symbol = if frame.unavailable {
+            None
+        } else {
+            Some(
+                concise_function_name(&frame.symbol, MAX_FUNCTION_CHARACTERS).unwrap_or_else(
+                    || truncate_text(&frame.symbol.replace('`', "′"), MAX_FUNCTION_CHARACTERS),
+                ),
+            )
+        };
+        lines.push(PreviewLine {
+            first: number,
+            last: number,
+            symbol,
+        });
+    }
+
+    let mut description = String::from("**Stack trace**\n");
+    let mut displayed_lines = 0;
+    let mut displayed_frames = 0;
+
+    for line in &lines {
+        if displayed_lines >= configuration.stack_trace_lines {
+            break;
+        }
+
+        let text = line.render();
+        if description.chars().count() + text.chars().count() + MORE_FRAMES.chars().count()
             > configuration.stack_trace_characters
         {
             break;
         }
-        description.push_str(&line);
-        displayed_frames += 1;
+        description.push_str(&text);
+        displayed_lines += 1;
+        displayed_frames += line.frame_count();
     }
 
-    if displayed_frames == 0 {
+    if displayed_lines == 0 {
         return raw_stack_description(stack, configuration);
     }
 
@@ -557,6 +612,76 @@ mod tests {
 
         assert!(signal.ends_with("… (11)"));
         assert!(signal.chars().count() <= 256);
+    }
+
+    fn preview(stack: &str) -> String {
+        stack_description(stack, &DiscordConfiguration::default())
+    }
+
+    const BUILD: &str = "3a03ed2b8ce032fa99c3ca574ad081ad";
+
+    #[test]
+    fn a_stack_without_symbols_is_one_line() {
+        let stack = (0..128)
+            .map(|number| format!("#{number} {BUILD} 0x{:x}", 0x1000 + number))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let text = format!("Native stack (binary build ID, object address):\n{stack}");
+
+        assert_eq!(preview(&text), "**Stack trace**\n`#0–#127` `Unavailable`");
+    }
+
+    #[test]
+    fn unavailable_frames_collapse_per_run_and_stay_apart_from_named_frames() {
+        let text = format!(
+            "#0 {BUILD} 0x1\n#1 {BUILD} 0x2\n#2 {BUILD} 0x3 main\n\
+             #3 {BUILD} 0x4\n#4 {BUILD} 0x5\n#5 {BUILD} 0x6"
+        );
+
+        assert_eq!(
+            preview(&text),
+            "**Stack trace**\n`#0–#1` `Unavailable`\n`#2` `main`\n`#3–#5` `Unavailable`"
+        );
+    }
+
+    #[test]
+    fn a_single_unavailable_frame_keeps_its_own_number() {
+        let text = format!("#0 {BUILD} 0x1\n#1 {BUILD} 0x2 main\n#2 unavailable");
+
+        assert_eq!(
+            preview(&text),
+            "**Stack trace**\n`#0` `Unavailable`\n`#1` `main`\n`#2` `Unavailable`"
+        );
+    }
+
+    #[test]
+    fn frames_left_out_of_the_preview_still_say_there_is_more() {
+        let text = format!(
+            "#0 {BUILD} 0x1\n#1 {BUILD} 0x2\n#2 {BUILD} 0x3 Web::Foo::bar()\n#3 {BUILD} 0x4"
+        );
+        let preview = preview(&text);
+
+        assert!(preview.contains("`#0` `Unavailable`"));
+        assert!(preview.contains("`#2` `Web::Foo::bar`"));
+        assert!(!preview.contains("`#1`"));
+        assert!(preview.ends_with("*More frames in the full report.*"));
+    }
+
+    #[test]
+    fn a_collapsed_run_counts_as_one_line_of_the_preview() {
+        let configuration = DiscordConfiguration {
+            stack_trace_lines: 2,
+            ..DiscordConfiguration::default()
+        };
+        let text = format!(
+            "#0 {BUILD} 0x1\n#1 {BUILD} 0x2\n#2 {BUILD} 0x3\n#3 {BUILD} 0x4 main\n\
+             #4 {BUILD} 0x5 _start\n#5 {BUILD} 0x6"
+        );
+
+        assert_eq!(
+            stack_description(&text, &configuration),
+            "**Stack trace**\n`#0–#2` `Unavailable`\n`#3` `main`\n*More frames in the full report.*"
+        );
     }
 
     fn page_url_in_message(fields: serde_json::Value) -> Option<String> {

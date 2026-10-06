@@ -33,6 +33,8 @@ pub struct StackTraceRow {
     pub build_id: String,
     pub raw: String,
     pub relevant: bool,
+    /// The frame has no symbol: the client sent an address, or nothing at all.
+    pub unavailable: bool,
 }
 
 pub fn parse_stack_trace(text: &str) -> ParsedStackTrace {
@@ -62,6 +64,7 @@ pub fn parse_stack_trace(text: &str) -> ParsedStackTrace {
             build_id: String::new(),
             raw: line.to_owned(),
             relevant: false,
+            unavailable: false,
         });
 
         if row.number.is_some() {
@@ -151,6 +154,7 @@ fn parse_frame(line: &str) -> Option<StackTraceRow> {
         build_id,
         raw: String::new(),
         relevant: !is_generic_frame(symbol),
+        unavailable: false,
     })
 }
 
@@ -164,6 +168,7 @@ fn unavailable_frame(number: u32, address: String, build_id: String) -> StackTra
         build_id,
         raw: String::new(),
         relevant: false,
+        unavailable: true,
     }
 }
 
