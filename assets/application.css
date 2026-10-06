@@ -1388,36 +1388,36 @@ tbody tr:hover {
     margin: 0;
 }
 
-.definition-list div {
+.definition-list > div {
     min-width: 0;
     padding: 1rem 1.2rem;
     border-bottom: 1px solid var(--border);
 }
 
-.definition-list div:nth-child(odd) {
+.definition-list > div:nth-child(odd) {
     border-right: 1px solid var(--border);
 }
 
-.definition-list div:nth-last-child(-n + 2) {
+.definition-list > div:nth-last-child(-n + 2) {
     border-bottom: 0;
 }
 
-.definition-list div:nth-last-child(2):nth-child(even) {
+.definition-list > div:nth-last-child(2):nth-child(even) {
     border-bottom: 1px solid var(--border);
 }
 
-.definition-list div:last-child:nth-child(odd) {
+.definition-list > div:last-child:nth-child(odd) {
     grid-column: 1 / -1;
     border-right: 0;
 }
 
-.definition-list div.overview-wide {
+.definition-list > div.overview-wide {
     grid-column: 1 / -1;
     border-right: 0;
     border-bottom: 1px solid var(--border);
 }
 
-.definition-list div.overview-wide:last-child {
+.definition-list > div.overview-wide:last-child {
     border-bottom: 0;
 }
 
@@ -1971,7 +1971,7 @@ details[open] summary {
 
 .report-field-table th {
     width: 31%;
-    padding: 0.85rem 1rem;
+    padding: 0.7rem 1rem;
     border-right: 1px solid var(--border);
     color: var(--ink);
     font-size: 0.86rem;
@@ -2019,7 +2019,7 @@ details[open] summary {
 .report-field-value {
     display: flex;
     min-width: 0;
-    padding: 0.85rem 1rem;
+    padding: 0.55rem 1rem;
     align-items: center;
     justify-content: space-between;
     gap: 1rem;
@@ -2175,6 +2175,7 @@ pre {
 
 .stack-raw-control {
     display: inline-flex;
+    margin: 0;
     align-items: center;
     gap: 0.45rem;
     color: var(--ink);
@@ -2758,14 +2759,14 @@ pre {
         grid-template-columns: 1fr;
     }
 
-    .definition-list div,
-    .definition-list div:nth-child(odd),
-    .definition-list div:nth-last-child(-n + 2) {
+    .definition-list > div,
+    .definition-list > div:nth-child(odd),
+    .definition-list > div:nth-last-child(-n + 2) {
         border-right: 0;
         border-bottom: 1px solid var(--border);
     }
 
-    .definition-list div:last-child {
+    .definition-list > div:last-child {
         border-bottom: 0;
     }
 
