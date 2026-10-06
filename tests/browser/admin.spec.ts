@@ -291,6 +291,12 @@ test.describe("authenticated management UI", () => {
     await expect(platformButtons).toHaveCount(2);
     await expect(platformButtons.nth(0)).toHaveAccessibleName("Copy Platform");
     await expect(platformButtons.nth(1)).toHaveAccessibleName("Filter reports by Platform");
+    const sizes = await platformButtons.evaluateAll((elements) =>
+      elements.map((element) => {
+        const box = element.getBoundingClientRect();
+        return [Math.round(box.width), Math.round(box.height)];
+      }));
+    expect(sizes[0]).toEqual(sizes[1]);
     await platformButtons.nth(0).click();
     await expect(platformButtons.nth(0)).toHaveAttribute("data-copy-state", "copied");
     expect(await clipboard()).toBe("macOS");

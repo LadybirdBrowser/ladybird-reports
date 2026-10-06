@@ -2037,6 +2037,7 @@ details[open] summary {
     display: grid;
     width: 2rem;
     height: 2rem;
+    min-height: 0;
     padding: 0;
     flex: 0 0 auto;
     border: 1px solid var(--border);
