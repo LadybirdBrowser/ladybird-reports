@@ -34,6 +34,9 @@
     --radius-md: 0.75rem;
     --radius-lg: 1rem;
     --button-height: 2.55rem;
+    --section-gap: 1.25rem;
+    --heading-gap: 0.85rem;
+    --item-gap: 0.9rem;
 }
 
 [hidden] {
@@ -391,8 +394,9 @@ nav a:hover {
     margin-bottom: 0;
 }
 
-.report-layout .page-header {
-    margin-bottom: 0.85rem;
+.report-layout .page-header,
+.issue-layout .page-header {
+    margin-bottom: var(--heading-gap);
 }
 
 .eyebrow {
@@ -413,7 +417,7 @@ nav a:hover {
 .stack {
     display: grid;
     min-width: 0;
-    gap: 1.25rem;
+    gap: var(--section-gap);
 }
 
 .stack > * {
@@ -425,7 +429,7 @@ nav a:hover {
 .settings-grid {
     display: grid;
     align-items: start;
-    gap: 1.35rem;
+    gap: var(--section-gap);
 }
 
 .report-layout {
@@ -1175,7 +1179,7 @@ button:active,
 }
 
 .filter-panel {
-    margin-bottom: 1.25rem;
+    margin-bottom: var(--section-gap);
     padding: 1rem 1.15rem;
     border: 1px solid var(--border);
     border-radius: var(--radius-md);
@@ -1954,7 +1958,7 @@ details[open] summary {
 .report-field + .report-field,
 .report-field + .report-field-table-wrap,
 .report-field-table-wrap + .report-field {
-    margin-top: 0.9rem;
+    margin-top: var(--item-gap);
 }
 
 .report-field-table-wrap {
