@@ -14,6 +14,7 @@ pub fn title_for_report(details: &ReportDetails) -> String {
         stack_trace,
         process: text_field("process"),
         platform: text_field("platform"),
+        signal: text_field("signal"),
     })
 }
 

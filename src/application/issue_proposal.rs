@@ -154,7 +154,7 @@ mod tests {
         };
 
         let proposal = propose_issue(&details);
-        assert_eq!(proposal.title, "Crash report · macOS");
+        assert_eq!(proposal.title, "Crash report · macOS · SIGABRT");
         assert!(proposal.description.contains("- Platform: macOS"));
         assert!(proposal.description.contains("- Signal: SIGABRT"));
         assert!(

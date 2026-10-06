@@ -1311,7 +1311,8 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
             (report_id, key, kind, value, recognized_at_submission)
          VALUES
             ($1, 'process', 'text', '\"WebContent\"'::jsonb, true),
-            ($1, 'platform', 'text', '\"macOS\"'::jsonb, true)",
+            ($1, 'platform', 'text', '\"macOS\"'::jsonb, true),
+            ($1, 'signal', 'text', '\"SIGSEGV (11)\"'::jsonb, true)",
     )
     .bind(first_notification_report)
     .execute(&admin_pool)
@@ -1327,7 +1328,7 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
     assert_eq!(first_notification.client_version, "notification-test");
     assert_eq!(
         first_notification.title,
-        "Crash report · WebContent · macOS"
+        "Crash report · WebContent · macOS · SIGSEGV"
     );
 
     assert!(

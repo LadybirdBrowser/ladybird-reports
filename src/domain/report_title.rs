@@ -10,6 +10,7 @@ pub struct ReportTitleInput<'a> {
     pub stack_trace: Option<&'a str>,
     pub process: Option<&'a str>,
     pub platform: Option<&'a str>,
+    pub signal: Option<&'a str>,
 }
 
 pub fn generate_report_title(input: ReportTitleInput<'_>) -> String {
@@ -48,6 +49,7 @@ pub fn generate_report_title(input: ReportTitleInput<'_>) -> String {
         .flatten()
         .filter_map(|value| safe_context(value, 40))
         .take(2)
+        .chain(input.signal.and_then(signal_name))
         .collect::<Vec<_>>();
 
     if context.is_empty() {
@@ -150,6 +152,14 @@ pub fn concise_function_name(symbol: &str, maximum_characters: usize) -> Option<
     Some(concise)
 }
 
+/// The name of a signal, without the number some clients put after it, as in
+/// `SIGSEGV (11)`.
+fn signal_name(signal: &str) -> Option<String> {
+    let name = signal.trim().split(['(', ' ']).next()?;
+
+    safe_context(name, 40)
+}
+
 fn safe_context(value: &str, maximum_characters: usize) -> Option<String> {
     let value = value.trim();
     if value.is_empty()
@@ -178,6 +188,7 @@ mod tests {
             stack_trace: Some("#0 0x123 Media::FFmpeg::FFmpegVideoDecoder::take_next_output()"),
             process: Some("WebContent"),
             platform: Some("macOS"),
+            signal: None,
         });
         assert_eq!(title, "Crash: FFmpegVideoDecoder.cpp:235");
 
@@ -188,6 +199,7 @@ mod tests {
             stack_trace: Some("#0 0x123 Media::FFmpeg::FFmpegVideoDecoder::take_next_output()"),
             process: Some("WebContent"),
             platform: Some("macOS"),
+            signal: None,
         });
         assert_eq!(
             fallback,
@@ -206,6 +218,7 @@ mod tests {
             stack_trace: Some(&stack),
             process: Some("WebContent"),
             platform: Some("macOS"),
+            signal: None,
         });
 
         assert_eq!(
@@ -227,6 +240,7 @@ mod tests {
             stack_trace: Some(stack),
             process: Some("Compositor"),
             platform: Some("macOS"),
+            signal: None,
         });
 
         assert_eq!(title, "Crash: Compositor::ConnectionFromClient::crash");
@@ -241,6 +255,7 @@ mod tests {
             stack_trace: Some("Native stack (binary build ID, object address):"),
             process: Some("WebContent"),
             platform: Some("macOS"),
+            signal: None,
         });
         assert_eq!(title, "Crash report · WebContent · macOS");
 
@@ -251,6 +266,7 @@ mod tests {
             stack_trace: None,
             process: None,
             platform: None,
+            signal: None,
         });
         assert_eq!(
             title,
@@ -268,6 +284,7 @@ mod tests {
             stack_trace: Some(stack),
             process: None,
             platform: Some("macOS"),
+            signal: None,
         });
         assert_eq!(title, "Crash report · macOS");
     }
@@ -283,10 +300,108 @@ mod tests {
             stack_trace: Some(&stack),
             process: None,
             platform: None,
+            signal: None,
         });
 
         assert!(title.starts_with("Crash: very_long_function_name_"));
         assert!(title.ends_with('…'));
         assert!(title.chars().count() <= MAX_TITLE_CHARACTERS);
+    }
+
+    fn title_with_signal(signal: Option<&str>, stack_trace: Option<&str>) -> String {
+        generate_report_title(ReportTitleInput {
+            kind: ReportKind::Crash,
+            client_version: "1.0",
+            failure_reason: None,
+            stack_trace,
+            process: Some("WebContent"),
+            platform: Some("macOS"),
+            signal,
+        })
+    }
+
+    #[test]
+    fn title_names_the_signal_when_nothing_better_is_known() {
+        assert_eq!(
+            title_with_signal(Some("SIGTRAP"), None),
+            "Crash report · WebContent · macOS · SIGTRAP"
+        );
+        assert_eq!(
+            title_with_signal(
+                Some("SIGTRAP"),
+                Some("Native stack (binary build ID, object address):\n#0 abcdef1234567890 0x1")
+            ),
+            "Crash report · WebContent · macOS · SIGTRAP"
+        );
+        assert_eq!(
+            title_with_signal(None, None),
+            "Crash report · WebContent · macOS"
+        );
+    }
+
+    #[test]
+    fn title_leaves_the_number_out_of_the_signal() {
+        for signal in ["SIGSEGV (11)", "SIGSEGV(11)", "  SIGSEGV  ", "SIGSEGV"] {
+            assert_eq!(
+                title_with_signal(Some(signal), None),
+                "Crash report · WebContent · macOS · SIGSEGV",
+                "{signal:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn title_ignores_a_signal_that_is_not_a_plain_name() {
+        for signal in [
+            "",
+            " ",
+            "(11)",
+            "SIG<script>",
+            "https://example.test/",
+            "SIG/SEGV",
+        ] {
+            assert_eq!(
+                title_with_signal(Some(signal), None),
+                "Crash report · WebContent · macOS",
+                "{signal:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn title_prefers_the_failure_or_a_named_function_over_the_signal() {
+        let with_failure = generate_report_title(ReportTitleInput {
+            kind: ReportKind::Crash,
+            client_version: "1.0",
+            failure_reason: Some("Verification failed: false at Libraries/LibMedia/Foo.cpp:235"),
+            stack_trace: None,
+            process: Some("WebContent"),
+            platform: Some("macOS"),
+            signal: Some("SIGTRAP"),
+        });
+        assert_eq!(with_failure, "Crash: Foo.cpp:235");
+
+        assert_eq!(
+            title_with_signal(
+                Some("SIGTRAP"),
+                Some("#0 abcdef1234567890 0x1 Web::Window::close() at /bin/WebContent")
+            ),
+            "Crash: Web::Window::close"
+        );
+    }
+
+    #[test]
+    fn title_shows_the_signal_without_process_or_platform() {
+        let title = generate_report_title(ReportTitleInput {
+            kind: ReportKind::Crash,
+            client_version: "1.0",
+            failure_reason: None,
+            stack_trace: None,
+            process: None,
+            platform: None,
+            signal: Some("SIGABRT"),
+        });
+
+        assert_eq!(title, "Crash report · SIGABRT");
     }
 }

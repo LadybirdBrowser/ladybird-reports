@@ -23,6 +23,7 @@ struct TitleFields {
     process: Option<String>,
     platform: Option<String>,
     architecture: Option<String>,
+    signal: Option<String>,
 }
 
 impl TitleFields {
@@ -34,6 +35,7 @@ impl TitleFields {
             stack_trace: self.stack_trace.as_deref(),
             process: self.process.as_deref(),
             platform: self.platform.as_deref(),
+            signal: self.signal.as_deref(),
         })
     }
 }
@@ -237,7 +239,7 @@ impl AdminDatabase {
              FROM report_fields AS fields
              LEFT JOIN field_definitions AS definitions ON definitions.key = fields.key
              WHERE fields.report_id = ANY($1)
-                AND (fields.key IN ('platform', 'architecture', 'process', 'stack', 'failure_reason')
+                AND (fields.key IN ('platform', 'architecture', 'process', 'signal', 'stack', 'failure_reason')
                     OR fields.kind = 'stack_trace'
                     OR definitions.kind = 'stack_trace')",
         )
@@ -260,6 +262,7 @@ impl AdminDatabase {
                 "platform" => entry.platform = text,
                 "architecture" => entry.architecture = text,
                 "process" => entry.process = text,
+                "signal" => entry.signal = text,
                 _ if (kind == "stack_trace"
                     || (kind == "multiline" && (key == "stack" || configured_stack)))
                     && (entry.stack_trace.is_none() || key == "stack") =>

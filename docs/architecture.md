@@ -65,11 +65,11 @@ JSON. Admin handlers construct typed view models rendered by Askama templates.
 
 ## Report titles
 
-Report titles are generated when reports are read, including for older reports.
-The first parsed stack frame supplies a shortened function name when possible;
-otherwise the title uses report type and available process, platform, or version
-information. The original stack text is unchanged. The same generated title is
-suggested when creating a GitHub issue.
+Report titles are generated when reports are read, including for older reports. The
+first parsed stack frame supplies a shortened function name when possible;
+otherwise the title uses report type and available process, platform, and signal
+name, or the version when there is no process or platform. The original stack text
+is unchanged. The same generated title is suggested when creating a GitHub issue.
 
 ## Stack signatures
 
