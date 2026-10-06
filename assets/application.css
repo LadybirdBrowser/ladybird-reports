@@ -2090,7 +2090,8 @@ details[open] summary {
 }
 
 .button-group > .icon-button:hover,
-.button-group > .icon-button:focus-visible {
+.button-group > .icon-button:focus-visible,
+.button-group > .icon-button[data-copy-state] {
     z-index: 1;
 }
 
