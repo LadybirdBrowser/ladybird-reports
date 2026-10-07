@@ -398,7 +398,9 @@ impl AdminDatabase {
                 ON field_definitions.key = report_fields.key
                 AND (field_definitions.kind = report_fields.kind
                     OR (field_definitions.kind = 'stack_trace'
-                        AND report_fields.kind = 'multiline'))
+                        AND report_fields.kind = 'multiline')
+                    OR (field_definitions.kind IN ('url', 'commit_id')
+                        AND report_fields.kind = 'text'))
              WHERE report_fields.report_id = $1
              ORDER BY field_definitions.position NULLS LAST, report_fields.key",
         )

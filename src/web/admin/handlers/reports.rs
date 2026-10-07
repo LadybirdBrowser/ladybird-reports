@@ -11,7 +11,8 @@ use crate::{
     application::{IssueProposal, propose_issue, title_for_report},
     domain::{
         AttachmentId, FieldKind, GithubLinkState, IssueId, ParsedStackTrace, ReportId, ReportKind,
-        ReportSearch, ReportState, filter_expression, parse_stack_trace, stack_fingerprint,
+        ReportSearch, ReportState, filter_expression, is_commit_id, parse_stack_trace,
+        stack_fingerprint,
     },
     error::{AppError, Result},
     infrastructure::database::{REPORT_PAGE_SIZE, ReportQuery, ReportSummary, SEARCH_VALUE_LIMIT},
@@ -128,6 +129,12 @@ pub struct ReportTemplate {
     unknown_groups: Vec<FieldGroup>,
     attachments: Vec<AttachmentView>,
     events: Vec<HistoryEvent>,
+    url_dialog_field: CopyTarget,
+}
+
+/// What the copy button in the untrusted URL dialog says it copies.
+pub struct CopyTarget {
+    label: &'static str,
 }
 
 pub struct ReportView {
@@ -158,6 +165,16 @@ pub struct OverviewField {
     value: String,
     filter_url: Option<String>,
     full_width: bool,
+    link: FieldLink,
+}
+
+/// How a field value is made clickable.
+pub enum FieldLink {
+    None,
+    /// An address from the client. Never linked directly: a dialog warns first.
+    UntrustedUrl,
+    /// The commit in the upstream repository, built here from a validated ID.
+    Commit(String),
 }
 
 pub struct FieldView {
@@ -169,6 +186,7 @@ pub struct FieldView {
     stack: Option<ParsedStackTrace>,
     stack_signature: Option<StackSignatureView>,
     filter_url: Option<String>,
+    link: FieldLink,
     known: bool,
 }
 
@@ -459,6 +477,12 @@ pub async fn show(
     let platform = field_string(&details.fields, "platform").unwrap_or_else(|| "Unknown".into());
     let architecture =
         field_string(&details.fields, "architecture").unwrap_or_else(|| "Unknown".into());
+    let github_repository = state
+        .database
+        .configuration()
+        .await?
+        .github_repository
+        .clone();
     let page_url = field_string(&details.fields, "url").filter(|url| !url.trim().is_empty());
 
     let mut overview = vec![
@@ -483,6 +507,7 @@ pub async fn show(
     if let Some(page_url) = &page_url {
         let mut field = OverviewField::searchable("Page URL", page_url, "url", page_url);
         field.full_width = true;
+        field.link = untrusted_url_link(page_url);
         overview.push(field);
     }
 
@@ -493,6 +518,7 @@ pub async fn show(
             details.report.created_at.date_naive(),
         )),
         full_width: true,
+        link: FieldLink::None,
     });
 
     // Older clients only supplied the combined build envelope. Put that long
@@ -560,10 +586,22 @@ pub async fn show(
                 full,
             })
         });
+        let linked_kind = match field.current_kind {
+            Some(kind @ (FieldKind::Url | FieldKind::CommitId)) => kind,
+            _ => field.kind,
+        };
         let display_kind = if is_stack {
             FieldKind::StackTrace
         } else {
-            field.kind
+            linked_kind
+        };
+        let link = match linked_kind {
+            FieldKind::Url => untrusted_url_link(&value),
+            FieldKind::CommitId if is_commit_id(&value) => FieldLink::Commit(format!(
+                "https://github.com/{github_repository}/commit/{}",
+                value.to_ascii_lowercase()
+            )),
+            _ => FieldLink::None,
         };
         let holds_text_block = matches!(field.kind, FieldKind::Multiline | FieldKind::StackTrace);
         let view = FieldView {
@@ -572,6 +610,7 @@ pub async fn show(
             stack,
             stack_signature,
             filter_url: (!holds_text_block).then(|| field_filter_url(&key, &value)),
+            link,
             kind: display_kind,
             key,
             value,
@@ -609,6 +648,7 @@ pub async fn show(
         unknown_groups: group_fields(unknown_fields),
         attachments,
         events,
+        url_dialog_field: CopyTarget { label: "URL" },
     }))
 }
 
@@ -641,6 +681,7 @@ impl OverviewField {
             value: value.into(),
             filter_url: Some(field_filter_url(key, search_value)),
             full_width: false,
+            link: FieldLink::None,
         }
     }
 }
@@ -995,6 +1036,14 @@ fn report_state(state: ReportState) -> (&'static str, &'static str) {
 
 fn default_report_search() -> String {
     "state:triage state:confirmed".into()
+}
+
+/// Only web addresses are offered for opening; anything else stays plain text.
+fn untrusted_url_link(value: &str) -> FieldLink {
+    match reqwest::Url::parse(value.trim()) {
+        Ok(url) if matches!(url.scheme(), "http" | "https") => FieldLink::UntrustedUrl,
+        _ => FieldLink::None,
+    }
 }
 
 fn field_string(

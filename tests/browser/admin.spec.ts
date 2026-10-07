@@ -270,13 +270,50 @@ test.describe("authenticated management UI", () => {
     await expect(overview.locator(".definition-list > div").filter({ hasText: "Page URL" }))
       .toContainText(pageUrl);
 
-    // It is text, not a link to a page an anonymous user chose, and it appears once.
+    // It is never a plain link to a page an anonymous user chose, and it appears once.
     await expect(overview.getByRole("link", { name: /example\.test/ })).toHaveCount(0);
     await expect(page.getByText(pageUrl)).toHaveCount(1);
 
     await overview.getByRole("link", { name: "Filter reports by Page URL" }).click();
     expect(new URL(page.url()).searchParams.get("q")).toContain("url:");
     await expect(page.locator(`a[href="/reports/${reportId}"]`)).toBeVisible();
+  });
+
+  test("warns before opening a page URL from a report", async ({ page, context }) => {
+    await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+    const pageUrl = "https://example.test/checkout?step=payment";
+    await page.goto(`/reports/${reportId}`);
+
+    const dialog = page.getByRole("dialog", { name: "Open this address?" });
+    await expect(dialog).toBeHidden();
+    await page.getByRole("region", { name: "Overview" })
+      .getByRole("button", { name: pageUrl }).click();
+    await expect(dialog).toBeVisible();
+    await expect(dialog).toContainText("has not been checked");
+    await expect(dialog.getByLabel("Address")).toHaveValue(pageUrl);
+
+    const open = dialog.getByRole("link", { name: "Open in new tab" });
+    await expect(open).toHaveAttribute("href", pageUrl);
+    await expect(open).toHaveAttribute("target", "_blank");
+    await expect(open).toHaveAttribute("rel", /noopener/);
+
+    await dialog.getByRole("button", { name: "Copy URL" }).click();
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(pageUrl);
+
+    await dialog.getByRole("button", { name: "Close", exact: true }).click();
+    await expect(dialog).toBeHidden();
+  });
+
+  test("links a commit ID to the commit in the upstream repository", async ({ page }) => {
+    await page.goto(`/reports/${reportId}`);
+
+    await expect(page.getByRole("link", { name: "654cf9b187384fa8855eac4fbafaa70e75497083" }))
+      .toHaveAttribute(
+        "href",
+        /^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/commit\/654cf9b187384fa8855eac4fbafaa70e75497083$/,
+      );
+    await expect(page.getByRole("link", { name: "654cf9b187384fa8855eac4fbafaa70e75497083" }))
+      .not.toHaveAttribute("target", /.+/);
   });
 
   test("copies field values from button groups that sit before the filter button", async ({ page, context }) => {

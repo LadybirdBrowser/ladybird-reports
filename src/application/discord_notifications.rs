@@ -4,7 +4,9 @@ use chrono::SecondsFormat;
 use serde_json::Value;
 
 use crate::{
-    domain::{DiscordConfiguration, ReportKind, concise_function_name, parse_stack_trace},
+    domain::{
+        DiscordConfiguration, ReportKind, concise_function_name, is_commit_id, parse_stack_trace,
+    },
     infrastructure::{
         database::{AdminDatabase, PendingDiscordNotification},
         discord::{
@@ -258,9 +260,7 @@ fn commit_field(
     const SHORT_COMMIT_CHARACTERS: usize = 7;
 
     let commit = fields.get("git_commit")?.as_str()?.trim();
-    if !(SHORT_COMMIT_CHARACTERS..=64).contains(&commit.len())
-        || !commit.bytes().all(|byte| byte.is_ascii_hexdigit())
-    {
+    if !is_commit_id(commit) {
         return None;
     }
 

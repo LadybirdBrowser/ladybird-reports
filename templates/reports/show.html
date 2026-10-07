@@ -31,7 +31,7 @@
                         <div{% if field.full_width %} class="overview-wide"{% endif %}>
                             <dt>{{ field.label }}</dt>
                             <dd class="overview-value" data-copy-scope>
-                                <span data-copy-source>{{ field.value }}</span>
+                                <span data-copy-source>{% include "reports/_linked_value.html" %}</span>
                                 {% include "reports/_field_value_actions.html" %}
                             </dd>
                         </div>
@@ -309,6 +309,52 @@
             </div>
         </aside>
     </div>
+
+    <dialog
+        class="issue-dialog url-dialog modal-overlay"
+        aria-labelledby="url-dialog-title"
+        data-url-dialog
+    >
+        <div class="issue-dialog-header">
+            <div>
+                <p class="eyebrow">Untrusted input</p>
+                <h2 id="url-dialog-title">Open this address?</h2>
+            </div>
+            <form method="dialog">
+                <button class="dialog-close" aria-label="Close dialog">×</button>
+            </form>
+        </div>
+        <p>
+            This address was supplied by the reporter and has not been checked. It may lead to
+            a malicious, misleading or unsuitable website. Only open it if you trust where it
+            goes, ideally in a browser or profile you can afford to lose.
+        </p>
+        {% let field = url_dialog_field %}
+        <div class="url-dialog-field" data-copy-scope>
+            <input
+                type="text"
+                readonly
+                aria-label="Address"
+                data-copy-source
+                data-url-dialog-value
+            >
+            <div class="button-group">
+                {% include "reports/_copy_button.html" %}
+            </div>
+        </div>
+        <div class="dialog-actions">
+            <button class="button-secondary" type="button" data-url-dialog-close>Close</button>
+            <a
+                class="button"
+                href="about:blank"
+                target="_blank"
+                rel="noopener noreferrer"
+                data-url-dialog-open
+            >
+                Open in new tab
+            </a>
+        </div>
+    </dialog>
 
     {% if !report.is_assigned %}
     <dialog

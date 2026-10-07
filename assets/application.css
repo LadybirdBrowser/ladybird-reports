@@ -1812,6 +1812,45 @@ tbody tr:hover {
     box-shadow: var(--shadow-popover);
 }
 
+.url-dialog {
+    width: min(36rem, calc(100vw - 2rem));
+}
+
+.url-dialog-field {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.url-dialog-field input {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-family: ui-monospace, monospace;
+    font-size: 0.85rem;
+}
+
+.link-button {
+    display: inline;
+    width: auto;
+    min-height: 0;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--brand);
+    font: inherit;
+    font-weight: 700;
+    text-align: left;
+    text-decoration: underline;
+    cursor: pointer;
+    overflow-wrap: anywhere;
+    white-space: inherit;
+}
+
+.link-button:hover {
+    background: none;
+    color: var(--brand-strong, var(--brand));
+}
+
 .issue-dialog-header {
     display: flex;
     margin-bottom: 1rem;
@@ -1935,7 +1974,7 @@ tbody tr:hover {
     margin-top: 0.75rem;
 }
 
-:is(.dialog-actions, .popover-actions) > button {
+:is(.dialog-actions, .popover-actions) > :is(button, .button) {
     height: var(--button-height);
     white-space: nowrap;
 }

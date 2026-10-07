@@ -26,10 +26,15 @@ named with the attachment `id` from the manifest.
 }
 ```
 
-The supported field value types are `text`, `multiline`, `stack_trace`, `number`,
-`boolean`, and `attachment`. `stack_trace` accepts the same text length as
+The supported field value types are `text`, `multiline`, `stack_trace`, `url`,
+`commit_id`, `number`, `boolean`, and `attachment`. `stack_trace` accepts the same text length as
 `multiline` and preserves the submitted text exactly. The server also interprets
-it for display, similarity search, and exact signature matching. Field keys are extensible. Unknown keys receive generic validation
+it for display, similarity search, and exact signature matching. `url` and
+`commit_id` carry short text that is not otherwise validated, so a build without
+git information may send `unknown`. The management interface shows a `url`
+behind a warning before it can be opened, and links a `commit_id` to the commit in
+the configured GitHub repository only when it is 7 to 64 hexadecimal characters.
+Fields defined as `url` or `commit_id` also accept plain `text` values. Field keys are extensible. Unknown keys receive generic validation
 limits and are identified as unknown in the management interface. Unknown envelope
 members are rejected; envelope changes require a new protocol version.
 
@@ -44,12 +49,12 @@ The initial client uses these conventional diagnostic fields:
 | `process` | `text` | Optional executable or process name. |
 | `platform` | `text` | Operating system or platform name. |
 | `architecture` | `text` | Process architecture such as `arm64` or `x86_64`. |
-| `git_commit` | `text` | Git commit used for the build. |
+| `git_commit` | `commit_id` | Git commit used for the build. |
 | `build_configuration` | `text` | Build configuration, such as `release`. |
 | `cpp_compiler` | `text` | C++ compiler name. |
 | `description` | `multiline` | User-provided problem description. |
 | `hostname` | `text` | Optional website hostname. |
-| `url` | `text` | Optional complete page URL. |
+| `url` | `url` | Optional complete page URL. |
 
 The registry can grow independently of the protocol. A newer client may submit
 other valid keys, which remain visible as unknown fields until maintainers add a

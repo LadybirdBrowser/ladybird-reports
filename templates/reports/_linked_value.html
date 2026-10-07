@@ -1,0 +1,1 @@
+{% match field.link %}{% when FieldLink::UntrustedUrl %}<button class="link-button" type="button" data-untrusted-url="{{ field.value }}">{{ field.value }}</button>{% when FieldLink::Commit(href) %}<a class="primary-link" href="{{ href }}">{{ field.value }}</a>{% when FieldLink::None %}{{ field.value }}{% endmatch %}

@@ -37,6 +37,51 @@ function initializeIssueDialogs() {
 
 initializeIssueDialogs();
 
+// Addresses come from the reporter, so they are only opened after a warning.
+function initializeUrlDialog() {
+    const dialog = document.querySelector("[data-url-dialog]");
+    if (!dialog) {
+        return;
+    }
+
+    const value = dialog.querySelector("[data-url-dialog-value]");
+    const openLink = dialog.querySelector("[data-url-dialog-open]");
+
+    for (const trigger of document.querySelectorAll("[data-untrusted-url]")) {
+        trigger.addEventListener("click", () => {
+            const address = trigger.dataset.untrustedUrl.trim();
+            let protocol;
+            try {
+                protocol = new URL(address).protocol;
+            } catch {
+                return;
+            }
+            if (protocol !== "http:" && protocol !== "https:") {
+                return;
+            }
+
+            value.value = address;
+            openLink.href = address;
+            dialog.showModal();
+            openLink.focus();
+        });
+    }
+
+    dialog.querySelector("[data-url-dialog-close]").addEventListener("click", () => dialog.close());
+    openLink.addEventListener("click", () => dialog.close());
+    dialog.addEventListener("click", (event) => {
+        if (event.target === dialog) {
+            dialog.close();
+        }
+    });
+    dialog.addEventListener("close", () => {
+        openLink.href = "about:blank";
+        value.value = "";
+    });
+}
+
+initializeUrlDialog();
+
 async function writeToClipboard(text) {
     if (navigator.clipboard?.writeText) {
         await navigator.clipboard.writeText(text);
@@ -76,7 +121,7 @@ function initializeCopyButtons() {
             const source = button.closest("[data-copy-scope]")?.querySelector("[data-copy-source]");
             let state = "copied";
             try {
-                await writeToClipboard(source?.textContent ?? "");
+                await writeToClipboard(source?.value ?? source?.textContent ?? "");
             } catch {
                 state = "failed";
             }
