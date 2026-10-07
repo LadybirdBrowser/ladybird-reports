@@ -1835,6 +1835,16 @@ tbody tr:hover {
     height: 2.55rem;
 }
 
+.field-link {
+    color: var(--brand);
+    font-weight: 700;
+    text-decoration: underline;
+}
+
+.field-link:hover {
+    color: var(--brand-strong);
+}
+
 .link-button {
     display: inline;
     width: auto;
@@ -1842,11 +1852,9 @@ tbody tr:hover {
     padding: 0;
     border: 0;
     background: none;
-    color: var(--brand);
     font: inherit;
     font-weight: 700;
     text-align: left;
-    text-decoration: underline;
     cursor: pointer;
     overflow-wrap: anywhere;
     white-space: inherit;
@@ -1854,7 +1862,6 @@ tbody tr:hover {
 
 .link-button:hover {
     background: none;
-    color: var(--brand-strong, var(--brand));
 }
 
 .issue-dialog-header {
