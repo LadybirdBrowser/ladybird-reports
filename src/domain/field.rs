@@ -148,6 +148,31 @@ pub fn validate_fields(
     Ok(())
 }
 
+/// The stack trace that signs a submission: `stack`, or else the first by key,
+/// as in the `report_stack_traces` view. A stack trace is one sent as such, or
+/// as multiline text in `stack` or in a field defined as a stack trace.
+pub fn submitted_stack_trace<'a>(
+    fields: &'a [DiagnosticField],
+    definitions: &HashMap<String, FieldDefinition>,
+) -> Option<&'a str> {
+    fields
+        .iter()
+        .filter_map(|field| match &field.value {
+            FieldValue::StackTrace(text) => Some((field, text)),
+            FieldValue::Multiline(text)
+                if field.key == "stack"
+                    || definitions
+                        .get(&field.key)
+                        .is_some_and(|definition| definition.kind == FieldKind::StackTrace) =>
+            {
+                Some((field, text))
+            }
+            _ => None,
+        })
+        .min_by_key(|(field, _)| (field.key != "stack", field.key.as_str()))
+        .map(|(_, text)| text.as_str())
+}
+
 /// The shape of a diagnostic field key, shared by submissions and field definitions.
 pub fn is_valid_field_key(key: &str) -> bool {
     !key.is_empty()
@@ -168,6 +193,35 @@ fn validate_field_key(key: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_submission_is_signed_by_its_preferred_stack_trace() {
+        let definitions = HashMap::from([(
+            "a-stack".to_owned(),
+            FieldDefinition {
+                key: "a-stack".into(),
+                label: "Another stack".into(),
+                kind: FieldKind::StackTrace,
+                position: 0,
+            },
+        )]);
+        let field = |key: &str, value| DiagnosticField {
+            key: key.into(),
+            value,
+        };
+        let fields = [
+            field("a-stack", FieldValue::Multiline("defined".into())),
+            field("typed", FieldValue::StackTrace("typed".into())),
+            field("notes", FieldValue::Multiline("not a stack".into())),
+            field("text", FieldValue::Text("not a stack".into())),
+            field("stack", FieldValue::Multiline("stack".into())),
+        ];
+
+        let stack_of = |fields| submitted_stack_trace(fields, &definitions);
+        assert_eq!(stack_of(&fields), Some("stack"));
+        assert_eq!(stack_of(&fields[..4]), Some("defined"));
+        assert_eq!(stack_of(&fields[2..4]), None);
+    }
 
     #[test]
     fn stack_trace_fields_accept_new_and_legacy_text_envelopes() {

@@ -443,7 +443,6 @@ pub async fn show(
         .report_details(report_id)
         .await?
         .ok_or_else(|| not_found("Report not found"))?;
-    state.database.index_report_stack_traces(report_id).await?;
     let potential_issues = if details.report.issue_id.is_none() {
         state
             .database

@@ -147,29 +147,24 @@ impl AdminDatabase {
         limit: i64,
     ) -> Result<Vec<PendingStackTrace>> {
         let rows = sqlx::query(
-            "SELECT reports.id AS report_id, reports.kind, fields.key,
-                    reports.auto_match_eligible,
-                    fields.value #>> '{}' AS text,
+            "SELECT reports.id AS report_id, reports.kind, reports.auto_match_eligible,
+                    traces.text,
                     signal.value #>> '{}' AS signal,
                     process.value #>> '{}' AS process
-             FROM report_fields AS fields
-             JOIN reports ON reports.id = fields.report_id
-             LEFT JOIN field_definitions AS definitions ON definitions.key = fields.key
+             FROM report_stack_traces AS traces
+             JOIN reports ON reports.id = traces.report_id
              LEFT JOIN report_fields AS signal
                 ON signal.report_id = reports.id AND signal.key = 'signal'
              LEFT JOIN report_fields AS process
                 ON process.report_id = reports.id AND process.key = 'process'
              LEFT JOIN report_stack_signatures AS signatures
-                ON signatures.report_id = fields.report_id
-                AND signatures.field_key = fields.key
+                ON signatures.report_id = reports.id
              WHERE reports.storage_state = 'ready'
                 AND ($1::uuid IS NULL OR reports.id = $1)
-                AND (fields.kind = 'stack_trace'
-                    OR (fields.kind = 'multiline'
-                        AND (fields.key = 'stack' OR definitions.kind = 'stack_trace')))
                 AND (signatures.report_id IS NULL
-                    OR signatures.algorithm_version <> $2)
-             ORDER BY reports.created_at, reports.id, fields.key
+                    OR signatures.algorithm_version <> $2
+                    OR signatures.matched_at IS NULL)
+             ORDER BY reports.created_at, reports.id
              LIMIT $3",
         )
         .bind(report_id)
@@ -183,7 +178,6 @@ impl AdminDatabase {
             .map(|row| PendingStackTrace {
                 report_id: row.get("report_id"),
                 kind: row.get("kind"),
-                key: row.get("key"),
                 text: row.get("text"),
                 signal: row.get("signal"),
                 process: row.get("process"),
@@ -216,26 +210,22 @@ impl AdminDatabase {
                 .execute(&mut *transaction)
                 .await?;
 
-            let prior_version: Option<i32> = sqlx::query_scalar(
-                "SELECT algorithm_version
-                 FROM report_stack_signatures
-                 WHERE report_id = $1 AND field_key = $2",
+            // A report arrives with its signature; only its matching is left.
+            let matched: bool = sqlx::query_scalar(
+                "SELECT COALESCE(
+                    (SELECT matched_at IS NOT NULL
+                     FROM report_stack_signatures WHERE report_id = $1),
+                    false)",
             )
             .bind(trace.report_id)
-            .bind(&trace.key)
-            .fetch_optional(&mut *transaction)
+            .fetch_one(&mut *transaction)
             .await?;
-
-            if prior_version == Some(STACK_SIGNATURE_VERSION) {
-                continue;
-            }
 
             sqlx::query(
                 "INSERT INTO report_stack_signatures
-                    (report_id, field_key, algorithm_version, status,
-                     fingerprint, frame_keys)
-                 VALUES ($1, $2, $3, $4, $5, $6)
-                 ON CONFLICT (report_id, field_key) DO UPDATE SET
+                    (report_id, algorithm_version, status, fingerprint, frame_keys)
+                 VALUES ($1, $2, $3, $4, $5)
+                 ON CONFLICT (report_id) DO UPDATE SET
                     algorithm_version = excluded.algorithm_version,
                     status = excluded.status,
                     fingerprint = excluded.fingerprint,
@@ -243,7 +233,6 @@ impl AdminDatabase {
                     indexed_at = now()",
             )
             .bind(trace.report_id)
-            .bind(&trace.key)
             .bind(STACK_SIGNATURE_VERSION)
             .bind(status)
             .bind(&fingerprint)
@@ -251,12 +240,20 @@ impl AdminDatabase {
             .execute(&mut *transaction)
             .await?;
 
-            if trace.auto_match_eligible
-                && prior_version.is_none()
-                && let Some(fingerprint) = fingerprint
-            {
-                self.match_indexed_report(&mut transaction, &trace, &fingerprint)
-                    .await?;
+            if !matched {
+                if trace.auto_match_eligible
+                    && let Some(fingerprint) = fingerprint
+                {
+                    self.match_indexed_report(&mut transaction, &trace, &fingerprint)
+                        .await?;
+                }
+
+                sqlx::query(
+                    "UPDATE report_stack_signatures SET matched_at = now() WHERE report_id = $1",
+                )
+                .bind(trace.report_id)
+                .execute(&mut *transaction)
+                .await?;
             }
 
             transaction.commit().await?;
@@ -406,7 +403,6 @@ impl AdminDatabase {
 struct PendingStackTrace {
     report_id: ReportId,
     kind: ReportKind,
-    key: String,
     text: String,
     signal: Option<String>,
     process: Option<String>,

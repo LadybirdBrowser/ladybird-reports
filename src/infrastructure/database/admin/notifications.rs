@@ -53,18 +53,13 @@ impl AdminDatabase {
                 AND reports.state <> 'rejected'
                 AND NOT EXISTS (
                     SELECT 1
-                    FROM report_fields AS fields
-                    LEFT JOIN field_definitions AS definitions ON definitions.key = fields.key
+                    FROM report_stack_traces AS traces
                     LEFT JOIN report_stack_signatures AS signatures
-                        ON signatures.report_id = fields.report_id
-                        AND signatures.field_key = fields.key
-                    WHERE fields.report_id = reports.id
-                        AND (fields.kind = 'stack_trace'
-                            OR (fields.kind = 'multiline'
-                                AND (fields.key = 'stack'
-                                    OR definitions.kind = 'stack_trace')))
+                        ON signatures.report_id = traces.report_id
+                    WHERE traces.report_id = reports.id
                         AND (signatures.report_id IS NULL
-                            OR signatures.algorithm_version <> $1)
+                            OR signatures.algorithm_version <> $1
+                            OR signatures.matched_at IS NULL)
                 )
              ORDER BY notifications.created_at, notifications.report_id
              LIMIT 1",

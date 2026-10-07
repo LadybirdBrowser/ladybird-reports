@@ -78,9 +78,12 @@ is unchanged. The same generated title is suggested when creating a GitHub issue
 
 The public API stores stack trace text exactly as submitted in `report_fields`.
 Older `stack` fields tagged `multiline` remain valid; newer clients can use the
-`stack_trace` type. The admin process parses either form for a frame table and
-derives a versioned signature from normalized function names, report kind, and
-optional process and signal. Build IDs, addresses, paths, URLs, and source IPs do
+`stack_trace` type. A report has one signature, from its `stack` field or else its
+first stack trace by key. The public process derives it while accepting the report;
+the admin process parses either form for a frame table, matches new signatures
+against issues, and signs stack traces that arrived without one. The signature is a
+versioned fingerprint of normalized function names, report kind, and optional
+process and signal. Build IDs, addresses, paths, URLs, and source IPs do
 not enter the signature. Unrecognized lines remain visible and the original text
 is always available in the report view.
 

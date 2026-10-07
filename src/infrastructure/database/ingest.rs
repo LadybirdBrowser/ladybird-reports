@@ -7,8 +7,9 @@ use sqlx::{PgPool, Row};
 
 use crate::{
     domain::{
-        AttachmentId, AttachmentReference, ChallengeClaims, FieldDefinition, FieldKind, ReportId,
-        ReportManifest, RuntimeConfiguration, StorageState, SubmissionId, UploadId,
+        AttachmentId, AttachmentReference, ChallengeClaims, FieldDefinition, FieldKind, FieldValue,
+        ReportId, ReportManifest, RuntimeConfiguration, STACK_SIGNATURE_VERSION, StorageState,
+        SubmissionId, UploadId, parse_stack_trace, stack_fingerprint, submitted_stack_trace,
     },
     error::{AppError, Result},
 };
@@ -291,6 +292,29 @@ impl IngestDatabase {
                     .bind(request.retention_days as i32)
                     .execute(&mut *transaction)
                     .await?;
+
+                let fields = &request.manifest.fields;
+                if let Some(stack) = submitted_stack_trace(fields, request.definitions) {
+                    let text_of = |key| {
+                        fields.iter().find_map(|field| match &field.value {
+                            FieldValue::Text(text) if field.key == key => Some(text.as_str()),
+                            _ => None,
+                        })
+                    };
+                    let parsed = parse_stack_trace(stack);
+                    sqlx::query("SELECT accept_stack_signature($1, $2, $3, $4)")
+                        .bind(report_id)
+                        .bind(STACK_SIGNATURE_VERSION)
+                        .bind(stack_fingerprint(
+                            request.manifest.kind,
+                            text_of("process"),
+                            text_of("signal"),
+                            &parsed.frame_keys,
+                        ))
+                        .bind(parsed.frame_keys)
+                        .execute(&mut *transaction)
+                        .await?;
+                }
                 transaction.commit().await?;
 
                 Ok(AcceptReportOutcome::Accepted(report_id))

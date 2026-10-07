@@ -194,10 +194,18 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
         kind: ReportKind::WebCompat,
         client_version: "integration-test".into(),
         build: "Debug ARM64".into(),
-        fields: vec![DiagnosticField {
-            key: "future-client-field".into(),
-            value: FieldValue::Text("accepted but marked unknown".into()),
-        }],
+        fields: vec![
+            DiagnosticField {
+                key: "future-client-field".into(),
+                value: FieldValue::Text("accepted but marked unknown".into()),
+            },
+            DiagnosticField {
+                key: "stack".into(),
+                value: FieldValue::StackTrace(
+                    "#0 0x1 Web::Box::paint()\n#1 0x2 Web::paint()".into(),
+                ),
+            },
+        ],
         attachments: vec![AttachmentManifest {
             id: String::from("diagnostics")
                 .try_into()
@@ -311,7 +319,7 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
         .expect("read report as administrator")
         .expect("accepted report exists");
     assert_eq!(report.report.client_version, "integration-test");
-    assert_eq!(report.fields.len(), 1);
+    assert_eq!(report.fields.len(), 2);
     assert_eq!(report.attachments.len(), 1);
     let stored_attachment = &report.attachments[0];
     assert_eq!(
@@ -332,10 +340,34 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
             .await
             .expect("read attachment reference");
     assert_eq!(client_reference, "diagnostics");
-    assert!(!report.fields[0].recognized_at_submission);
+    assert!(
+        report
+            .fields
+            .iter()
+            .any(|field| !field.recognized_at_submission)
+    );
     assert!(report.report.has_submission_source);
     assert!(!report.report.submission_source_is_blocked);
     assert!(report.report.expires_at.is_some());
+
+    // The stack trace was signed while the report was accepted; the indexer
+    // only matches it.
+    let unmatched = || async {
+        sqlx::query_scalar::<_, bool>(
+            "SELECT status = 'parsed' AND matched_at IS NULL
+             FROM report_stack_signatures WHERE report_id = $1",
+        )
+        .bind(report_id)
+        .fetch_one(&admin_pool)
+        .await
+        .expect("read the signature stored with the report")
+    };
+    assert!(unmatched().await);
+    admin_database
+        .index_pending_stack_traces()
+        .await
+        .expect("match the signature");
+    assert!(!unmatched().await);
 
     // The accept_report SQL function spells this action out as text.
     let submitted_events: i64 = sqlx::query_scalar(
