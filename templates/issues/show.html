@@ -60,11 +60,10 @@
                     </div>
                 {% else %}
                     <div class="table-scroll">
-                        <table>
+                        <table class="report-table issue-report-table">
                             <thead>
                                 <tr>
                                     <th>Report</th>
-                                    <th>Version</th>
                                     <th>Received</th>
                                     <th><span class="visually-hidden">Action</span></th>
                                 </tr>
@@ -72,17 +71,19 @@
                             <tbody>
                                 {% for report in reports %}
                                     <tr class="clickable-report-row">
-                                        <td>
+                                        <td class="report-table-report">
                                             <a
-                                                class="primary-link row-link"
+                                                class="primary-link report-title-link row-link"
                                                 href="/reports/{{ report.id }}"
                                             >
                                                 {{ report.title }}
                                             </a>
+                                            <span class="report-table-metadata">{{ report.metadata }}</span>
                                         </td>
-                                        <td>{{ report.client_version }}</td>
-                                        <td class="quiet">{{ report.created_at }}</td>
-                                        <td>
+                                        <td class="quiet report-received-at report-table-received">
+                                            {{ report.received_at }}
+                                        </td>
+                                        <td class="report-table-action">
                                             <form
                                                 method="post"
                                                 action="/issues/{{ issue.id }}/reports/{{ report.id }}/unlink"
@@ -116,11 +117,10 @@
                         <span class="badge badge-neutral">{{ potential_matches.len() }}</span>
                     </div>
                     <div class="table-scroll">
-                        <table>
+                        <table class="report-table issue-report-table">
                             <thead>
                                 <tr>
                                     <th>Report</th>
-                                    <th>Version</th>
                                     <th>Received</th>
                                     <th><span class="visually-hidden">Action</span></th>
                                 </tr>
@@ -128,10 +128,19 @@
                             <tbody>
                                 {% for report in potential_matches %}
                                     <tr class="clickable-report-row">
-                                        <td><a class="primary-link row-link" href="/reports/{{ report.id }}">{{ report.title }}</a></td>
-                                        <td>{{ report.client_version }}</td>
-                                        <td class="quiet">{{ report.created_at }}</td>
-                                        <td>
+                                        <td class="report-table-report">
+                                            <a
+                                                class="primary-link report-title-link row-link"
+                                                href="/reports/{{ report.id }}"
+                                            >
+                                                {{ report.title }}
+                                            </a>
+                                            <span class="report-table-metadata">{{ report.metadata }}</span>
+                                        </td>
+                                        <td class="quiet report-received-at report-table-received">
+                                            {{ report.received_at }}
+                                        </td>
+                                        <td class="report-table-action">
                                             <form method="post" action="/reports/{{ report.id }}/issue">
                                                 <input type="hidden" name="csrf" value="{{ navigation.as_ref().unwrap().csrf_token }}">
                                                 <input type="hidden" name="issue_selection" value="issue:{{ issue.id }}">

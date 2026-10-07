@@ -1234,6 +1234,23 @@ button:active,
     min-width: 0;
 }
 
+/* The reports of an issue: no state column, so the report gets the room. */
+.issue-report-table th:first-child {
+    width: auto;
+}
+
+.issue-report-table th:nth-child(2) {
+    width: 11.5rem;
+}
+
+.issue-report-table th:nth-child(3) {
+    width: 6rem;
+}
+
+.issue-report-table .report-table-action {
+    text-align: right;
+}
+
 .report-title-link {
     display: block;
     overflow: hidden;
@@ -2752,6 +2769,21 @@ pre {
         grid-area: received;
         white-space: normal;
         text-align: right;
+    }
+
+    .issue-report-table tr {
+        grid-template-areas:
+            "report report"
+            "received action";
+        align-items: center;
+    }
+
+    .issue-report-table .report-table-received {
+        text-align: left;
+    }
+
+    .issue-report-table .report-table-action {
+        grid-area: action;
     }
 
 }

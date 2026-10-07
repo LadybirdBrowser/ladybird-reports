@@ -4,22 +4,22 @@ use axum::{
     extract::{Path, Query, State},
     response::Redirect,
 };
-use chrono::{DateTime, Utc};
 use comrak::{Options, markdown_to_html};
 use serde::{Deserialize, Serialize};
 
 use crate::{
     domain::{GithubLinkState, IssueId, IssueReportAction, IssueSearch, IssueState, ReportId},
     error::{AppError, Result},
+    infrastructure::database::ReportSummary,
 };
 
 use super::super::{
     AdminState, TemplateResponse,
     authentication::Navigation,
     session::Session,
-    templates::{HistoryEvent, not_found},
+    templates::{HistoryEvent, display_timestamp, not_found},
 };
-use super::github::ensure_github_reports_link;
+use super::{github::ensure_github_reports_link, reports::report_list_metadata};
 
 #[derive(Deserialize)]
 pub struct IssueFilters {
@@ -95,8 +95,17 @@ pub struct IssueView {
 pub struct ReportView {
     id: crate::domain::ReportId,
     title: String,
-    client_version: String,
-    created_at: DateTime<Utc>,
+    metadata: String,
+    received_at: String,
+}
+
+fn report_view(report: ReportSummary) -> ReportView {
+    ReportView {
+        metadata: report_list_metadata(&report),
+        received_at: display_timestamp(report.created_at),
+        id: report.id,
+        title: report.title,
+    }
 }
 
 fn render_issue_description(markdown: &str) -> String {
@@ -332,12 +341,7 @@ pub async fn show(
             .issue_signature_matches(issue_id)
             .await?
             .into_iter()
-            .map(|report| ReportView {
-                id: report.id,
-                title: report.title,
-                client_version: report.client_version,
-                created_at: report.created_at,
-            })
+            .map(report_view)
             .collect()
     } else {
         Vec::new()
@@ -356,16 +360,7 @@ pub async fn show(
         merged_into: details.issue.merged_into,
     };
 
-    let reports = details
-        .reports
-        .into_iter()
-        .map(|report| ReportView {
-            id: report.id,
-            title: report.title,
-            client_version: report.client_version,
-            created_at: report.created_at,
-        })
-        .collect();
+    let reports = details.reports.into_iter().map(report_view).collect();
 
     let events = details.events.into_iter().map(HistoryEvent::from).collect();
 

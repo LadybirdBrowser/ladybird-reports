@@ -403,7 +403,7 @@ fn report_kind_label(kind: ReportKind) -> &'static str {
     }
 }
 
-fn report_list_metadata(report: &ReportSummary) -> String {
+pub(super) fn report_list_metadata(report: &ReportSummary) -> String {
     let metadata = report_metadata(
         report.platform.as_deref(),
         report.architecture.as_deref(),
