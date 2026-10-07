@@ -161,13 +161,17 @@ fn source_location_from_failure(reason: &str) -> Option<String> {
     if line.parse::<u32>().ok()? == 0 {
         return None;
     }
-    let file = path.rsplit('/').next()?;
+    let mut segments = path.rsplit('/');
+    let file = segments.next()?;
+    let is_plain = |name: &str| {
+        name.chars().all(|character| {
+            character.is_ascii_alphanumeric() || matches!(character, '.' | '_' | '-')
+        })
+    };
     if ![".cpp", ".h", ".mm", ".rs", ".c"]
         .iter()
         .any(|extension| file.ends_with(extension))
-        || !file.chars().all(|character| {
-            character.is_ascii_alphanumeric() || matches!(character, '.' | '_' | '-')
-        })
+        || !is_plain(file)
         || path.starts_with('/')
         || path.contains("../")
         || path.contains('\\')
@@ -175,7 +179,15 @@ fn source_location_from_failure(reason: &str) -> Option<String> {
         return None;
     }
 
-    Some(format!("{file}:{line}"))
+    // File names repeat across the repository, so name the directory too.
+    let directory = segments
+        .next()
+        .filter(|name| !name.is_empty() && is_plain(name) && name.len() + file.len() < 80);
+
+    match directory {
+        Some(directory) => Some(format!("{directory}/{file}:{line}")),
+        None => Some(format!("{file}:{line}")),
+    }
 }
 
 pub fn concise_function_name(symbol: &str, maximum_characters: usize) -> Option<String> {
@@ -278,7 +290,7 @@ mod tests {
             platform: Some("macOS"),
             signal: None,
         });
-        assert_eq!(title, "Crash: FFmpegVideoDecoder.cpp:235");
+        assert_eq!(title, "Crash: FFmpeg/FFmpegVideoDecoder.cpp:235");
 
         let fallback = generate_report_title(ReportTitleInput {
             kind: ReportKind::Crash,
@@ -313,7 +325,7 @@ mod tests {
             title_for_failure(
                 "Verification failed: m_data.size() <= MAX_MESSAGE_PAYLOAD_SIZE at Libraries/LibIPC/Message.cpp:49"
             ),
-            "Crash: Message.cpp:49 · m_data.size() <= MAX_MESSAGE_PAYLOAD_SIZE"
+            "Crash: LibIPC/Message.cpp:49 · m_data.size() <= MAX_MESSAGE_PAYLOAD_SIZE"
         );
 
         let long = format!(
@@ -321,7 +333,10 @@ mod tests {
             "a_b + ".repeat(20)
         );
         let title = title_for_failure(&long);
-        assert!(title.starts_with("Crash: Foo.cpp:1 · a_b + a_b"), "{title}");
+        assert!(
+            title.starts_with("Crash: Libraries/Foo.cpp:1 · a_b + a_b"),
+            "{title}"
+        );
         assert!(title.ends_with('…'), "{title}");
         assert!(title.chars().count() <= MAX_TITLE_CHARACTERS);
     }
@@ -332,13 +347,13 @@ mod tests {
             title_for_failure(
                 "Rust panic: animation-overlay record is live at Libraries/LibWeb/Rust/src/css/style/computed.rs:3606:14"
             ),
-            "Crash: computed.rs:3606 · animation-overlay record is live"
+            "Crash: style/computed.rs:3606 · animation-overlay record is live"
         );
         assert_eq!(
             title_for_failure(
                 "Rust panic: internal error: entered unreachable code: the layout update did not stabilize at Libraries/LibWeb/Rust/src/layout/update_layout.rs:638:9"
             ),
-            "Crash: update_layout.rs:638 · the layout update did not stabilize"
+            "Crash: layout/update_layout.rs:638 · the layout update did not stabilize"
         );
         assert_eq!(
             title_for_failure("Rust panic: boom at Libraries/Rust/src/lib.rs:7:x"),
@@ -368,7 +383,11 @@ mod tests {
             "Verification failed: http://example.test at Libraries/Foo.cpp:1",
             "Something else: a <= b at Libraries/Foo.cpp:1",
         ] {
-            assert_eq!(title_for_failure(reason), "Crash: Foo.cpp:1", "{reason}");
+            assert_eq!(
+                title_for_failure(reason),
+                "Crash: Libraries/Foo.cpp:1",
+                "{reason}"
+            );
         }
     }
 
@@ -544,7 +563,7 @@ mod tests {
             platform: Some("macOS"),
             signal: Some("SIGTRAP"),
         });
-        assert_eq!(with_failure, "Crash: Foo.cpp:235");
+        assert_eq!(with_failure, "Crash: LibMedia/Foo.cpp:235");
 
         assert_eq!(
             title_with_signal(
