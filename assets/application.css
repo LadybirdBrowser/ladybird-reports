@@ -1825,8 +1825,14 @@ tbody tr:hover {
 .url-dialog-field input {
     flex: 1 1 auto;
     min-width: 0;
+    margin-top: 0;
     font-family: ui-monospace, monospace;
     font-size: 0.85rem;
+}
+
+.url-dialog-field .icon-button {
+    width: 2.55rem;
+    height: 2.55rem;
 }
 
 .link-button {
