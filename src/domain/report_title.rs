@@ -76,8 +76,8 @@ pub fn generate_report_title(input: ReportTitleInput<'_>) -> String {
     title
 }
 
-/// The condition of a failed verification, such as `a <= b`, when it says more
-/// than the source location does.
+/// The condition of a failed verification, such as `a <= b`, or the message of
+/// a Rust panic, when it says more than the source location does.
 ///
 /// The text comes from an anonymous client and ends up in titles, including the
 /// one proposed for a public issue, so only characters that make up a plain
@@ -89,7 +89,14 @@ fn failed_expression(reason: &str, room: usize) -> Option<String> {
     }
 
     let (message, _) = reason.rsplit_once(" at ")?;
-    let expression = message.strip_prefix("Verification failed:")?.trim();
+    let expression = ["Verification failed:", "Rust panic:"]
+        .into_iter()
+        .find_map(|prefix| message.strip_prefix(prefix))?
+        .trim();
+    let expression = expression
+        .strip_prefix("internal error: entered unreachable code:")
+        .unwrap_or(expression)
+        .trim();
 
     if matches!(expression, "" | "false" | "true" | "0" | "1" | "nullptr")
         || !expression.chars().all(|character| {
@@ -138,6 +145,19 @@ fn failed_expression(reason: &str, room: usize) -> Option<String> {
 fn source_location_from_failure(reason: &str) -> Option<String> {
     let (_, location) = reason.rsplit_once(" at ")?;
     let (path, line) = location.rsplit_once(':')?;
+
+    // Rust panics add the column, as in `file.rs:12:5`. Only the line is kept.
+    let (path, line) = match path.rsplit_once(':') {
+        Some((path, line_before_column))
+            if !line.is_empty()
+                && line.bytes().all(|byte| byte.is_ascii_digit())
+                && !line_before_column.is_empty()
+                && line_before_column.bytes().all(|byte| byte.is_ascii_digit()) =>
+        {
+            (path, line_before_column)
+        }
+        _ => (path, line),
+    };
     if line.parse::<u32>().ok()? == 0 {
         return None;
     }
@@ -304,6 +324,26 @@ mod tests {
         assert!(title.starts_with("Crash: Foo.cpp:1 · a_b + a_b"), "{title}");
         assert!(title.ends_with('…'), "{title}");
         assert!(title.chars().count() <= MAX_TITLE_CHARACTERS);
+    }
+
+    #[test]
+    fn title_uses_the_location_and_message_of_a_rust_panic() {
+        assert_eq!(
+            title_for_failure(
+                "Rust panic: animation-overlay record is live at Libraries/LibWeb/Rust/src/css/style/computed.rs:3606:14"
+            ),
+            "Crash: computed.rs:3606 · animation-overlay record is live"
+        );
+        assert_eq!(
+            title_for_failure(
+                "Rust panic: internal error: entered unreachable code: the layout update did not stabilize at Libraries/LibWeb/Rust/src/layout/update_layout.rs:638:9"
+            ),
+            "Crash: update_layout.rs:638 · the layout update did not stabilize"
+        );
+        assert_eq!(
+            title_for_failure("Rust panic: boom at Libraries/Rust/src/lib.rs:7:x"),
+            "Crash report · 1.0"
+        );
     }
 
     #[test]
