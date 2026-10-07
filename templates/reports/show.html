@@ -170,7 +170,7 @@
                 {% endif %}
                 {% if !report.is_assigned %}
                     <section class="action-group">
-                        <button type="button" data-open-issue-dialog>Add report to issue</button>
+                        <button type="button" data-dialog-open="issue-dialog">Add report to issue</button>
                     </section>
                 {% endif %}
 
@@ -255,26 +255,30 @@
                             </form>
                         {% else %}
                             <button
-                                class="button-danger block-source-trigger"
+                                class="button-danger"
                                 type="button"
-                                popovertarget="block-source-confirmation"
+                                data-dialog-open="block-source-dialog"
                             >
                                 Block submission IP
                             </button>
-                            <div
-                                class="confirmation-popover modal-overlay"
-                                id="block-source-confirmation"
-                                role="dialog"
-                                aria-labelledby="block-source-confirmation-title"
-                                popover
+                            <dialog
+                                class="issue-dialog compact-dialog modal-overlay"
+                                id="block-source-dialog"
+                                aria-labelledby="block-source-dialog-title"
                             >
+                                <div class="issue-dialog-header">
+                                    <div>
+                                        <p class="eyebrow">Submission source</p>
+                                        <h2 id="block-source-dialog-title">Block this IP?</h2>
+                                    </div>
+                                    <button class="dialog-close" type="button" data-dialog-close aria-label="Close dialog">×</button>
+                                </div>
                                 <form method="post" action="/reports/{{ report.id }}/block-ip">
                                     <input
                                         type="hidden"
                                         name="csrf"
                                         value="{{ navigation.as_ref().unwrap().csrf_token }}"
                                     >
-                                    <h3 id="block-source-confirmation-title">Block this IP?</h3>
                                     <p>
                                         Future requests from this address will be rejected before
                                         the server issues a proof-of-work challenge.
@@ -288,19 +292,14 @@
                                         >
                                         <span>Reject all triage reports from this IP</span>
                                     </label>
-                                    <div class="popover-actions">
-                                        <button
-                                            class="button-secondary"
-                                            type="button"
-                                            popovertarget="block-source-confirmation"
-                                            popovertargetaction="hide"
-                                        >
+                                    <div class="dialog-actions">
+                                        <button class="button-secondary" type="button" data-dialog-close autofocus>
                                             Cancel
                                         </button>
                                         <button class="button-danger" type="submit">Block IP</button>
                                     </div>
                                 </form>
-                            </div>
+                            </dialog>
                         {% endif %}
                     {% else %}
                         <p>This report predates submission-source tracking and cannot be blocked.</p>
@@ -311,7 +310,7 @@
     </div>
 
     <dialog
-        class="issue-dialog url-dialog modal-overlay"
+        class="issue-dialog compact-dialog modal-overlay"
         aria-labelledby="url-dialog-title"
         data-url-dialog
     >
@@ -320,9 +319,7 @@
                 <p class="eyebrow">Untrusted input</p>
                 <h2 id="url-dialog-title">Open this address?</h2>
             </div>
-            <form method="dialog">
-                <button class="dialog-close" aria-label="Close dialog">×</button>
-            </form>
+            <button class="dialog-close" type="button" data-dialog-close aria-label="Close dialog">×</button>
         </div>
         <p>
             This address was supplied by the reporter and has not been checked. It may lead to
@@ -343,13 +340,14 @@
             </div>
         </div>
         <div class="dialog-actions">
-            <button class="button-secondary" type="button" data-url-dialog-close>Close</button>
+            <button class="button-secondary" type="button" data-dialog-close autofocus>Close</button>
             <a
                 class="button"
                 href="about:blank"
                 target="_blank"
                 rel="noopener noreferrer"
                 data-url-dialog-open
+                data-dialog-close
             >
                 Open in new tab
             </a>
@@ -359,17 +357,15 @@
     {% if !report.is_assigned %}
     <dialog
         class="issue-dialog modal-overlay"
+        id="issue-dialog"
         aria-labelledby="issue-dialog-title"
-        data-issue-dialog
     >
         <div class="issue-dialog-header">
             <div>
                 <p class="eyebrow">Report workflow</p>
                 <h2 id="issue-dialog-title">Add report to an issue</h2>
             </div>
-            <form method="dialog">
-                <button class="dialog-close" aria-label="Close issue workflow">×</button>
-            </form>
+            <button class="dialog-close" type="button" data-dialog-close aria-label="Close dialog">×</button>
         </div>
 
         <div class="issue-mode-switch" role="group" aria-label="Issue action">
@@ -465,7 +461,7 @@
                     <p class="visually-hidden" aria-live="polite" data-entity-status></p>
                 </div>
                 <div class="dialog-actions">
-                    <button class="button-secondary" type="button" data-close-issue-dialog>
+                    <button class="button-secondary" type="button" data-dialog-close>
                         Cancel
                     </button>
                     <button type="submit">Add report</button>
@@ -494,7 +490,7 @@
                     Review this public GitHub issue before creating it.
                 </p>
                 <div class="dialog-actions">
-                    <button class="button-secondary" type="button" data-close-issue-dialog>
+                    <button class="button-secondary" type="button" data-dialog-close>
                         Cancel
                     </button>
                     <button type="submit">Create GitHub issue</button>

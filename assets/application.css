@@ -1757,14 +1757,6 @@ tbody tr:hover {
     accent-color: var(--danger);
 }
 
-.popover-actions {
-    display: flex;
-    margin-top: 1rem;
-    justify-content: flex-end;
-    flex-wrap: wrap;
-    gap: 0.55rem;
-}
-
 .report-list-card[aria-busy="true"] {
     opacity: 0.68;
     transition: opacity 120ms ease;
@@ -1829,7 +1821,7 @@ tbody tr:hover {
     box-shadow: var(--shadow-popover);
 }
 
-.url-dialog {
+.compact-dialog {
     width: min(36rem, calc(100vw - 2rem));
 }
 
@@ -1992,7 +1984,8 @@ tbody tr:hover {
     }
 }
 
-.dialog-actions {
+.dialog-actions,
+.popover-actions {
     display: flex;
     margin-top: 1.25rem;
     justify-content: flex-end;

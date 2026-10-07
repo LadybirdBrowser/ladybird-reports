@@ -292,6 +292,9 @@ test.describe("authenticated management UI", () => {
     await expect(dialog).toContainText("has not been checked");
     await expect(dialog.getByLabel("Address")).toHaveValue(pageUrl);
 
+    // Focus starts on the safe choice, not on the action the warning is about.
+    await expect(dialog.getByRole("button", { name: "Close", exact: true })).toBeFocused();
+
     const open = dialog.getByRole("link", { name: "Open in new tab" });
     await expect(open).toHaveAttribute("href", pageUrl);
     await expect(open).toHaveAttribute("target", "_blank");
@@ -729,11 +732,16 @@ test.describe("authenticated management UI", () => {
         (element) => getComputedStyle(element, "::backdrop").backdropFilter,
       ),
     ).toBe("blur(2px)");
+    await expect(confirmation.getByRole("button", { name: "Cancel" })).toBeFocused();
     await expect(confirmation.getByRole("checkbox")).toBeChecked();
     await expect(confirmation.getByRole("checkbox", {
       name: "Reject all triage reports from this IP",
     })).toBeVisible();
-    await confirmation.getByRole("button", { name: "Cancel" }).click();
+    await page.keyboard.press("Escape");
+    await expect(confirmation).toBeHidden();
+
+    await page.getByRole("button", { name: "Block submission IP" }).click();
+    await confirmation.getByRole("button", { name: "Close dialog" }).click();
     await expect(confirmation).toBeHidden();
 
     await page.getByRole("button", { name: "Block submission IP" }).click();

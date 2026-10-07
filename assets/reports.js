@@ -1,41 +1,47 @@
-function initializeIssueDialogs() {
-    for (const dialog of document.querySelectorAll("[data-issue-dialog]")) {
-        const openButton = document.querySelector("[data-open-issue-dialog]");
-        const closeButtons = dialog.querySelectorAll("[data-close-issue-dialog]");
-        const modeButtons = Array.from(dialog.querySelectorAll("[data-issue-mode]"));
-        const panels = Array.from(dialog.querySelectorAll("[data-issue-panel]"));
-
-        const selectMode = (mode) => {
-            for (const button of modeButtons) {
-                button.setAttribute("aria-pressed", String(button.dataset.issueMode === mode));
-            }
-            for (const panel of panels) {
-                panel.hidden = panel.dataset.issuePanel !== mode;
-            }
-
-            const panel = panels.find((candidate) => candidate.dataset.issuePanel === mode);
-            panel?.querySelector("input:not([type=hidden]), textarea")?.focus();
-        };
-
-        openButton?.addEventListener("click", () => {
-            dialog.showModal();
-            selectMode("existing");
-        });
-        for (const button of closeButtons) {
-            button.addEventListener("click", () => dialog.close());
+// A dialog opens from a `data-dialog-open` button and closes from any
+// `data-dialog-close` element inside it or a click on its backdrop.
+for (const trigger of document.querySelectorAll("[data-dialog-open]")) {
+    trigger.addEventListener("click", () => {
+        document.getElementById(trigger.dataset.dialogOpen).showModal();
+    });
+}
+for (const dialog of document.querySelectorAll("dialog.modal-overlay")) {
+    dialog.addEventListener("click", (event) => {
+        if (event.target === dialog || event.target.closest("[data-dialog-close]")) {
+            dialog.close();
         }
+    });
+}
+
+function initializeIssueDialog() {
+    const dialog = document.getElementById("issue-dialog");
+    if (!dialog) {
+        return;
+    }
+
+    const modeButtons = Array.from(dialog.querySelectorAll("[data-issue-mode]"));
+    const panels = Array.from(dialog.querySelectorAll("[data-issue-panel]"));
+
+    const selectMode = (mode) => {
         for (const button of modeButtons) {
-            button.addEventListener("click", () => selectMode(button.dataset.issueMode));
+            button.setAttribute("aria-pressed", String(button.dataset.issueMode === mode));
         }
-        dialog.addEventListener("click", (event) => {
-            if (event.target === dialog) {
-                dialog.close();
-            }
-        });
+        for (const panel of panels) {
+            panel.hidden = panel.dataset.issuePanel !== mode;
+        }
+
+        const panel = panels.find((candidate) => candidate.dataset.issuePanel === mode);
+        panel?.querySelector("input:not([type=hidden]), textarea")?.focus();
+    };
+
+    document.querySelector('[data-dialog-open="issue-dialog"]')
+        ?.addEventListener("click", () => selectMode("existing"));
+    for (const button of modeButtons) {
+        button.addEventListener("click", () => selectMode(button.dataset.issueMode));
     }
 }
 
-initializeIssueDialogs();
+initializeIssueDialog();
 
 // Addresses come from the reporter, so they are only opened after a warning.
 function initializeUrlDialog() {
@@ -63,21 +69,8 @@ function initializeUrlDialog() {
             value.value = address;
             openLink.href = address;
             dialog.showModal();
-            openLink.focus();
         });
     }
-
-    dialog.querySelector("[data-url-dialog-close]").addEventListener("click", () => dialog.close());
-    openLink.addEventListener("click", () => dialog.close());
-    dialog.addEventListener("click", (event) => {
-        if (event.target === dialog) {
-            dialog.close();
-        }
-    });
-    dialog.addEventListener("close", () => {
-        openLink.href = "about:blank";
-        value.value = "";
-    });
 }
 
 initializeUrlDialog();
