@@ -24,6 +24,7 @@ struct TitleFields {
     platform: Option<String>,
     architecture: Option<String>,
     signal: Option<String>,
+    url: Option<String>,
 }
 
 impl TitleFields {
@@ -239,7 +240,7 @@ impl AdminDatabase {
              FROM report_fields AS fields
              LEFT JOIN field_definitions AS definitions ON definitions.key = fields.key
              WHERE fields.report_id = ANY($1)
-                AND (fields.key IN ('platform', 'architecture', 'process', 'signal', 'stack', 'failure_reason')
+                AND (fields.key IN ('platform', 'architecture', 'process', 'signal', 'url', 'stack', 'failure_reason')
                     OR fields.kind = 'stack_trace'
                     OR definitions.kind = 'stack_trace')",
         )
@@ -263,6 +264,7 @@ impl AdminDatabase {
                 "architecture" => entry.architecture = text,
                 "process" => entry.process = text,
                 "signal" => entry.signal = text,
+                "url" => entry.url = text,
                 _ if (kind == "stack_trace"
                     || (kind == "multiline" && (key == "stack" || configured_stack)))
                     && (entry.stack_trace.is_none() || key == "stack") =>
@@ -298,6 +300,7 @@ impl AdminDatabase {
             report.title = fields.title(report.kind, &report.client_version);
             report.platform = fields.platform;
             report.architecture = fields.architecture;
+            report.url = fields.url;
         }
 
         Ok(())

@@ -43,7 +43,7 @@ pub struct ReportQuery {
     pub before_id: Option<ReportId>,
 }
 
-/// The title, platform and architecture are filled in after loading, so they
+/// The title, platform, architecture and URL are filled in after loading, so they
 /// are not read from the row.
 #[derive(Clone, Debug, sqlx::FromRow)]
 pub struct ReportSummary {
@@ -56,6 +56,8 @@ pub struct ReportSummary {
     pub platform: Option<String>,
     #[sqlx(skip)]
     pub architecture: Option<String>,
+    #[sqlx(skip)]
+    pub url: Option<String>,
     pub state: ReportState,
     pub created_at: DateTime<Utc>,
 }

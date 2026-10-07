@@ -1231,15 +1231,22 @@ button:active,
 }
 
 .report-table-report {
-    overflow-wrap: anywhere;
+    min-width: 0;
 }
 
 .report-title-link {
+    display: block;
+    overflow: hidden;
     font-weight: 700;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .report-table-metadata {
     display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     margin-top: 0.3rem;
     color: var(--ink-soft);
     font-size: 0.8rem;
@@ -2682,7 +2689,6 @@ pre {
 
     .report-table-report {
         grid-area: report;
-        overflow-wrap: anywhere;
     }
 
     .report-table-state {

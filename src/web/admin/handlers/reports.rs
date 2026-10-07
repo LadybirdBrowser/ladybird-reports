@@ -14,7 +14,7 @@ use crate::{
         ReportSearch, ReportState, filter_expression, parse_stack_trace, stack_fingerprint,
     },
     error::{AppError, Result},
-    infrastructure::database::{REPORT_PAGE_SIZE, ReportQuery, SEARCH_VALUE_LIMIT},
+    infrastructure::database::{REPORT_PAGE_SIZE, ReportQuery, ReportSummary, SEARCH_VALUE_LIMIT},
 };
 
 use super::super::{
@@ -240,14 +240,12 @@ async fn load_report_list(
         .map(|report| {
             let (state_label, state_tone) = report_state(report.state);
 
+            let metadata = report_list_metadata(&report);
+
             ReportRow {
                 id: report.id,
                 title: report.title,
-                metadata: report_metadata(
-                    report.platform.as_deref(),
-                    report.architecture.as_deref(),
-                    &report.client_version,
-                ),
+                metadata,
                 state_label,
                 state_tone,
                 received_at: display_timestamp(report.created_at),
@@ -384,6 +382,25 @@ fn report_kind_label(kind: ReportKind) -> &'static str {
     match kind {
         ReportKind::Crash => "Crash report",
         ReportKind::WebCompat => "Web compatibility report",
+    }
+}
+
+fn report_list_metadata(report: &ReportSummary) -> String {
+    let metadata = report_metadata(
+        report.platform.as_deref(),
+        report.architecture.as_deref(),
+        &report.client_version,
+    );
+    let url = report
+        .url
+        .as_deref()
+        .map(str::trim)
+        .filter(|url| !url.is_empty());
+
+    match url {
+        Some(url) if metadata.is_empty() => url.to_owned(),
+        Some(url) => format!("{metadata} · {url}"),
+        None => metadata,
     }
 }
 
