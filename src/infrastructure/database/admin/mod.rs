@@ -30,7 +30,7 @@ pub struct AdminDatabase {
 impl AdminDatabase {
     pub async fn connect(database_url: &str) -> Result<Self> {
         Ok(Self {
-            pool: connect_pool(database_url, 16).await?,
+            pool: connect_pool(database_url).await?,
             configuration_cache: ConfigurationCache::default(),
         })
     }

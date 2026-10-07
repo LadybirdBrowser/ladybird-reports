@@ -13,9 +13,18 @@ use sqlx::{PgPool, postgres::PgPoolOptions};
 
 use crate::error::Result;
 
-async fn connect_pool(database_url: &str, maximum_connections: u32) -> Result<PgPool> {
-    Ok(PgPoolOptions::new()
-        .max_connections(maximum_connections)
-        .connect(database_url)
-        .await?)
+/// Connections kept open while idle, so a request does not have to wait for one
+/// to be opened. One goes to the readiness check, which runs every few seconds.
+const MINIMUM_CONNECTIONS: u32 = 2;
+const MAXIMUM_CONNECTIONS: u32 = 16;
+
+/// The pool settings of both services.
+fn pool_options() -> PgPoolOptions {
+    PgPoolOptions::new()
+        .min_connections(MINIMUM_CONNECTIONS)
+        .max_connections(MAXIMUM_CONNECTIONS)
+}
+
+async fn connect_pool(database_url: &str) -> Result<PgPool> {
+    Ok(pool_options().connect(database_url).await?)
 }

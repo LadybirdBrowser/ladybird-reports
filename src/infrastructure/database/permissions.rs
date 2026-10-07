@@ -14,10 +14,7 @@ pub async fn initialize_database(
     reporting_database_url: Option<&str>,
     secret_cipher: &SecretCipher,
 ) -> Result<(PgPool, DatabaseBootstrap)> {
-    let admin_pool = PgPoolOptions::new()
-        .max_connections(16)
-        .connect(admin_database_url)
-        .await?;
+    let admin_pool = super::pool_options().connect(admin_database_url).await?;
 
     sqlx::migrate!("./migrations")
         .run(&admin_pool)
