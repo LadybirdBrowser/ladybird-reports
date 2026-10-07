@@ -65,7 +65,10 @@ JSON. Admin handlers construct typed view models rendered by Askama templates.
 
 ## Report titles
 
-Report titles are generated when reports are read, including for older reports. The
+Report titles are generated when reports are read, including for older reports. A
+crash with a source location in its failure reason is titled with that location,
+followed by the failed verification's condition when it is a short plain
+expression. Otherwise the
 first parsed stack frame supplies a shortened function name when possible;
 otherwise the title uses report type and available process, platform, and signal
 name, or the version when there is no process or platform. The original stack text

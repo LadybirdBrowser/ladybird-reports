@@ -22,7 +22,16 @@ pub fn generate_report_title(input: ReportTitleInput<'_>) -> String {
     if input.kind == ReportKind::Crash
         && let Some(location) = input.failure_reason.and_then(source_location_from_failure)
     {
-        return format!("{kind}: {location}");
+        let title = format!("{kind}: {location}");
+        let room = MAX_TITLE_CHARACTERS.saturating_sub(title.chars().count() + " · ".len());
+
+        return match input
+            .failure_reason
+            .and_then(|reason| failed_expression(reason, room))
+        {
+            Some(expression) => format!("{title} · {expression}"),
+            None => title,
+        };
     }
 
     if let Some(stack) = input.stack_trace {
@@ -65,6 +74,65 @@ pub fn generate_report_title(input: ReportTitleInput<'_>) -> String {
     }
 
     title
+}
+
+/// The condition of a failed verification, such as `a <= b`, when it says more
+/// than the source location does.
+///
+/// The text comes from an anonymous client and ends up in titles, including the
+/// one proposed for a public issue, so only characters that make up a plain
+/// expression are kept; anything else means no expression is shown.
+fn failed_expression(reason: &str, room: usize) -> Option<String> {
+    let maximum_characters = room.min(60);
+    if maximum_characters < 10 {
+        return None;
+    }
+
+    let (message, _) = reason.rsplit_once(" at ")?;
+    let expression = message.strip_prefix("Verification failed:")?.trim();
+
+    if matches!(expression, "" | "false" | "true" | "0" | "1" | "nullptr")
+        || !expression.chars().all(|character| {
+            character.is_ascii_alphanumeric()
+                || matches!(
+                    character,
+                    ' ' | '_'
+                        | '.'
+                        | ':'
+                        | ','
+                        | '('
+                        | ')'
+                        | '['
+                        | ']'
+                        | '<'
+                        | '>'
+                        | '='
+                        | '!'
+                        | '&'
+                        | '|'
+                        | '+'
+                        | '-'
+                        | '*'
+                        | '/'
+                        | '%'
+                )
+        })
+        || expression.contains("//")
+    {
+        return None;
+    }
+
+    if expression.chars().count() <= maximum_characters {
+        return Some(expression.to_owned());
+    }
+
+    let mut shortened = expression
+        .chars()
+        .take(maximum_characters - 1)
+        .collect::<String>();
+    shortened.truncate(shortened.trim_end().len());
+    shortened.push('…');
+    Some(shortened)
 }
 
 fn source_location_from_failure(reason: &str) -> Option<String> {
@@ -205,6 +273,63 @@ mod tests {
             fallback,
             "Crash: FFmpeg::FFmpegVideoDecoder::take_next_output"
         );
+    }
+
+    fn title_for_failure(reason: &str) -> String {
+        generate_report_title(ReportTitleInput {
+            kind: ReportKind::Crash,
+            client_version: "1.0",
+            failure_reason: Some(reason),
+            stack_trace: None,
+            process: None,
+            platform: None,
+            signal: None,
+        })
+    }
+
+    #[test]
+    fn title_adds_the_failed_verification_expression() {
+        assert_eq!(
+            title_for_failure(
+                "Verification failed: m_data.size() <= MAX_MESSAGE_PAYLOAD_SIZE at Libraries/LibIPC/Message.cpp:49"
+            ),
+            "Crash: Message.cpp:49 · m_data.size() <= MAX_MESSAGE_PAYLOAD_SIZE"
+        );
+
+        let long = format!(
+            "Verification failed: {} at Libraries/Foo.cpp:1",
+            "a_b + ".repeat(20)
+        );
+        let title = title_for_failure(&long);
+        assert!(title.starts_with("Crash: Foo.cpp:1 · a_b + a_b"), "{title}");
+        assert!(title.ends_with('…'), "{title}");
+        assert!(title.chars().count() <= MAX_TITLE_CHARACTERS);
+    }
+
+    #[test]
+    fn title_stays_within_its_limit_for_a_long_location() {
+        let file = format!("{}.cpp", "f".repeat(100));
+        let title = title_for_failure(&format!(
+            "Verification failed: a_long_condition_name <= another_value at Libraries/{file}:12"
+        ));
+
+        assert!(title.chars().count() <= MAX_TITLE_CHARACTERS, "{title}");
+        assert!(!title.contains('·'), "{title}");
+    }
+
+    #[test]
+    fn title_leaves_out_an_expression_that_says_nothing_or_is_not_plain() {
+        for reason in [
+            "Verification failed: false at Libraries/Foo.cpp:1",
+            "Verification failed:  at Libraries/Foo.cpp:1",
+            "Verification failed: x == \"https://evil\" at Libraries/Foo.cpp:1",
+            "Verification failed: a `b` at Libraries/Foo.cpp:1",
+            "Verification failed: see #123 at Libraries/Foo.cpp:1",
+            "Verification failed: http://example.test at Libraries/Foo.cpp:1",
+            "Something else: a <= b at Libraries/Foo.cpp:1",
+        ] {
+            assert_eq!(title_for_failure(reason), "Crash: Foo.cpp:1", "{reason}");
+        }
     }
 
     #[test]
