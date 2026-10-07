@@ -14,7 +14,7 @@ use crate::{
 
 use super::{
     GithubIssueAssignment, GithubIssueLink, IssueDetails, IssueRecord, IssueSummary, ReportSummary,
-    insert_audit_event,
+    insert_audit_event, lock_issue_operations,
 };
 
 impl AdminDatabase {
@@ -24,9 +24,7 @@ impl AdminDatabase {
                 issues.id,
                 issues.title,
                 issues.state,
-                issues.resolved_at,
                 issues.github_number,
-                issues.github_state,
                 issues.created_at,
                 count(reports.id) AS report_count
              FROM issues
@@ -89,9 +87,7 @@ impl AdminDatabase {
                 issues.id,
                 issues.title,
                 issues.state,
-                issues.resolved_at,
                 issues.github_number,
-                issues.github_state,
                 issues.created_at,
                 count(reports.id) AS report_count
              FROM issues
@@ -196,9 +192,7 @@ impl AdminDatabase {
             .await?;
 
         let mut transaction = self.pool.begin().await?;
-        sqlx::query("SELECT pg_advisory_xact_lock(891125)")
-            .execute(&mut *transaction)
-            .await?;
+        lock_issue_operations(&mut transaction).await?;
 
         let existing_issue_id: Option<IssueId> = sqlx::query_scalar(
             "WITH RECURSIVE chain AS (
@@ -256,9 +250,8 @@ impl AdminDatabase {
                     github_repository,
                     github_issue_id,
                     github_state,
-                    github_checked_at,
                     github_updated_at
-                 ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'open', now(), $8)",
+                 ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'open', $8)",
             )
             .bind(issue_id)
             .bind(issue.title.trim())
@@ -287,68 +280,8 @@ impl AdminDatabase {
             (issue_id, true)
         };
 
-        let previous: (Option<IssueId>, ReportState) = sqlx::query_as(
-            "SELECT issue_id, state
-             FROM reports
-             WHERE id = $1
-                AND storage_state = 'ready'
-             FOR UPDATE",
-        )
-        .bind(report_id)
-        .fetch_optional(&mut *transaction)
-        .await?
-        .ok_or(AppError::NotFound("Report not found"))?;
-
-        if previous.0 == Some(issue_id) && previous.1 == ReportState::Confirmed {
-            transaction.commit().await?;
-            return Ok(GithubIssueAssignment { issue_id, created });
-        }
-        if previous.0.is_some() && previous.0 != Some(issue_id) {
-            return Err(AppError::Conflict(
-                "Unlink the report before adding it to another issue",
-            ));
-        }
-
-        let updated = sqlx::query(
-            "UPDATE reports
-             SET issue_id = $2, state = 'confirmed', updated_at = now()
-             WHERE id = $1
-                AND storage_state = 'ready'",
-        )
-        .bind(report_id)
-        .bind(issue_id)
-        .execute(&mut *transaction)
-        .await?;
-
-        if updated.rows_affected() != 1 {
-            return Err(AppError::NotFound("Report not found"));
-        }
-
-        if previous.0 != Some(issue_id) {
-            insert_audit_event(
-                &mut *transaction,
-                Some(actor),
-                AuditAction::ReportUpdateIssue,
-                Some(report_id.0),
-                serde_json::json!({
-                    "from": previous.0,
-                    "to": issue_id,
-                }),
-            )
+        self.link_report(&mut transaction, report_id, issue_id, actor)
             .await?;
-        }
-
-        if previous.1 != ReportState::Confirmed {
-            self.audit_report_state_change(
-                &mut transaction,
-                report_id,
-                actor,
-                previous.1,
-                ReportState::Confirmed,
-            )
-            .await?;
-        }
-
         transaction.commit().await?;
 
         Ok(GithubIssueAssignment { issue_id, created })
@@ -385,49 +318,28 @@ impl AdminDatabase {
     }
 
     pub async fn find_issue(&self, issue_id: IssueId) -> Result<Option<IssueRecord>> {
-        let row = sqlx::query(
+        sqlx::query_as(
             "SELECT
-                issues.id,
-                issues.title,
-                issues.description,
-                issues.state,
-                issues.resolved_at,
-                issues.merged_into,
-                issues.github_number,
-                issues.github_repository,
-                issues.github_issue_id,
-                issues.github_state,
-                issues.github_url,
-                issues.github_reports_field_id,
-                issues.github_reports_link_url,
-                issues.github_checked_at,
-                issues.created_at,
-                issues.updated_at
+                id,
+                title,
+                description,
+                state,
+                resolved_at,
+                merged_into,
+                github_number,
+                github_repository,
+                github_issue_id,
+                github_state,
+                github_url,
+                github_reports_field_id,
+                github_reports_link_url
              FROM issues
-             WHERE issues.id = $1",
+             WHERE id = $1",
         )
         .bind(issue_id)
         .fetch_optional(&self.pool)
-        .await?;
-
-        Ok(row.map(|row| IssueRecord {
-            id: row.get("id"),
-            title: row.get("title"),
-            description: row.get("description"),
-            state: row.get("state"),
-            resolved_at: row.get("resolved_at"),
-            merged_into: row.get("merged_into"),
-            github_number: row.get("github_number"),
-            github_repository: row.get("github_repository"),
-            github_issue_id: row.get("github_issue_id"),
-            github_state: row.get("github_state"),
-            github_url: row.get("github_url"),
-            github_reports_field_id: row.get("github_reports_field_id"),
-            github_reports_link_url: row.get("github_reports_link_url"),
-            github_checked_at: row.get("github_checked_at"),
-            created_at: row.get("created_at"),
-            updated_at: row.get("updated_at"),
-        }))
+        .await
+        .map_err(Into::into)
     }
 
     pub async fn unlink_report_from_issue(
@@ -437,9 +349,7 @@ impl AdminDatabase {
         actor: i64,
     ) -> Result<()> {
         let mut transaction = self.pool.begin().await?;
-        sqlx::query("SELECT pg_advisory_xact_lock(891125)")
-            .execute(&mut *transaction)
-            .await?;
+        lock_issue_operations(&mut transaction).await?;
 
         let issue_exists: bool = sqlx::query_scalar(
             "SELECT EXISTS (
@@ -507,9 +417,7 @@ impl AdminDatabase {
     ) -> Result<u64> {
         let reject_reports = report_action == IssueReportAction::Reject;
         let mut transaction = self.pool.begin().await?;
-        sqlx::query("SELECT pg_advisory_xact_lock(891125)")
-            .execute(&mut *transaction)
-            .await?;
+        lock_issue_operations(&mut transaction).await?;
 
         let previous_state: IssueState = sqlx::query_scalar(
             "SELECT state FROM issues WHERE id = $1 AND state <> 'rejected' FOR UPDATE",

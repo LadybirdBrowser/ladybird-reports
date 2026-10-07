@@ -1,7 +1,6 @@
 import { defineConfig } from "@playwright/test";
 
-const port = process.env.BROWSER_TEST_PORT ?? "3100";
-const baseURL = `http://127.0.0.1:${port}`;
+const baseURL = "http://127.0.0.1:3100";
 
 export default defineConfig({
   testDir: "tests/browser",
@@ -17,7 +16,7 @@ export default defineConfig({
     command: "./scripts/run-browser-test-server.sh",
     env: {
       ...process.env,
-      ADMIN_LISTEN_ADDRESS: `127.0.0.1:${port}`,
+      ADMIN_LISTEN_ADDRESS: "127.0.0.1:3100",
       GITHUB_API_BASE_URL: "http://127.0.0.1:3101",
       GITHUB_TEST_OAUTH_BASE_URL: "http://127.0.0.1:3101",
       GITHUB_WEBHOOK_SECRET: "browser-test-github-webhook-secret-2026",

@@ -132,7 +132,7 @@ impl AdminDatabase {
     }
 
     pub async fn find_session(&self, token_hash: &str) -> Result<Option<SessionRecord>> {
-        let row = sqlx::query(
+        sqlx::query_as(
             "SELECT
                 sessions.github_id,
                 maintainers.login,
@@ -141,29 +141,15 @@ impl AdminDatabase {
                 sessions.encrypted_access_token,
                 sessions.encrypted_refresh_token,
                 sessions.access_token_expires_at,
-                sessions.refresh_token_expires_at,
-                sessions.membership_verified_at,
-                sessions.expires_at
+                sessions.membership_verified_at
              FROM sessions
              JOIN maintainers USING (github_id)
              WHERE sessions.token_hash = $1 AND sessions.expires_at > now()",
         )
         .bind(token_hash)
         .fetch_optional(&self.pool)
-        .await?;
-
-        Ok(row.map(|row| SessionRecord {
-            github_id: row.get("github_id"),
-            login: row.get("login"),
-            csrf_token: row.get("csrf_token"),
-            token_hash: row.get("token_hash"),
-            encrypted_access_token: row.get("encrypted_access_token"),
-            encrypted_refresh_token: row.get("encrypted_refresh_token"),
-            access_token_expires_at: row.get("access_token_expires_at"),
-            refresh_token_expires_at: row.get("refresh_token_expires_at"),
-            membership_verified_at: row.get("membership_verified_at"),
-            expires_at: row.get("expires_at"),
-        }))
+        .await
+        .map_err(Into::into)
     }
 
     pub async fn extend_session(

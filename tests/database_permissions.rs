@@ -11,8 +11,8 @@ use ladybird_reports::{
     domain::{
         AttachmentManifest, AttachmentMediaType, AuditAction, DiagnosticField, FieldKind,
         FieldValue, GithubLinkState, GithubSyncSource, IssueId, IssueReportAction, IssueSearch,
-        IssueState, ReportId, ReportKind, ReportManifest, ReportState, StackSignatureStatus,
-        StorageState, SubmissionId, UploadId, proof_is_valid, sha256_hex,
+        IssueState, ReportId, ReportKind, ReportManifest, ReportState, StorageState, SubmissionId,
+        UploadId, proof_is_valid, sha256_hex,
     },
     infrastructure::{
         SecretCipher,
@@ -354,7 +354,7 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
     // only matches it.
     let unmatched = || async {
         sqlx::query_scalar::<_, bool>(
-            "SELECT status = 'parsed' AND matched_at IS NULL
+            "SELECT fingerprint IS NOT NULL AND matched_at IS NULL
              FROM report_stack_signatures WHERE report_id = $1",
         )
         .bind(report_id)
@@ -408,12 +408,6 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
     assert_constraint_values(&admin_pool, "reports_kind_check", ReportKind::ALL).await;
     assert_constraint_values(&admin_pool, "report_fields_kind_check", FieldKind::ALL).await;
     assert_constraint_values(&admin_pool, "field_definitions_kind_check", FieldKind::ALL).await;
-    assert_constraint_values(
-        &admin_pool,
-        "report_stack_signatures_status_check",
-        StackSignatureStatus::ALL,
-    )
-    .await;
     let source_retention_is_one_month: bool = sqlx::query_scalar(
         "SELECT source_client_key_expires_at = created_at + interval '30 days'
          FROM reports WHERE id = $1",

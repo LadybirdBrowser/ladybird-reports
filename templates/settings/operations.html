@@ -2,8 +2,6 @@
 
 {% block title %}Audit log{% endblock %}
 
-{% block scripts %}<script src="/assets/{{ asset_version }}/audit-log.js" defer></script>{% endblock %}
-
 {% block content %}
     <header class="page-header">
         <div>
@@ -18,13 +16,12 @@
     <section
         class="card"
         aria-labelledby="operation-list-title"
-        data-audit-log
     >
         <div class="card-header">
             <h2 id="operation-list-title">Latest activity</h2>
             <p>Newest first</p>
         </div>
-        <p class="visually-hidden" role="status" aria-live="polite" data-audit-status></p>
+        <p class="visually-hidden" role="status" aria-live="polite" data-list-search-status></p>
         {% include "settings/_operations_list.html" %}
     </section>
 {% endblock %}

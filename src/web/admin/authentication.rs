@@ -15,7 +15,7 @@ use crate::{
 
 use super::{
     AdminState, TemplateResponse,
-    session::{Session, cookie_from_headers},
+    session::{CsrfForm, Session, cookie_from_headers},
 };
 
 #[derive(Template)]
@@ -232,15 +232,10 @@ pub async fn github_callback(
     Ok(response)
 }
 
-#[derive(Deserialize)]
-pub struct LogoutForm {
-    csrf: String,
-}
-
 pub async fn logout(
     State(state): State<AdminState>,
     Extension(session): Extension<Session>,
-    axum::Form(form): axum::Form<LogoutForm>,
+    axum::Form(form): axum::Form<CsrfForm>,
 ) -> Result<Response> {
     session.verify_csrf(&form.csrf)?;
     state

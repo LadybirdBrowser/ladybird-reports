@@ -3,10 +3,10 @@ use serde_json::Value;
 
 use crate::domain::{
     AttachmentId, DiscordDeliveryLeaseId, FieldKind, GithubLinkState, IssueId, IssueState,
-    ReportId, ReportKind, ReportSearch, ReportState, SubmissionId,
+    ReportId, ReportKind, ReportSearch, ReportState,
 };
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, sqlx::FromRow)]
 pub struct SessionRecord {
     pub github_id: i64,
     pub login: String,
@@ -15,9 +15,7 @@ pub struct SessionRecord {
     pub encrypted_access_token: String,
     pub encrypted_refresh_token: Option<String>,
     pub access_token_expires_at: Option<DateTime<Utc>>,
-    pub refresh_token_expires_at: Option<DateTime<Utc>>,
     pub membership_verified_at: DateTime<Utc>,
-    pub expires_at: DateTime<Utc>,
 }
 
 pub struct NewSession<'a> {
@@ -101,11 +99,9 @@ pub struct ReportSearchResult {
     pub created_at: DateTime<Utc>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, sqlx::FromRow)]
 pub struct ReportRecord {
     pub id: ReportId,
-    pub submission_id: SubmissionId,
-    pub manifest_digest: String,
     pub kind: ReportKind,
     pub client_version: String,
     pub build: String,
@@ -117,7 +113,7 @@ pub struct ReportRecord {
     pub expires_at: Option<DateTime<Utc>>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, sqlx::FromRow)]
 pub struct StoredDiagnosticField {
     pub key: String,
     pub kind: FieldKind,
@@ -125,7 +121,6 @@ pub struct StoredDiagnosticField {
     pub recognized_at_submission: bool,
     pub current_label: Option<String>,
     pub current_kind: Option<FieldKind>,
-    pub current_position: Option<i32>,
 }
 
 impl StoredDiagnosticField {
@@ -144,7 +139,6 @@ pub struct StoredAttachment {
     pub name: String,
     pub media_type: String,
     pub size: i64,
-    pub sha256: String,
     pub storage_key: String,
 }
 
@@ -166,21 +160,19 @@ pub struct IssueSummary {
     pub id: IssueId,
     pub title: String,
     pub state: IssueState,
-    pub resolved_at: Option<DateTime<Utc>>,
     pub github_number: i64,
-    pub github_state: GithubLinkState,
     pub report_count: i64,
     pub created_at: DateTime<Utc>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, sqlx::FromRow)]
 pub struct PotentialIssueMatch {
     pub id: IssueId,
     pub title: String,
     pub github_state: GithubLinkState,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, sqlx::FromRow)]
 pub struct IssueRecord {
     pub id: IssueId,
     pub title: String,
@@ -195,9 +187,6 @@ pub struct IssueRecord {
     pub github_url: String,
     pub github_reports_field_id: Option<i64>,
     pub github_reports_link_url: Option<String>,
-    pub github_checked_at: Option<DateTime<Utc>>,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
 }
 
 #[derive(Clone, Debug)]
@@ -217,16 +206,8 @@ pub struct AuditEvent {
     pub created_at: DateTime<Utc>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, sqlx::FromRow)]
 pub struct ConfigurationRecord {
     pub value: Value,
     pub updated_at: DateTime<Utc>,
-}
-
-#[derive(Clone, Debug)]
-pub struct FieldDefinitionRecord {
-    pub key: String,
-    pub label: String,
-    pub kind: FieldKind,
-    pub position: i32,
 }

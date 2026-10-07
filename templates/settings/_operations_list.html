@@ -16,7 +16,7 @@
                         <th>Details</th>
                     </tr>
                 </thead>
-                <tbody data-audit-rows>
+                <tbody data-rows>
                     {% for event in events %}
                         <tr>
                             <td class="quiet">{{ event.created_at }}</td>
@@ -44,7 +44,7 @@
             <button
                 class="button-secondary"
                 type="button"
-                data-audit-show-more
+                data-show-more
                 data-next-url="{{ next_page }}"
             >
                 Show more…

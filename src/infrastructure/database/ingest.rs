@@ -7,9 +7,9 @@ use sqlx::{PgPool, Row};
 
 use crate::{
     domain::{
-        AttachmentId, AttachmentReference, ChallengeClaims, FieldDefinition, FieldKind, FieldValue,
-        ReportId, ReportManifest, RuntimeConfiguration, STACK_SIGNATURE_VERSION, StorageState,
-        SubmissionId, UploadId, parse_stack_trace, stack_fingerprint, submitted_stack_trace,
+        AttachmentId, AttachmentReference, ChallengeClaims, FieldDefinition, FieldValue, ReportId,
+        ReportManifest, RuntimeConfiguration, STACK_SIGNATURE_VERSION, StorageState, SubmissionId,
+        UploadId, parse_stack_trace, stack_fingerprint, submitted_stack_trace,
     },
     error::{AppError, Result},
 };
@@ -112,30 +112,15 @@ impl IngestDatabase {
     }
 
     pub async fn field_definitions(&self) -> Result<HashMap<String, FieldDefinition>> {
-        let rows = sqlx::query(
-            "SELECT key, label, kind, position FROM field_definitions ORDER BY position, key",
-        )
-        .fetch_all(&self.pool)
-        .await?;
+        let definitions: Vec<FieldDefinition> =
+            sqlx::query_as("SELECT key, label, kind, position FROM field_definitions")
+                .fetch_all(&self.pool)
+                .await?;
 
-        rows.into_iter()
-            .map(|row| {
-                let key: String = row.get("key");
-                let kind: String = row.get("kind");
-                let kind = FieldKind::parse(&kind).ok_or_else(|| {
-                    AppError::Internal(anyhow::anyhow!("invalid field kind in database"))
-                })?;
-
-                let definition = FieldDefinition {
-                    key: key.clone(),
-                    label: row.get("label"),
-                    kind,
-                    position: row.get("position"),
-                };
-
-                Ok((key, definition))
-            })
-            .collect()
+        Ok(definitions
+            .into_iter()
+            .map(|definition| (definition.key.clone(), definition))
+            .collect())
     }
 
     pub async fn issue_challenge(&self, claims: &ChallengeClaims, token_hash: &str) -> Result<()> {
@@ -301,17 +286,15 @@ impl IngestDatabase {
                             _ => None,
                         })
                     };
-                    let parsed = parse_stack_trace(stack);
-                    sqlx::query("SELECT accept_stack_signature($1, $2, $3, $4)")
+                    sqlx::query("SELECT accept_stack_signature($1, $2, $3)")
                         .bind(report_id)
                         .bind(STACK_SIGNATURE_VERSION)
                         .bind(stack_fingerprint(
                             request.manifest.kind,
                             text_of("process"),
                             text_of("signal"),
-                            &parsed.frame_keys,
+                            &parse_stack_trace(stack).frame_keys,
                         ))
-                        .bind(parsed.frame_keys)
                         .execute(&mut *transaction)
                         .await?;
                 }

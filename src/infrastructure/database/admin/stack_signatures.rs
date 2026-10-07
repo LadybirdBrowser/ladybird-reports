@@ -1,17 +1,17 @@
 use std::time::Duration;
 
-use sqlx::{Row, postgres::PgListener};
+use sqlx::postgres::PgListener;
 
 use crate::{
     domain::{
         AuditAction, IssueId, ReportId, ReportKind, ReportState, STACK_SIGNATURE_VERSION,
-        StackSignatureStatus, parse_stack_trace, stack_fingerprint,
+        parse_stack_trace, stack_fingerprint,
     },
     error::Result,
     infrastructure::database::AdminDatabase,
 };
 
-use super::{PotentialIssueMatch, ReportSummary, insert_audit_event};
+use super::{PotentialIssueMatch, ReportSummary, insert_audit_event, lock_issue_operations};
 
 /// Stack traces indexed per batch.
 const STACK_INDEX_BATCH_SIZE: usize = 50;
@@ -25,7 +25,7 @@ impl AdminDatabase {
         &self,
         report_id: ReportId,
     ) -> Result<Vec<PotentialIssueMatch>> {
-        let rows = sqlx::query(
+        sqlx::query_as(
             "SELECT issues.id, issues.title, issues.github_state
              FROM report_stack_signatures AS source
              JOIN reports AS incoming ON incoming.id = source.report_id
@@ -52,16 +52,8 @@ impl AdminDatabase {
         .bind(report_id)
         .bind(STACK_SIGNATURE_VERSION)
         .fetch_all(&self.pool)
-        .await?;
-
-        Ok(rows
-            .into_iter()
-            .map(|row| PotentialIssueMatch {
-                id: row.get("id"),
-                title: row.get("title"),
-                github_state: row.get("github_state"),
-            })
-            .collect())
+        .await
+        .map_err(Into::into)
     }
 
     pub async fn issue_signature_matches(&self, issue_id: IssueId) -> Result<Vec<ReportSummary>> {
@@ -146,7 +138,7 @@ impl AdminDatabase {
         report_id: Option<ReportId>,
         limit: i64,
     ) -> Result<Vec<PendingStackTrace>> {
-        let rows = sqlx::query(
+        sqlx::query_as(
             "SELECT reports.id AS report_id, reports.kind, reports.auto_match_eligible,
                     traces.text,
                     signal.value #>> '{}' AS signal,
@@ -171,44 +163,25 @@ impl AdminDatabase {
         .bind(STACK_SIGNATURE_VERSION)
         .bind(limit)
         .fetch_all(&self.pool)
-        .await?;
-
-        Ok(rows
-            .into_iter()
-            .map(|row| PendingStackTrace {
-                report_id: row.get("report_id"),
-                kind: row.get("kind"),
-                text: row.get("text"),
-                signal: row.get("signal"),
-                process: row.get("process"),
-                auto_match_eligible: row.get("auto_match_eligible"),
-            })
-            .collect())
+        .await
+        .map_err(Into::into)
     }
 
     async fn store_stack_signatures(&self, pending: Vec<PendingStackTrace>) -> Result<()> {
         for trace in pending {
-            let parsed = parse_stack_trace(&trace.text);
             let fingerprint = stack_fingerprint(
                 trace.kind,
                 trace.process.as_deref(),
                 trace.signal.as_deref(),
-                &parsed.frame_keys,
+                &parse_stack_trace(&trace.text).frame_keys,
             );
-            let status = if fingerprint.is_some() {
-                StackSignatureStatus::Parsed
-            } else {
-                StackSignatureStatus::Insufficient
-            };
 
             let mut transaction = self.pool.begin().await?;
 
             // Share the issue-operation lock so a merge or hide cannot race with
             // selecting the issue for an incoming report. It also serializes
             // matching reports indexed by two admin instances.
-            sqlx::query("SELECT pg_advisory_xact_lock(891125)")
-                .execute(&mut *transaction)
-                .await?;
+            lock_issue_operations(&mut transaction).await?;
 
             // A report arrives with its signature; only its matching is left.
             let matched: bool = sqlx::query_scalar(
@@ -223,20 +196,15 @@ impl AdminDatabase {
 
             sqlx::query(
                 "INSERT INTO report_stack_signatures
-                    (report_id, algorithm_version, status, fingerprint, frame_keys)
-                 VALUES ($1, $2, $3, $4, $5)
+                    (report_id, algorithm_version, fingerprint)
+                 VALUES ($1, $2, $3)
                  ON CONFLICT (report_id) DO UPDATE SET
                     algorithm_version = excluded.algorithm_version,
-                    status = excluded.status,
-                    fingerprint = excluded.fingerprint,
-                    frame_keys = excluded.frame_keys,
-                    indexed_at = now()",
+                    fingerprint = excluded.fingerprint",
             )
             .bind(trace.report_id)
             .bind(STACK_SIGNATURE_VERSION)
-            .bind(status)
             .bind(&fingerprint)
-            .bind(parsed.frame_keys)
             .execute(&mut *transaction)
             .await?;
 
@@ -400,6 +368,7 @@ impl AdminDatabase {
     }
 }
 
+#[derive(sqlx::FromRow)]
 struct PendingStackTrace {
     report_id: ReportId,
     kind: ReportKind,

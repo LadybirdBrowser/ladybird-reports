@@ -63,25 +63,21 @@ async fn assign_request_id(mut request: Request, next: Next) -> Response {
 }
 
 pub async fn admin_response_headers(request: Request, next: Next) -> Response {
-    let mut response = next.run(request).await;
-    add_security_headers(response.headers_mut());
-
-    response
-        .headers_mut()
-        .entry(header::CACHE_CONTROL)
-        .or_insert(HeaderValue::from_static("private, no-store"));
-
-    response
+    secured(request, next, "private, no-store").await
 }
 
 pub async fn public_response_headers(request: Request, next: Next) -> Response {
+    secured(request, next, "no-store").await
+}
+
+async fn secured(request: Request, next: Next, cache_control: &'static str) -> Response {
     let mut response = next.run(request).await;
     add_security_headers(response.headers_mut());
 
     response
         .headers_mut()
         .entry(header::CACHE_CONTROL)
-        .or_insert(HeaderValue::from_static("no-store"));
+        .or_insert(HeaderValue::from_static(cache_control));
 
     response
 }

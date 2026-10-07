@@ -61,7 +61,7 @@ pub fn is_commit_id(value: &str) -> bool {
     (7..=64).contains(&value.len()) && value.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, sqlx::FromRow)]
 pub struct FieldDefinition {
     pub key: String,
     pub label: String,

@@ -1,5 +1,3 @@
-use sqlx::Row;
-
 use crate::{
     domain::{AttachmentId, ReportId},
     error::Result,
@@ -10,6 +8,7 @@ use super::AdminDatabase;
 /// Attachments examined per backfill batch. A full batch means more may be waiting.
 pub const FAILURE_REASON_BATCH_SIZE: usize = 50;
 
+#[derive(sqlx::FromRow)]
 pub struct PendingFailureReason {
     pub attachment_id: AttachmentId,
     pub report_id: ReportId,
@@ -18,8 +17,8 @@ pub struct PendingFailureReason {
 
 impl AdminDatabase {
     pub async fn pending_failure_reasons(&self) -> Result<Vec<PendingFailureReason>> {
-        let rows = sqlx::query(
-            "SELECT attachments.id, attachments.report_id, attachments.storage_key
+        sqlx::query_as(
+            "SELECT attachments.id AS attachment_id, attachments.report_id, attachments.storage_key
              FROM attachments
              JOIN reports ON reports.id = attachments.report_id
              WHERE attachments.failure_reason_processed_at IS NULL
@@ -31,16 +30,8 @@ impl AdminDatabase {
         )
         .bind(FAILURE_REASON_BATCH_SIZE as i64)
         .fetch_all(&self.pool)
-        .await?;
-
-        Ok(rows
-            .into_iter()
-            .map(|row| PendingFailureReason {
-                attachment_id: row.get("id"),
-                report_id: row.get("report_id"),
-                storage_key: row.get("storage_key"),
-            })
-            .collect())
+        .await
+        .map_err(Into::into)
     }
 
     pub async fn finish_failure_reason(

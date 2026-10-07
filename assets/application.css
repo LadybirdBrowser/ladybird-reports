@@ -258,6 +258,25 @@ nav a:hover {
     mask: url("github-icon.svg") center / contain no-repeat;
 }
 
+/* The surface of a floating panel. */
+.account-popover,
+.custom-select-popover,
+.confirmation-popover,
+.search-completions {
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-md);
+    background: var(--surface-raised);
+    color: var(--ink);
+    box-shadow: var(--shadow-popover);
+}
+
+/* A panel that is not modal leaves the page visible behind it. */
+.account-popover::backdrop,
+.custom-select-popover::backdrop,
+.entity-selector-popover::backdrop {
+    background: transparent;
+}
+
 .account-popover {
     position: fixed;
     top: anchor(bottom);
@@ -268,15 +287,6 @@ nav a:hover {
     margin: 0.5rem 0 0;
     padding: 0.3rem;
     position-anchor: --account-trigger;
-    border: 1px solid var(--border-strong);
-    border-radius: var(--radius-md);
-    background: var(--surface-raised);
-    color: var(--ink);
-    box-shadow: var(--shadow-popover);
-}
-
-.account-popover::backdrop {
-    background: transparent;
 }
 
 .account-sign-out {
@@ -441,19 +451,6 @@ nav a:hover {
     grid-template-columns: minmax(0, 1.6fr) minmax(18rem, 0.8fr);
 }
 
-.issue-layout > aside.card {
-    overflow: visible;
-}
-
-.issue-layout > aside.card .card-header {
-    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
-}
-
-.issue-layout > aside.card .card-body {
-    border-radius: 0 0 var(--radius-lg) var(--radius-lg);
-    background: var(--surface);
-}
-
 .card {
     overflow: hidden;
     border: 1px solid var(--border);
@@ -466,9 +463,9 @@ nav a:hover {
     padding: 1.35rem 1.45rem;
 }
 
-.card-header {
+.card-header,
+.report-field-header {
     display: flex;
-    padding: 1rem 1.35rem;
     align-items: center;
     justify-content: space-between;
     border-bottom: 1px solid var(--border);
@@ -476,8 +473,18 @@ nav a:hover {
     gap: 1rem;
 }
 
+.card-header {
+    padding: 1rem 1.35rem;
+}
+
+.report-field-header {
+    padding: 0.85rem 1rem;
+}
+
 .card-header h2,
-.card-header p {
+.card-header p,
+.report-field-header h3,
+.report-field-header p {
     margin: 0;
 }
 
@@ -629,15 +636,6 @@ select {
     padding: 0.3rem;
     overflow: hidden auto;
     max-height: min(22rem, calc(100vh - 1rem));
-    border: 1px solid var(--border-strong);
-    border-radius: var(--radius-md);
-    background: var(--surface-raised);
-    color: var(--ink);
-    box-shadow: var(--shadow-popover);
-}
-
-.custom-select-popover::backdrop {
-    background: transparent;
 }
 
 .custom-select-options {
@@ -753,10 +751,6 @@ textarea:focus {
     background: var(--surface);
     box-shadow: var(--shadow-popover);
     animation: entity-selector-open 130ms ease-out;
-}
-
-.entity-selector-popover::backdrop {
-    background: transparent;
 }
 
 .entity-selector-popover-header,
@@ -912,22 +906,6 @@ textarea:focus {
     letter-spacing: 0.01em;
 }
 
-.entity-selector-badge.is-triage {
-    background: var(--warning-soft);
-    color: var(--warning);
-}
-
-.entity-selector-badge.is-assigned,
-.entity-selector-badge.is-confirmed {
-    background: var(--success-soft);
-    color: var(--success);
-}
-
-.entity-selector-badge.is-rejected {
-    background: var(--danger-soft);
-    color: var(--danger);
-}
-
 .entity-selector-selection {
     margin-bottom: 0.65rem;
     padding: 0.75rem;
@@ -1007,10 +985,6 @@ textarea:focus {
     gap: 0.28rem;
     justify-items: center;
     text-align: center;
-}
-
-.entity-selector-empty[hidden] {
-    display: none;
 }
 
 .entity-selector-empty strong {
@@ -1187,10 +1161,6 @@ button:active,
     box-shadow: var(--shadow-sm);
 }
 
-.filters {
-    display: block;
-}
-
 .search-input-wrap {
     position: relative;
     display: block;
@@ -1360,11 +1330,14 @@ tbody tr:hover {
     white-space: nowrap;
 }
 
-/* Every pill glows in the color of its tone. */
+/* Every pill takes the colors and the glow of its tone. */
 .badge-triage,
 .badge-warning,
 .entity-selector-badge.is-triage {
     --pill-glow: color-mix(in srgb, var(--warning) 30%, transparent);
+    border-color: color-mix(in srgb, var(--warning) 24%, transparent);
+    background: var(--warning-soft);
+    color: var(--warning);
 }
 
 .badge-success,
@@ -1372,11 +1345,17 @@ tbody tr:hover {
 .entity-selector-badge.is-assigned,
 .entity-selector-badge.is-confirmed {
     --pill-glow: color-mix(in srgb, var(--success) 30%, transparent);
+    border-color: color-mix(in srgb, var(--success) 22%, transparent);
+    background: var(--success-soft);
+    color: var(--success);
 }
 
 .badge-rejected,
 .entity-selector-badge.is-rejected {
     --pill-glow: color-mix(in srgb, var(--danger) 30%, transparent);
+    border-color: color-mix(in srgb, var(--danger) 24%, transparent);
+    background: var(--danger-soft);
+    color: var(--danger);
 }
 
 .badge-neutral,
@@ -1384,30 +1363,10 @@ tbody tr:hover {
     --pill-glow: color-mix(in srgb, var(--ink-faint) 24%, transparent);
 }
 
-.badge-triage,
-.badge-warning {
-    border-color: color-mix(in srgb, var(--warning) 24%, transparent);
-    background: var(--warning-soft);
-    color: var(--warning);
-}
-
-.badge-success,
-.badge-confirmed {
-    border-color: color-mix(in srgb, var(--success) 22%, transparent);
-    background: var(--success-soft);
-    color: var(--success);
-}
-
 .badge-neutral {
     border-color: var(--border);
     background: var(--surface-subtle);
     color: var(--ink-soft);
-}
-
-.badge-rejected {
-    border-color: color-mix(in srgb, var(--danger) 24%, transparent);
-    background: var(--danger-soft);
-    color: var(--danger);
 }
 
 .definition-list {
@@ -1645,11 +1604,6 @@ tbody tr:hover {
     width: 100%;
 }
 
-.replacement-issue-popover {
-    width: min(30rem, calc(100vw - 1rem));
-    padding: 1.3rem;
-}
-
 .replacement-issue-popover label {
     margin-bottom: 0;
 }
@@ -1712,11 +1666,6 @@ tbody tr:hover {
     width: min(24rem, calc(100vw - 1rem));
     margin: 0;
     padding: 1.25rem;
-    border: 1px solid var(--border-strong);
-    border-radius: var(--radius-md);
-    background: var(--surface-raised);
-    color: var(--ink);
-    box-shadow: var(--shadow-popover);
     transform: translate(-50%, -50%);
 }
 
@@ -1777,11 +1726,6 @@ tbody tr:hover {
     padding: 0.3rem;
     overflow: auto;
     max-height: min(22rem, calc(100vh - 1rem));
-    border: 1px solid var(--border-strong);
-    border-radius: var(--radius-md);
-    background: var(--surface-raised);
-    color: var(--ink);
-    box-shadow: var(--shadow-popover);
 }
 
 .search-completion {
@@ -2002,21 +1946,8 @@ tbody tr:hover {
     white-space: nowrap;
 }
 
-details {
-    border-radius: var(--radius-sm);
-}
-
-summary {
-    color: var(--brand);
-    cursor: pointer;
-    font-weight: 700;
-}
-
-details[open] summary {
-    margin-bottom: 1rem;
-}
-
-.report-field {
+.report-field,
+.report-field-table-wrap {
     min-width: 0;
     overflow: hidden;
     border: 1px solid var(--border);
@@ -2028,14 +1959,6 @@ details[open] summary {
 .report-field + .report-field-table-wrap,
 .report-field-table-wrap + .report-field {
     margin-top: var(--item-gap);
-}
-
-.report-field-table-wrap {
-    min-width: 0;
-    overflow: hidden;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-md);
-    background: var(--surface);
 }
 
 .report-field-table {
@@ -2072,21 +1995,6 @@ details[open] summary {
 
 .report-field-table tbody tr:last-child th {
     border-bottom: 0;
-}
-
-.report-field-header {
-    display: flex;
-    padding: 0.85rem 1rem;
-    align-items: center;
-    justify-content: space-between;
-    border-bottom: 1px solid var(--border);
-    background: var(--surface-subtle);
-    gap: 1rem;
-}
-
-.report-field-header h3,
-.report-field-header p {
-    margin: 0;
 }
 
 .report-field-value {
@@ -2261,14 +2169,8 @@ pre {
 
 .stack-raw-text {
     display: none;
-    max-height: 38rem;
-    overflow: auto;
-    padding: 1rem;
-    margin: 0;
     background: transparent;
     color: #d8dced;
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
 }
 
 .report-field:has(.stack-raw-toggle:checked) .stack-frame-scroll,
@@ -2404,10 +2306,6 @@ pre {
 
 }
 
-.attachment-table-scroll {
-    overflow-x: auto;
-}
-
 .attachment-table th:last-child,
 .attachment-table td:last-child {
     text-align: right;
@@ -2424,10 +2322,6 @@ pre {
     font-weight: 650;
     overflow-wrap: anywhere;
     white-space: normal;
-}
-
-.attachment-table tbody tr:hover {
-    background: var(--surface-subtle);
 }
 
 .attachment-actions {
@@ -2466,11 +2360,6 @@ pre {
 .history li:last-child {
     padding-bottom: 0;
     border-left-color: transparent;
-}
-
-.sticky-stack {
-    position: sticky;
-    top: 1.25rem;
 }
 
 .form-note {
@@ -2624,10 +2513,6 @@ pre {
 
 .settings-help-empty p {
     margin: 0;
-}
-
-.settings-help-empty[hidden] {
-    display: none;
 }
 
 .setting-help-entry h3 {
@@ -2799,8 +2684,7 @@ pre {
         grid-template-columns: 1fr;
     }
 
-    .sticky-card,
-    .sticky-stack {
+    .sticky-card {
         position: static;
     }
 
@@ -2841,7 +2725,6 @@ pre {
         flex-direction: column;
     }
 
-    .filters,
     .definition-list {
         grid-template-columns: 1fr;
     }

@@ -8,14 +8,14 @@ use sqlx::Row;
 
 use crate::{
     domain::{
-        AuditAction, FieldKind, RuntimeConfiguration, is_valid_field_key,
+        AuditAction, FieldDefinition, FieldKind, RuntimeConfiguration, is_valid_field_key,
         setting_invalidates_sessions,
     },
     error::{AppError, Result},
     infrastructure::database::AdminDatabase,
 };
 
-use super::{ConfigurationRecord, FieldDefinitionRecord, insert_audit_event};
+use super::{ConfigurationRecord, insert_audit_event, lock_issue_operations};
 
 impl AdminDatabase {
     pub async fn configuration(&self) -> Result<Arc<RuntimeConfiguration>> {
@@ -32,18 +32,14 @@ impl AdminDatabase {
     }
 
     pub async fn configuration_record(&self) -> Result<ConfigurationRecord> {
-        let row = sqlx::query(
+        sqlx::query_as(
             "SELECT value, updated_at
              FROM runtime_configuration
              WHERE singleton = true",
         )
         .fetch_one(&self.pool)
-        .await?;
-
-        Ok(ConfigurationRecord {
-            value: row.get("value"),
-            updated_at: row.get("updated_at"),
-        })
+        .await
+        .map_err(Into::into)
     }
 
     pub async fn update_configuration(
@@ -101,24 +97,15 @@ impl AdminDatabase {
         Ok(())
     }
 
-    pub async fn field_definitions(&self) -> Result<Vec<FieldDefinitionRecord>> {
-        let rows = sqlx::query(
+    pub async fn field_definitions(&self) -> Result<Vec<FieldDefinition>> {
+        sqlx::query_as(
             "SELECT key, label, kind, position
              FROM field_definitions
              ORDER BY position, key",
         )
         .fetch_all(&self.pool)
-        .await?;
-
-        Ok(rows
-            .into_iter()
-            .map(|row| FieldDefinitionRecord {
-                key: row.get("key"),
-                label: row.get("label"),
-                kind: row.get("kind"),
-                position: row.get("position"),
-            })
-            .collect())
+        .await
+        .map_err(Into::into)
     }
 
     pub async fn upsert_field_definition(
@@ -131,9 +118,7 @@ impl AdminDatabase {
         validate_field_definition(key, label)?;
 
         let mut transaction = self.pool.begin().await?;
-        sqlx::query("SELECT pg_advisory_xact_lock(891125)")
-            .execute(&mut *transaction)
-            .await?;
+        lock_issue_operations(&mut transaction).await?;
 
         let previous =
             sqlx::query("SELECT label, kind FROM field_definitions WHERE key = $1 FOR UPDATE")
@@ -199,9 +184,7 @@ impl AdminDatabase {
         }
 
         let mut transaction = self.pool.begin().await?;
-        sqlx::query("SELECT pg_advisory_xact_lock(891125)")
-            .execute(&mut *transaction)
-            .await?;
+        lock_issue_operations(&mut transaction).await?;
 
         let existing_order = sqlx::query_scalar::<_, String>(
             "SELECT key FROM field_definitions ORDER BY position, key FOR UPDATE",

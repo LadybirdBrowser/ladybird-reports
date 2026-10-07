@@ -161,7 +161,7 @@ pub async fn apply_ingest_permissions(admin_pool: &PgPool, ingest_role: &str) ->
         "pending_report_storage()",
         "staging_upload_is_referenced(uuid)",
         "configure_report_retention(uuid, integer)",
-        "accept_stack_signature(uuid, integer, text, text[])",
+        "accept_stack_signature(uuid, integer, text)",
         "sweep_expired_ingestion_state()",
         "reporting_runtime_configuration()",
     ];

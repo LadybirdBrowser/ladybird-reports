@@ -28,11 +28,12 @@ Report metadata and single-line diagnostic fields provide filter buttons that
 construct the corresponding qualified search.
 
 Stack trace fields render as a frame table with the exact original text available
-below it. Reports stores that text unchanged. A background job also generates
-versioned signatures for existing and new reports, regenerating old signatures
-when the algorithm version changes. Possible matches appear on unassigned
-report pages for maintainers to review and link manually; no report is linked
-automatically. Signature data is removed when its report is purged.
+below it. Reports stores that text unchanged. A report is signed when it
+is accepted, and a background job signs existing reports and regenerates old
+signatures when the algorithm version changes. A new report whose signature
+exactly matches one active issue is linked to it automatically; other possible
+matches appear on unassigned report pages for maintainers to review and link
+manually. Signature data is removed when its report is purged.
 
 Report actions can confirm a report, return an unlinked report to triage, or
 reject a report with a confirmation dialog. Rejected reports remain available through

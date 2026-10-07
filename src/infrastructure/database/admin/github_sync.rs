@@ -10,7 +10,7 @@ use crate::{
     },
 };
 
-use super::{insert_audit_event, issues::validate_issue_text};
+use super::{insert_audit_event, issues::validate_issue_text, lock_issue_operations};
 
 impl AdminDatabase {
     pub async fn replace_github_issue(
@@ -29,9 +29,7 @@ impl AdminDatabase {
         validate_issue_text(&replacement.title, description)?;
 
         let mut transaction = self.pool.begin().await?;
-        sqlx::query("SELECT pg_advisory_xact_lock(891125)")
-            .execute(&mut *transaction)
-            .await?;
+        lock_issue_operations(&mut transaction).await?;
 
         let current = sqlx::query(
             "SELECT github_repository, github_number, github_issue_id,
@@ -113,7 +111,6 @@ impl AdminDatabase {
                  description = $7,
                  github_state = $8,
                  state = CASE WHEN $8 = 'closed' THEN 'resolved' ELSE 'unresolved' END,
-                 github_checked_at = now(),
                  github_updated_at = $9,
                  github_reports_field_id = NULL,
                  github_reports_link_url = NULL,
@@ -267,7 +264,6 @@ impl AdminDatabase {
                  github_url = $5,
                  github_state = $6,
                  state = $8,
-                 github_checked_at = now(),
                  github_updated_at = $7,
                  resolved_at = CASE
                     WHEN $6 = 'open' THEN NULL
@@ -364,7 +360,6 @@ impl AdminDatabase {
              SET github_issue_id = COALESCE(github_issue_id, $2),
                  github_state = $3,
                  state = $4,
-                 github_checked_at = now(),
                  updated_at = CASE WHEN github_state <> $3 THEN now() ELSE updated_at END
              WHERE id = $1",
         )

@@ -36,8 +36,9 @@ jobs:
 
     steps:
       - uses: actions/checkout@v5
-      - uses: dtolnay/rust-toolchain@1.88
+      - uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: 1.98.1 # keep in step with rust-toolchain.toml
           components: clippy,rustfmt
       - uses: Swatinem/rust-cache@v2
 
@@ -71,7 +72,9 @@ jobs:
 
     steps:
       - uses: actions/checkout@v5
-      - uses: dtolnay/rust-toolchain@1.88
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.98.1 # keep in step with rust-toolchain.toml
       - uses: Swatinem/rust-cache@v2
       - uses: actions/setup-node@v5
         with:

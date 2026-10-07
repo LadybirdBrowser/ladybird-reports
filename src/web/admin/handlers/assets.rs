@@ -27,7 +27,7 @@ struct Asset {
 
 /// Every embedded asset. Adding one here is all that is needed to serve it and
 /// to include it in the content-derived asset version.
-const ASSET_SOURCES: [AssetSource; 7] = [
+const ASSET_SOURCES: [AssetSource; 6] = [
     AssetSource {
         name: "application.css",
         content_type: "text/css; charset=utf-8",
@@ -42,11 +42,6 @@ const ASSET_SOURCES: [AssetSource; 7] = [
         name: "reports.js",
         content_type: "text/javascript; charset=utf-8",
         body: include_bytes!("../../../../assets/reports.js"),
-    },
-    AssetSource {
-        name: "audit-log.js",
-        content_type: "text/javascript; charset=utf-8",
-        body: include_bytes!("../../../../assets/audit-log.js"),
     },
     AssetSource {
         name: "list-search.js",

@@ -97,7 +97,7 @@ while the service was down is found. It repeats that scan if its connection is
 lost and re-established, or if an indexing run fails. When the algorithm version
 changes, the startup scan rebuilds older signatures from their preserved source
 text. The signature table is owned by the admin database role
-and cascades away with its source field at retention time. Similarity candidates
+and cascades away with its report at retention time. Similarity candidates
 are shown to maintainers on an unassigned report. A new report with an exact
 signature match to one active, linked issue is assigned to that issue by the
 background job during its first index. Historical and reindexed reports are not

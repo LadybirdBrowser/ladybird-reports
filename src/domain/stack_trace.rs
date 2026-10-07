@@ -4,14 +4,6 @@ use super::ReportKind;
 
 pub const STACK_SIGNATURE_VERSION: i32 = 1;
 
-text_enum! {
-    /// Whether a stack was detailed enough to fingerprint. Mirrors the
-    /// `report_stack_signatures_status_check` constraint.
-    pub enum StackSignatureStatus {
-        Parsed => "parsed",
-        Insufficient => "insufficient",
-    }
-}
 const MAX_RENDERED_LINES: usize = 256;
 const MAX_SIGNATURE_FRAMES: usize = 24;
 const NATIVE_STACK_HEADER: &str = "Native stack (binary build ID, object address):";

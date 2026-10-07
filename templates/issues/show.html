@@ -43,7 +43,7 @@
                     {% if issue.description.is_empty() %}
                         <span class="quiet">No description on GitHub.</span>
                     {% else %}
-                        {{ issue.description_html|safe }}
+                        {{ description_html|safe }}
                     {% endif %}
                 </div>
             </section>
@@ -88,11 +88,7 @@
                                                 method="post"
                                                 action="/issues/{{ issue.id }}/reports/{{ report.id }}/unlink"
                                             >
-                                                <input
-                                                    type="hidden"
-                                                    name="csrf"
-                                                    value="{{ navigation.as_ref().unwrap().csrf_token }}"
-                                                >
+                                                <input type="hidden" name="csrf" value="{{ navigation.as_ref().unwrap().csrf_token }}">
                                                 <button
                                                     class="button-secondary table-action"
                                                     type="submit"
@@ -181,7 +177,7 @@
             </section>
         </div>
 
-        <aside class="stack sticky-stack" aria-label="Issue links and actions">
+        <aside class="stack sticky-card" aria-label="Issue links and actions">
             <section class="card">
                 <div class="card-body">
                     <div class="issue-link-field">
@@ -295,11 +291,7 @@
                         popover
                     >
                         <form method="post" action="/issues/{{ issue.id }}/reject">
-                            <input
-                                type="hidden"
-                                name="csrf"
-                                value="{{ navigation.as_ref().unwrap().csrf_token }}"
-                            >
+                            <input type="hidden" name="csrf" value="{{ navigation.as_ref().unwrap().csrf_token }}">
                             <h3 id="reject-issue-confirmation-title">Reject this issue?</h3>
                             <p>Choose what happens to its linked reports. GitHub is unchanged.</p>
                             <label class="radio-option">

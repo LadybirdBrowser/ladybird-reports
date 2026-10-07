@@ -48,10 +48,6 @@ impl From<AuditEvent> for HistoryEvent {
     }
 }
 
-pub fn not_found(message: &'static str) -> AppError {
-    AppError::NotFound(message)
-}
-
 pub fn redirect_to_login(method: &Method, uri: &Uri) -> Response {
     let location = if method == Method::GET {
         uri.path_and_query()

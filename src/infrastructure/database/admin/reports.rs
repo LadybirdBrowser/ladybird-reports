@@ -14,6 +14,7 @@ use crate::{
 use super::{
     AuditEvent, BlockReportSourceOutcome, ReportDetails, ReportQuery, ReportRecord,
     ReportSearchResult, ReportSummary, StoredAttachment, StoredDiagnosticField, insert_audit_event,
+    lock_issue_operations,
 };
 
 #[derive(Default)]
@@ -80,7 +81,6 @@ impl AdminDatabase {
                 attachments.name,
                 attachments.media_type,
                 attachments.size,
-                attachments.sha256,
                 attachments.storage_key
              FROM attachments
              JOIN reports ON reports.id = attachments.report_id
@@ -328,11 +328,9 @@ impl AdminDatabase {
     }
 
     async fn find_report(&self, report_id: ReportId) -> Result<Option<ReportRecord>> {
-        let row = sqlx::query(
+        sqlx::query_as(
             "SELECT
                 id,
-                submission_id,
-                manifest_digest,
                 kind,
                 client_version,
                 build,
@@ -365,34 +363,19 @@ impl AdminDatabase {
         )
         .bind(report_id)
         .fetch_optional(&self.pool)
-        .await?;
-
-        Ok(row.map(|row| ReportRecord {
-            id: row.get("id"),
-            submission_id: row.get("submission_id"),
-            manifest_digest: row.get("manifest_digest"),
-            kind: row.get("kind"),
-            client_version: row.get("client_version"),
-            build: row.get("build"),
-            issue_id: row.get("issue_id"),
-            state: row.get("state"),
-            has_submission_source: row.get("has_submission_source"),
-            submission_source_is_blocked: row.get("submission_source_is_blocked"),
-            created_at: row.get("created_at"),
-            expires_at: row.get("expires_at"),
-        }))
+        .await
+        .map_err(Into::into)
     }
 
     async fn report_fields(&self, report_id: ReportId) -> Result<Vec<StoredDiagnosticField>> {
-        let rows = sqlx::query(
+        sqlx::query_as(
             "SELECT
                 report_fields.key,
                 report_fields.kind,
                 report_fields.value,
                 report_fields.recognized_at_submission,
                 field_definitions.label AS current_label,
-                field_definitions.kind AS current_kind,
-                field_definitions.position AS current_position
+                field_definitions.kind AS current_kind
              FROM report_fields
              LEFT JOIN field_definitions
                 ON field_definitions.key = report_fields.key
@@ -406,25 +389,13 @@ impl AdminDatabase {
         )
         .bind(report_id)
         .fetch_all(&self.pool)
-        .await?;
-
-        Ok(rows
-            .into_iter()
-            .map(|row| StoredDiagnosticField {
-                key: row.get("key"),
-                kind: row.get("kind"),
-                value: row.get("value"),
-                recognized_at_submission: row.get("recognized_at_submission"),
-                current_label: row.get("current_label"),
-                current_kind: row.get("current_kind"),
-                current_position: row.get("current_position"),
-            })
-            .collect())
+        .await
+        .map_err(Into::into)
     }
 
     async fn report_attachments(&self, report_id: ReportId) -> Result<Vec<StoredAttachment>> {
         sqlx::query_as(
-            "SELECT id, name, media_type, size, sha256, storage_key
+            "SELECT id, name, media_type, size, storage_key
              FROM attachments
              WHERE report_id = $1
              ORDER BY created_at, id",
@@ -445,9 +416,7 @@ impl AdminDatabase {
 
         // Human issue operations share one lock. This prevents an assignment from
         // racing with a merge or hide while keeping ingestion independent.
-        sqlx::query("SELECT pg_advisory_xact_lock(891125)")
-            .execute(&mut *transaction)
-            .await?;
+        lock_issue_operations(&mut transaction).await?;
 
         let assignable: bool = sqlx::query_scalar(
             "SELECT EXISTS(
@@ -469,6 +438,22 @@ impl AdminDatabase {
             ));
         }
 
+        self.link_report(&mut transaction, report_id, issue_id, actor)
+            .await?;
+        transaction.commit().await?;
+        Ok(())
+    }
+
+    /// Links a ready report to an issue, within the caller's transaction, and
+    /// confirms it. An already linked report is only left alone if it is linked
+    /// to this issue.
+    pub(super) async fn link_report(
+        &self,
+        transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        report_id: ReportId,
+        issue_id: IssueId,
+        actor: i64,
+    ) -> Result<()> {
         let previous: (Option<IssueId>, ReportState) = sqlx::query_as(
             "SELECT issue_id, state
              FROM reports
@@ -477,12 +462,11 @@ impl AdminDatabase {
              FOR UPDATE",
         )
         .bind(report_id)
-        .fetch_optional(&mut *transaction)
+        .fetch_optional(&mut **transaction)
         .await?
         .ok_or(AppError::NotFound("Report not found"))?;
 
         if previous.0 == Some(issue_id) && previous.1 == ReportState::Confirmed {
-            transaction.commit().await?;
             return Ok(());
         }
         if previous.0.is_some() && previous.0 != Some(issue_id) {
@@ -498,12 +482,12 @@ impl AdminDatabase {
         )
         .bind(report_id)
         .bind(issue_id)
-        .execute(&mut *transaction)
+        .execute(&mut **transaction)
         .await?;
 
         if previous.0 != Some(issue_id) {
             insert_audit_event(
-                &mut *transaction,
+                &mut **transaction,
                 Some(actor),
                 AuditAction::ReportUpdateIssue,
                 Some(report_id.0),
@@ -517,7 +501,7 @@ impl AdminDatabase {
 
         if previous.1 != ReportState::Confirmed {
             self.audit_report_state_change(
-                &mut transaction,
+                transaction,
                 report_id,
                 actor,
                 previous.1,
@@ -526,7 +510,6 @@ impl AdminDatabase {
             .await?;
         }
 
-        transaction.commit().await?;
         Ok(())
     }
 

@@ -35,12 +35,6 @@ class ListSearchController {
         this.input.addEventListener("focus", () => this.queueCompletions());
         this.input.addEventListener("click", () => this.queueCompletions());
         this.input.addEventListener("keydown", (event) => this.handleKeydown(event));
-        this.list.addEventListener("click", (event) => {
-            const button = event.target.closest("[data-report-show-more]");
-            if (button) {
-                this.loadMore(button);
-            }
-        });
         this.completions.addEventListener("click", (event) => {
             const button = event.target.closest("[data-search-completion]");
             if (button) {
@@ -99,39 +93,6 @@ class ListSearchController {
             }
         } finally {
             this.list.removeAttribute("aria-busy");
-        }
-    }
-
-    async loadMore(button) {
-        button.disabled = true;
-        button.textContent = "Loading…";
-        this.status.textContent = "Loading more reports…";
-
-        try {
-            const response = await fetch(button.dataset.nextUrl, {
-                headers: { Accept: "text/html" },
-            });
-            if (!response.ok) {
-                throw new Error(`Report page returned ${response.status}`);
-            }
-
-            const nextContent = this.parseList(await response.text());
-            const currentRows = this.list.querySelector("[data-report-rows]");
-            const nextRows = nextContent.querySelector("[data-report-rows]");
-            for (const row of Array.from(nextRows?.children ?? [])) {
-                currentRows.append(row);
-            }
-
-            this.list.querySelector(".report-list-more")?.remove();
-            const nextMore = nextContent.querySelector(".report-list-more");
-            if (nextMore) {
-                this.list.querySelector("[data-list-content]").append(nextMore);
-            }
-            this.status.textContent = "More reports loaded.";
-        } catch {
-            button.disabled = false;
-            button.textContent = "Show more…";
-            this.status.textContent = "More reports could not be loaded.";
         }
     }
 

@@ -1,6 +1,6 @@
 import { createServer } from "node:http";
 
-const port = Number(process.env.GITHUB_TEST_PORT ?? "3101");
+const port = 3101;
 const issueStates = new Map();
 let latestCreatedIssue;
 const issueFieldValues = new Map();
@@ -19,11 +19,6 @@ function sendJson(response, status, value) {
 const server = createServer((request, response) => {
   const url = new URL(request.url, `http://127.0.0.1:${port}`);
   console.log(`${request.method} ${url.pathname}`);
-
-  if (request.method === "GET" && url.pathname === "/health") {
-    sendJson(response, 200, { status: "ok" });
-    return;
-  }
 
   if (request.method === "GET" && url.pathname === "/login/oauth/authorize") {
     const callback = new URL(url.searchParams.get("redirect_uri"));

@@ -5,21 +5,24 @@ use axum::{
     response::Redirect,
 };
 use comrak::{Options, markdown_to_html};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 
 use crate::{
     domain::{GithubLinkState, IssueId, IssueReportAction, IssueSearch, IssueState, ReportId},
     error::{AppError, Result},
-    infrastructure::database::ReportSummary,
+    infrastructure::database::{IssueRecord, IssueSummary},
 };
 
 use super::super::{
     AdminState, TemplateResponse,
     authentication::Navigation,
-    session::Session,
-    templates::{HistoryEvent, display_timestamp, not_found},
+    session::{CsrfForm, Session},
+    templates::HistoryEvent,
 };
-use super::{github::ensure_github_reports_link, reports::report_list_metadata};
+use super::{
+    github::ensure_github_reports_link,
+    reports::{Completion, CompletionQuery, CompletionResponse, ReportRow},
+};
 
 #[derive(Deserialize)]
 pub struct IssueFilters {
@@ -33,39 +36,13 @@ pub struct IssuesTemplate {
     navigation: Option<Navigation>,
     asset_version: &'static str,
     search: String,
-    issues: Vec<IssueRow>,
+    issues: Vec<IssueSummary>,
 }
 
 #[derive(Template)]
 #[template(path = "issues/_list.html")]
 pub struct IssueListTemplate {
-    issues: Vec<IssueRow>,
-}
-
-#[derive(Deserialize)]
-pub struct IssueCompletionQuery {
-    #[serde(default)]
-    token: String,
-}
-
-#[derive(Serialize)]
-pub struct IssueCompletionResponse {
-    results: Vec<IssueCompletion>,
-}
-
-#[derive(Serialize)]
-pub struct IssueCompletion {
-    replacement: String,
-    label: String,
-    description: String,
-}
-
-pub struct IssueRow {
-    id: IssueId,
-    title: String,
-    report_count: i64,
-    github_number: i64,
-    state: IssueState,
+    issues: Vec<IssueSummary>,
 }
 
 #[derive(Template)]
@@ -73,39 +50,12 @@ pub struct IssueRow {
 pub struct IssueTemplate {
     navigation: Option<Navigation>,
     asset_version: &'static str,
-    issue: IssueView,
-    reports: Vec<ReportView>,
-    potential_matches: Vec<ReportView>,
+    issue: IssueRecord,
+    description_html: String,
+    reports: Vec<ReportRow>,
+    potential_matches: Vec<ReportRow>,
     events: Vec<HistoryEvent>,
     github_field_warning: bool,
-}
-
-pub struct IssueView {
-    id: IssueId,
-    title: String,
-    description: String,
-    description_html: String,
-    github_number: i64,
-    github_url: String,
-    state: IssueState,
-    github_state: GithubLinkState,
-    merged_into: Option<IssueId>,
-}
-
-pub struct ReportView {
-    id: crate::domain::ReportId,
-    title: String,
-    metadata: String,
-    received_at: String,
-}
-
-fn report_view(report: ReportSummary) -> ReportView {
-    ReportView {
-        metadata: report_list_metadata(&report),
-        received_at: display_timestamp(report.created_at),
-        id: report.id,
-        title: report.title,
-    }
 }
 
 fn render_issue_description(markdown: &str) -> String {
@@ -183,23 +133,14 @@ async fn load_issue_list(state: &AdminState, filters: &IssueFilters) -> Result<I
     let issues = state
         .database
         .list_issues(&IssueSearch::parse(&filters.q)?)
-        .await?
-        .into_iter()
-        .map(|issue| IssueRow {
-            id: issue.id,
-            title: issue.title,
-            report_count: issue.report_count,
-            github_number: issue.github_number,
-            state: issue.state,
-        })
-        .collect();
+        .await?;
 
     Ok(IssueListTemplate { issues })
 }
 
 pub async fn search_completions(
-    Query(parameters): Query<IssueCompletionQuery>,
-) -> Result<Json<IssueCompletionResponse>> {
+    Query(parameters): Query<CompletionQuery>,
+) -> Result<Json<CompletionResponse>> {
     let token = parameters.token.trim();
     if token.len() > 128 {
         return Err(AppError::InvalidRequest("Search token is too long"));
@@ -213,7 +154,7 @@ pub async fn search_completions(
                 .iter()
                 .map(|state| state.as_str())
                 .filter(|value| value.starts_with(&prefix.to_ascii_lowercase()))
-                .map(|value| IssueCompletion {
+                .map(|value| Completion {
                     replacement: format!("state:{value}"),
                     label: value.replace('_', " "),
                     description: "Issue state".into(),
@@ -228,7 +169,7 @@ pub async fn search_completions(
         ]
         .into_iter()
         .filter(|(key, _)| key.starts_with(&token.to_ascii_lowercase()))
-        .map(|(key, description)| IssueCompletion {
+        .map(|(key, description)| Completion {
             replacement: format!("{key}:"),
             label: format!("{key}:"),
             description: description.into(),
@@ -236,7 +177,7 @@ pub async fn search_completions(
         .collect()
     };
 
-    Ok(Json(IssueCompletionResponse { results }))
+    Ok(Json(CompletionResponse { results }))
 }
 
 fn default_issue_search() -> String {
@@ -311,7 +252,7 @@ pub async fn show(
         .database
         .find_issue(issue_id)
         .await?
-        .ok_or_else(|| not_found("Issue not found"))?
+        .ok_or_else(|| AppError::NotFound("Issue not found"))?
         .state;
 
     let github_field_warning = if issue_state == IssueState::Rejected {
@@ -330,7 +271,7 @@ pub async fn show(
         .database
         .issue_details(issue_id)
         .await?
-        .ok_or_else(|| not_found("Issue not found"))?;
+        .ok_or_else(|| AppError::NotFound("Issue not found"))?;
 
     let potential_matches = if details.issue.state.is_open()
         && details.issue.merged_into.is_none()
@@ -341,33 +282,23 @@ pub async fn show(
             .issue_signature_matches(issue_id)
             .await?
             .into_iter()
-            .map(report_view)
+            .map(ReportRow::from)
             .collect()
     } else {
         Vec::new()
     };
 
     let description_html = render_issue_description(&details.issue.description);
-    let issue = IssueView {
-        id: details.issue.id,
-        title: details.issue.title,
-        description: details.issue.description,
-        description_html,
-        github_number: details.issue.github_number,
-        github_url: details.issue.github_url,
-        state: details.issue.state,
-        github_state: details.issue.github_state,
-        merged_into: details.issue.merged_into,
-    };
 
-    let reports = details.reports.into_iter().map(report_view).collect();
+    let reports = details.reports.into_iter().map(ReportRow::from).collect();
 
     let events = details.events.into_iter().map(HistoryEvent::from).collect();
 
     Ok(TemplateResponse(IssueTemplate {
         navigation: Some(Navigation::for_session(&state, &session)),
         asset_version: super::assets::asset_version(),
-        issue,
+        issue: details.issue,
+        description_html,
         reports,
         potential_matches,
         events,
@@ -375,16 +306,11 @@ pub async fn show(
     }))
 }
 
-#[derive(Deserialize)]
-pub struct IssueActionForm {
-    csrf: String,
-}
-
 pub async fn unlink_report(
     State(state): State<AdminState>,
     Extension(session): Extension<Session>,
     Path((issue_id, report_id)): Path<(IssueId, ReportId)>,
-    Form(form): Form<IssueActionForm>,
+    Form(form): Form<CsrfForm>,
 ) -> Result<Redirect> {
     session.verify_csrf(&form.csrf)?;
     state
@@ -463,16 +389,11 @@ pub async fn replace_github_link(
     Ok(Redirect::to(&format!("/issues/{issue_id}")))
 }
 
-#[derive(Deserialize)]
-pub struct CreateReplacementForm {
-    csrf: String,
-}
-
 pub async fn create_replacement(
     State(state): State<AdminState>,
     Extension(session): Extension<Session>,
     Path(issue_id): Path<IssueId>,
-    Form(form): Form<CreateReplacementForm>,
+    Form(form): Form<CsrfForm>,
 ) -> Result<Redirect> {
     session.verify_csrf(&form.csrf)?;
     let details = state

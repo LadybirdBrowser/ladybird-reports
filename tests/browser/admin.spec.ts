@@ -1,6 +1,9 @@
 import { expect, test } from "@playwright/test";
 import { createHmac } from "node:crypto";
 
+// The addresses of the test server and the fake GitHub, as set in playwright.config.ts.
+const adminUrl = "http://127.0.0.1:3100";
+const fakeGithub = "http://127.0.0.1:3101";
 const reportId = "01a0a536-01cd-7ac7-a3cf-ae6a2d5030e5";
 
 test("unauthenticated visitors can only reach the sign-in page", async ({ page }) => {
@@ -50,12 +53,11 @@ test("sign-in returns to the requested report and preserves its query", async ({
 });
 
 test("refreshes GitHub tokens and keeps an active session for 24 hours", async ({ page }) => {
-  const fakeGithub = "http://127.0.0.1:3101";
   const before = await (await page.request.get(`${fakeGithub}/test/token-refresh-count`)).json();
 
   await page.goto("/login");
   await page.getByRole("link", { name: "Continue with GitHub" }).click();
-  await expect(page).toHaveURL(/127\.0\.0\.1:3100\/$/);
+  await expect(page).toHaveURL(`${adminUrl}/`);
 
   const after = await (await page.request.get(`${fakeGithub}/test/token-refresh-count`)).json();
   expect(after.count).toBeGreaterThan(before.count);
@@ -65,7 +67,7 @@ test("refreshes GitHub tokens and keeps an active session for 24 hours", async (
   expect(sessionCookie!.expires - Date.now() / 1000).toBeGreaterThan(23 * 60 * 60);
 
   await page.reload();
-  await expect(page).toHaveURL(/127\.0\.0\.1:3100\/$/);
+  await expect(page).toHaveURL(`${adminUrl}/`);
   const rotatedAgain = await (await page.request.get(`${fakeGithub}/test/token-refresh-count`)).json();
   expect(rotatedAgain.count).toBeGreaterThan(after.count);
 
@@ -76,7 +78,6 @@ test("refreshes GitHub tokens and keeps an active session for 24 hours", async (
 });
 
 test("records a denied sign-in once and still lets maintainers in", async ({ page }) => {
-  const fakeGithub = "http://127.0.0.1:3101";
   const setDenied = (denied: boolean) =>
     page.request.post(`${fakeGithub}/test/membership-denied?denied=${denied}`);
 
@@ -95,10 +96,10 @@ test("records a denied sign-in once and still lets maintainers in", async ({ pag
 
   await page.goto("/login");
   await page.getByRole("link", { name: "Continue with GitHub" }).click();
-  await expect(page).toHaveURL(/127\.0\.0\.1:3100\/$/);
+  await expect(page).toHaveURL(`${adminUrl}/`);
 
   await page.goto("/operations");
-  const denied = page.locator("[data-audit-rows] tr").filter({ hasText: "session.denied" });
+  const denied = page.locator("[data-rows] tr").filter({ hasText: "session.denied" });
   await expect(denied).toHaveCount(1);
   await expect(denied.locator("td").nth(1)).toHaveText("browser-tester");
   await expect(denied.locator("code")).toContainText('"github_id":12345');
@@ -122,15 +123,15 @@ test.describe("authenticated management UI", () => {
       name: "Intermittent navigation timeout",
     }).getAttribute("href");
 
-    const fakeGithub = "http://127.0.0.1:3101/test/issue-response-delay";
-    await page.request.post(`${fakeGithub}?milliseconds=1000`);
+    const delayUrl = `${fakeGithub}/test/issue-response-delay`;
+    await page.request.post(`${delayUrl}?milliseconds=1000`);
     try {
       const started = Date.now();
       const response = await page.request.get(issuePath!);
       expect(response.status()).toBe(200);
       expect(Date.now() - started).toBeLessThan(700);
     } finally {
-      await page.request.post(`${fakeGithub}?milliseconds=0`);
+      await page.request.post(`${delayUrl}?milliseconds=0`);
     }
   });
 
@@ -463,25 +464,15 @@ test.describe("authenticated management UI", () => {
     await expect(page.locator(".brand-mark img"))
       .toHaveAttribute("src", `${assetBase}ladybird-mark.png`);
 
-    for (const asset of ["application.css", "application.js", "reports.js", "list-search.js", "github-icon.svg"]) {
-      const firstResponse = await request.get(`${assetBase}${asset}`);
-      const etag = firstResponse.headers()["etag"];
+    for (const asset of ["application.css", "application.js", "reports.js", "list-search.js", "github-icon.svg", "ladybird-mark.png"]) {
+      const response = await request.get(`${assetBase}${asset}`);
 
-      expect(firstResponse.status()).toBe(200);
-      expect(firstResponse.headers()["cache-control"]).toBe(
-        "public, max-age=31536000, immutable",
-      );
-      expect(etag).toMatch(/^\"[0-9a-f]{64}\"$/);
+      expect(response.status()).toBe(200);
+      expect(response.headers()["cache-control"]).toBe("public, max-age=31536000, immutable");
+      expect(response.headers()["etag"]).toMatch(/^\"[0-9a-f]{64}\"$/);
     }
-
-    const markResponse = await request.get(`${assetBase}ladybird-mark.png`);
-
-    expect(markResponse.status()).toBe(200);
-    expect(markResponse.headers()["content-type"]).toBe("image/png");
-    expect(markResponse.headers()["cache-control"]).toBe(
-      "public, max-age=31536000, immutable",
-    );
-    expect(markResponse.headers()["etag"]).toMatch(/^\"[0-9a-f]{64}\"$/);
+    expect((await request.get(`${assetBase}ladybird-mark.png`)).headers()["content-type"])
+      .toBe("image/png");
 
     const unknownVersion = await request.get("/assets/invalid/application.css");
     expect(unknownVersion.status()).toBe(404);
@@ -890,13 +881,13 @@ test.describe("authenticated management UI", () => {
     expect(editFromReports.status()).toBe(405);
     const createdIssueId = page.url().split("/").at(-1);
     const issueField = await page.request.get(
-      "http://127.0.0.1:3101/test/issue-field/7300",
+      `${fakeGithub}/test/issue-field/7300`,
     );
     expect((await issueField.json()).value)
-      .toBe(`http://127.0.0.1:3100/issues/${createdIssueId}`);
+      .toBe(`${adminUrl}/issues/${createdIssueId}`);
 
     const createdIssue = await page.request.get(
-      "http://127.0.0.1:3101/test/latest-created-issue",
+      `${fakeGithub}/test/latest-created-issue`,
     );
     expect((await createdIssue.json()).body).toBe("Created by the browser test.");
 
@@ -935,7 +926,7 @@ test.describe("authenticated management UI", () => {
   test("loads older audit events without reloading the page", async ({ page }) => {
     await page.goto("/operations");
 
-    const rows = page.locator("[data-audit-rows] tr");
+    const rows = page.locator("[data-rows] tr");
     const history = rows.filter({ hasText: "fixture.history" });
     const showMore = page.getByRole("button", { name: "Show more…" });
 
@@ -1001,10 +992,10 @@ test.describe("authenticated management UI", () => {
     await page.getByRole("link", { name: "Intermittent navigation timeout" }).click();
     const trackedIssueId = page.url().split("/").at(-1);
     const existingIssueField = await page.request.get(
-      "http://127.0.0.1:3101/test/issue-field/4812",
+      `${fakeGithub}/test/issue-field/4812`,
     );
     expect((await existingIssueField.json()).value)
-      .toBe(`http://127.0.0.1:3100/issues/${trackedIssueId}`);
+      .toBe(`${adminUrl}/issues/${trackedIssueId}`);
 
     const issue = {
       id: 94812,
@@ -1129,7 +1120,7 @@ test.describe("authenticated management UI", () => {
     await linkDialog.getByRole("textbox", { name: "GitHub issue URL" }).fill(
       "https://github.com/LadybirdBrowser/ladybird/issues/6200",
     );
-    await page.request.post("http://127.0.0.1:3101/test/field-visibility", {
+    await page.request.post(`${fakeGithub}/test/field-visibility`, {
       data: { visibility: "all" },
     });
     await linkDialog.getByRole("button", { name: "Link issue" }).click();
@@ -1137,19 +1128,19 @@ test.describe("authenticated management UI", () => {
     await expect(page.getByText("The Reports link could not be added"))
       .toBeVisible();
     const publicField = await page.request.get(
-      "http://127.0.0.1:3101/test/issue-field/6200",
+      `${fakeGithub}/test/issue-field/6200`,
     );
     expect((await publicField.json()).value).toBeNull();
 
-    await page.request.post("http://127.0.0.1:3101/test/field-visibility", {
+    await page.request.post(`${fakeGithub}/test/field-visibility`, {
       data: { visibility: "organization_members_only" },
     });
     await page.reload();
     const replacementIssueField = await page.request.get(
-      "http://127.0.0.1:3101/test/issue-field/6200",
+      `${fakeGithub}/test/issue-field/6200`,
     );
     expect((await replacementIssueField.json()).value)
-      .toBe(`http://127.0.0.1:3100/issues/${trackedIssueId}`);
+      .toBe(`${adminUrl}/issues/${trackedIssueId}`);
   });
 
   test("unlinks reports and rejects an issue without changing GitHub", async ({ page }) => {
@@ -1193,7 +1184,7 @@ test.describe("authenticated management UI", () => {
     await page.goto(`/reports/${reportId}`);
     await expect(page.locator(".report-linked-issue")).toHaveCount(0);
     const githubIssue = await page.request.get(
-      "http://127.0.0.1:3101/repos/LadybirdBrowser/ladybird/issues/7300",
+      `${fakeGithub}/repos/LadybirdBrowser/ladybird/issues/7300`,
     );
     expect((await githubIssue.json()).state).toBe("open");
   });

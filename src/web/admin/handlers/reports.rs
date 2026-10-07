@@ -8,21 +8,24 @@ use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    application::{IssueProposal, propose_issue, title_for_report},
+    application::{IssueProposal, propose_issue},
     domain::{
         AttachmentId, FieldKind, GithubLinkState, IssueId, ParsedStackTrace, ReportId, ReportKind,
         ReportSearch, ReportState, filter_expression, is_commit_id, parse_stack_trace,
         stack_fingerprint,
     },
     error::{AppError, Result},
-    infrastructure::database::{REPORT_PAGE_SIZE, ReportQuery, ReportSummary, SEARCH_VALUE_LIMIT},
+    infrastructure::database::{
+        IssueRecord, PotentialIssueMatch, REPORT_PAGE_SIZE, ReportQuery, ReportSummary,
+        SEARCH_VALUE_LIMIT,
+    },
 };
 
 use super::super::{
     AdminState, TemplateResponse,
     authentication::Navigation,
-    session::Session,
-    templates::{HistoryEvent, display_timestamp, not_found},
+    session::{CsrfForm, Session},
+    templates::{HistoryEvent, display_timestamp},
 };
 
 #[derive(Deserialize)]
@@ -34,19 +37,6 @@ pub struct ReportFilters {
     until: Option<NaiveDate>,
     before: Option<DateTime<Utc>>,
     before_id: Option<ReportId>,
-}
-
-impl Default for ReportFilters {
-    fn default() -> Self {
-        Self {
-            q: default_report_search(),
-            issue: None,
-            since: None,
-            until: None,
-            before: None,
-            before_id: None,
-        }
-    }
 }
 
 #[derive(Template)]
@@ -67,12 +57,27 @@ pub struct ReportListTemplate {
 }
 
 pub struct ReportRow {
-    id: ReportId,
-    title: String,
-    metadata: String,
+    pub(super) id: ReportId,
+    pub(super) title: String,
+    pub(super) metadata: String,
     state_label: &'static str,
     state_tone: &'static str,
-    received_at: String,
+    pub(super) received_at: String,
+}
+
+impl From<ReportSummary> for ReportRow {
+    fn from(report: ReportSummary) -> Self {
+        let (state_label, state_tone) = report_state(report.state);
+
+        Self {
+            metadata: report_list_metadata(&report),
+            received_at: display_timestamp(report.created_at),
+            id: report.id,
+            title: report.title,
+            state_label,
+            state_tone,
+        }
+    }
 }
 
 #[derive(Deserialize)]
@@ -82,21 +87,21 @@ pub struct ReportSearchQuery {
 }
 
 #[derive(Deserialize)]
-pub struct ReportCompletionQuery {
+pub struct CompletionQuery {
     #[serde(default)]
-    token: String,
+    pub(super) token: String,
 }
 
 #[derive(Serialize)]
-pub struct ReportCompletionResponse {
-    results: Vec<ReportCompletion>,
+pub struct CompletionResponse {
+    pub(super) results: Vec<Completion>,
 }
 
 #[derive(Serialize)]
-pub struct ReportCompletion {
-    replacement: String,
-    label: String,
-    description: String,
+pub struct Completion {
+    pub(super) replacement: String,
+    pub(super) label: String,
+    pub(super) description: String,
 }
 
 #[derive(Serialize)]
@@ -122,8 +127,8 @@ pub struct ReportTemplate {
     navigation: Option<Navigation>,
     asset_version: &'static str,
     report: ReportView,
-    linked_issue: Option<LinkedIssueView>,
-    potential_issues: Vec<PotentialIssueView>,
+    linked_issue: Option<IssueRecord>,
+    potential_issues: Vec<PotentialIssueMatch>,
     issue_proposal: IssueProposal,
     known_groups: Vec<FieldGroup>,
     unknown_groups: Vec<FieldGroup>,
@@ -145,19 +150,6 @@ pub struct ReportView {
     is_assigned: bool,
     has_submission_source: bool,
     submission_source_is_blocked: bool,
-}
-
-pub struct LinkedIssueView {
-    id: IssueId,
-    title: String,
-    github_number: i64,
-    github_url: String,
-}
-
-pub struct PotentialIssueView {
-    id: IssueId,
-    title: String,
-    github_state: GithubLinkState,
 }
 
 pub struct OverviewField {
@@ -253,23 +245,7 @@ async fn load_report_list(
     let next_page = has_more
         .then(|| next_page_url(filters, reports.last()))
         .flatten();
-    let reports = reports
-        .into_iter()
-        .map(|report| {
-            let (state_label, state_tone) = report_state(report.state);
-
-            let metadata = report_list_metadata(&report);
-
-            ReportRow {
-                id: report.id,
-                title: report.title,
-                metadata,
-                state_label,
-                state_tone,
-                received_at: display_timestamp(report.created_at),
-            }
-        })
-        .collect();
+    let reports = reports.into_iter().map(ReportRow::from).collect();
 
     Ok(ReportListTemplate { reports, next_page })
 }
@@ -319,8 +295,8 @@ pub async fn search_options(
 
 pub async fn search_completions(
     State(state): State<AdminState>,
-    Query(parameters): Query<ReportCompletionQuery>,
-) -> Result<Json<ReportCompletionResponse>> {
+    Query(parameters): Query<CompletionQuery>,
+) -> Result<Json<CompletionResponse>> {
     let token = parameters.token.trim();
     if token.len() > 128 {
         return Err(AppError::InvalidRequest("Search token is too long"));
@@ -351,14 +327,14 @@ pub async fn search_completions(
             .into_iter()
             .filter(|(key, _)| key.to_ascii_lowercase().starts_with(&prefix))
             .take(12)
-            .map(|(key, description)| ReportCompletion {
+            .map(|(key, description)| Completion {
                 replacement: format!("{key}:"),
                 label: format!("{key}:"),
                 description: description.to_owned(),
             })
             .collect();
 
-        return Ok(Json(ReportCompletionResponse { results }));
+        return Ok(Json(CompletionResponse { results }));
     };
 
     let key = key.to_ascii_lowercase();
@@ -386,14 +362,14 @@ pub async fn search_completions(
         .into_iter()
         .filter(|value| value.to_ascii_lowercase().starts_with(&prefix))
         .take(12)
-        .map(|value| ReportCompletion {
+        .map(|value| Completion {
             replacement: filter_expression(&key, &value),
             label: value,
             description: format!("Value for {key}"),
         })
         .collect();
 
-    Ok(Json(ReportCompletionResponse { results }))
+    Ok(Json(CompletionResponse { results }))
 }
 
 fn report_kind_label(kind: ReportKind) -> &'static str {
@@ -442,36 +418,16 @@ pub async fn show(
         .database
         .report_details(report_id)
         .await?
-        .ok_or_else(|| not_found("Report not found"))?;
+        .ok_or_else(|| AppError::NotFound("Report not found"))?;
     let potential_issues = if details.report.issue_id.is_none() {
-        state
-            .database
-            .potential_issue_matches(report_id)
-            .await?
-            .into_iter()
-            .map(|issue| PotentialIssueView {
-                id: issue.id,
-                title: issue.title,
-                github_state: issue.github_state,
-            })
-            .collect()
+        state.database.potential_issue_matches(report_id).await?
     } else {
         Vec::new()
     };
     let linked_issue = match details.report.issue_id {
-        Some(issue_id) => state
-            .database
-            .find_issue(issue_id)
-            .await?
-            .map(|issue| LinkedIssueView {
-                id: issue.id,
-                title: issue.title,
-                github_number: issue.github_number,
-                github_url: issue.github_url,
-            }),
+        Some(issue_id) => state.database.find_issue(issue_id).await?,
         None => None,
     };
-    let title = title_for_report(&details);
     let issue_proposal = propose_issue(&details);
     let platform = field_string(&details.fields, "platform").unwrap_or_else(|| "Unknown".into());
     let architecture =
@@ -540,7 +496,7 @@ pub async fn show(
 
     let report_view = ReportView {
         id: details.report.id,
-        title,
+        title: issue_proposal.title.clone(),
         state: details.report.state,
         overview,
         is_assigned: details.report.issue_id.is_some(),
@@ -752,11 +708,6 @@ pub async fn assign_to_issue(
 }
 
 #[derive(Deserialize)]
-pub struct ReportActionForm {
-    csrf: String,
-}
-
-#[derive(Deserialize)]
 pub struct UnlinkReportForm {
     csrf: String,
     issue_id: IssueId,
@@ -840,7 +791,7 @@ pub async fn reject(
     State(state): State<AdminState>,
     Extension(session): Extension<Session>,
     Path(report_id): Path<ReportId>,
-    Form(form): Form<ReportActionForm>,
+    Form(form): Form<CsrfForm>,
 ) -> Result<Redirect> {
     session.verify_csrf(&form.csrf)?;
     let previous = state

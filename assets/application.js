@@ -746,6 +746,44 @@ function initializeSettingsHelp() {
     }
 }
 
+// "Show more…" appends the next page of a list's rows and takes over its button.
+document.addEventListener("click", async (event) => {
+    const button = event.target.closest("[data-show-more]");
+    if (!button) {
+        return;
+    }
+
+    const status = document.querySelector("[data-list-search-status]");
+    button.disabled = true;
+    button.textContent = "Loading…";
+    status.textContent = "Loading more…";
+
+    try {
+        const response = await fetch(button.dataset.nextUrl, { headers: { Accept: "text/html" } });
+        if (!response.ok) {
+            throw new Error(`List page returned ${response.status}`);
+        }
+
+        const page = new DOMParser().parseFromString(await response.text(), "text/html");
+        document.querySelector("[data-rows]").append(...page.querySelector("[data-rows]").children);
+
+        const nextButton = page.querySelector("[data-show-more]");
+        if (nextButton) {
+            // Keep the same button so keyboard focus stays where it was.
+            button.dataset.nextUrl = nextButton.dataset.nextUrl;
+            button.disabled = false;
+            button.textContent = "Show more…";
+        } else {
+            button.closest(".report-list-more").remove();
+        }
+        status.textContent = "More loaded.";
+    } catch {
+        button.disabled = false;
+        button.textContent = "Show more…";
+        status.textContent = "More could not be loaded.";
+    }
+});
+
 initializeEntitySelectors();
 initializeSelectControls();
 initializeFieldOrdering();

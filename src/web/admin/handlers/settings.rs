@@ -9,7 +9,10 @@ use chrono::{DateTime, Utc};
 use serde::Deserialize;
 
 use crate::{
-    domain::{AuditAction, AuditEntity, FieldKind, RuntimeConfiguration, SETTING_DEFINITIONS},
+    domain::{
+        AuditAction, AuditEntity, FieldDefinition, FieldKind, RuntimeConfiguration,
+        SETTING_DEFINITIONS, SettingDefinition,
+    },
     error::{AppError, Result},
     infrastructure::database::AuditEvent,
 };
@@ -26,22 +29,8 @@ pub struct SettingsTemplate {
     asset_version: &'static str,
     configuration: String,
     updated_at: DateTime<Utc>,
-    fields: Vec<FieldView>,
-    setting_definitions: Vec<SettingDefinitionView>,
-}
-
-pub struct FieldView {
-    key: String,
-    label: String,
-    kind: FieldKind,
-}
-
-pub struct SettingDefinitionView {
-    key: &'static str,
-    path: &'static str,
-    title: &'static str,
-    description: &'static str,
-    value_description: &'static str,
+    fields: Vec<FieldDefinition>,
+    setting_definitions: &'static [SettingDefinition],
 }
 
 #[derive(Template)]
@@ -74,18 +63,6 @@ pub async fn show(
     Extension(session): Extension<Session>,
 ) -> Result<TemplateResponse<SettingsTemplate>> {
     let configuration = state.database.configuration_record().await?;
-    let fields = state
-        .database
-        .field_definitions()
-        .await?
-        .into_iter()
-        .map(|field| FieldView {
-            key: field.key,
-            label: field.label,
-            kind: field.kind,
-        })
-        .collect();
-
     let configuration_json =
         serde_json::to_string_pretty(&configuration.value).map_err(AppError::internal)?;
 
@@ -94,17 +71,8 @@ pub async fn show(
         asset_version: super::assets::asset_version(),
         configuration: configuration_json,
         updated_at: configuration.updated_at,
-        fields,
-        setting_definitions: SETTING_DEFINITIONS
-            .iter()
-            .map(|definition| SettingDefinitionView {
-                key: definition.key,
-                path: definition.path,
-                title: definition.title,
-                description: definition.description,
-                value_description: definition.value_description,
-            })
-            .collect(),
+        fields: state.database.field_definitions().await?,
+        setting_definitions: SETTING_DEFINITIONS,
     }))
 }
 

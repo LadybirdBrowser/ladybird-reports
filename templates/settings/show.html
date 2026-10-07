@@ -21,11 +21,7 @@
                 <p>Updated {{ updated_at }}</p>
             </div>
             <form class="card-body" method="post" action="/settings">
-                <input
-                    type="hidden"
-                    name="csrf"
-                    value="{{ navigation.as_ref().unwrap().csrf_token }}"
-                >
+                <input type="hidden" name="csrf" value="{{ navigation.as_ref().unwrap().csrf_token }}">
                 <label>
                     Configuration JSON
                     <textarea
@@ -129,11 +125,7 @@
                 </p>
             </div>
             <form method="post" action="/settings/fields">
-                <input
-                    type="hidden"
-                    name="csrf"
-                    value="{{ navigation.as_ref().unwrap().csrf_token }}"
-                >
+                <input type="hidden" name="csrf" value="{{ navigation.as_ref().unwrap().csrf_token }}">
                 <label>
                     Key
                     <input name="key" maxlength="64" required>

@@ -14,7 +14,7 @@
                     <th>Received</th>
                 </tr>
             </thead>
-            <tbody data-report-rows>
+            <tbody data-rows>
                 {% for report in reports %}
                     <tr class="clickable-report-row">
                         <td class="report-table-report">
@@ -46,7 +46,7 @@
             <button
                 class="button-secondary"
                 type="button"
-                data-report-show-more
+                data-show-more
                 data-next-url="{{ next_page }}"
             >
                 Show more…

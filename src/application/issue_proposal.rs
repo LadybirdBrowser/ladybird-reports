@@ -116,7 +116,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        domain::{ReportId, ReportState, SubmissionId},
+        domain::{ReportId, ReportState},
         infrastructure::database::{ReportRecord, StoredDiagnosticField},
     };
 
@@ -125,8 +125,6 @@ mod tests {
         let details = ReportDetails {
             report: ReportRecord {
                 id: ReportId::new(),
-                submission_id: SubmissionId::new(),
-                manifest_digest: String::new(),
                 kind: ReportKind::Crash,
                 client_version: "Ladybird Nightly 2026.09.16".into(),
                 build: "Release".into(),
@@ -187,7 +185,6 @@ mod tests {
             recognized_at_submission: true,
             current_label: None,
             current_kind: None,
-            current_position: None,
         }
     }
 }

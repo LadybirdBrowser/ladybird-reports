@@ -16,6 +16,12 @@ use crate::{
 
 use super::{AdminState, authentication::session_cookie, templates::redirect_to_login};
 
+/// The form of an action that needs nothing but the CSRF token.
+#[derive(serde::Deserialize)]
+pub struct CsrfForm {
+    pub csrf: String,
+}
+
 #[derive(Clone, Debug)]
 pub struct Session {
     pub github_id: i64,
@@ -49,7 +55,7 @@ pub async fn require_session(
     mut request: Request,
     next: Next,
 ) -> Result<Response> {
-    let Some(session_token) = request_cookie(&request, "session") else {
+    let Some(session_token) = cookie_from_headers(request.headers(), "session") else {
         return Ok(redirect_to_login(request.method(), request.uri()));
     };
 
@@ -157,10 +163,6 @@ pub async fn require_session(
     }
 
     Ok(response)
-}
-
-pub fn request_cookie(request: &Request, name: &str) -> Option<String> {
-    cookie_from_headers(request.headers(), name)
 }
 
 pub fn cookie_from_headers(headers: &HeaderMap, name: &str) -> Option<String> {
