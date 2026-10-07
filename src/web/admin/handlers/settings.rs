@@ -260,8 +260,8 @@ fn event_view(event: AuditEvent) -> EventView {
         let identifier = id.to_string();
         let suffix = &identifier[identifier.len() - 8..];
         let (label, section) = match AuditEntity::of_stored_action(&event.action) {
-            AuditEntity::Issue => (format!("Issue ·{suffix}"), "issues"),
-            AuditEntity::Report => (format!("Report ·{suffix}"), "reports"),
+            AuditEntity::Issue => (format!("Issue {suffix}"), "issues"),
+            AuditEntity::Report => (format!("Report {suffix}"), "reports"),
         };
         let has_page = action.is_none_or(AuditAction::entity_has_page);
 
