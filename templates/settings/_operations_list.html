@@ -6,7 +6,7 @@
         </div>
     {% else %}
         <div class="table-scroll">
-            <table>
+            <table class="audit-table">
                 <thead>
                     <tr>
                         <th>Time</th>
@@ -19,10 +19,10 @@
                 <tbody data-rows>
                     {% for event in events %}
                         <tr>
-                            <td class="quiet">{{ event.created_at }}</td>
-                            <td>{{ event.actor }}</td>
-                            <td><span class="badge badge-neutral">{{ event.action }}</span></td>
-                            <td>
+                            <td class="quiet audit-time">{{ event.created_at }}</td>
+                            <td class="audit-actor">{{ event.actor }}</td>
+                            <td class="audit-action"><span class="badge badge-neutral">{{ event.action }}</span></td>
+                            <td class="audit-target">
                                 {% if let Some(url) = event.target_url %}
                                     <a href="{{ url }}" title="Open {{ event.target_label.as_ref().unwrap() }}">
                                         {{ event.target_label.as_ref().unwrap() }}
@@ -31,7 +31,7 @@
                                     <span class="quiet">{{ label }}</span>
                                 {% endif %}
                             </td>
-                            <td><code>{{ event.details }}</code></td>
+                            <td class="audit-details"><code title="{{ event.details }}">{{ event.details }}</code></td>
                         </tr>
                     {% endfor %}
                 </tbody>

@@ -1244,6 +1244,23 @@ button:active,
     white-space: nowrap;
 }
 
+/* One line per event: the details take what is left and are cut off with an
+   ellipsis, with the whole text in the tooltip. */
+.audit-table td {
+    white-space: nowrap;
+}
+
+.audit-table .audit-details {
+    width: 100%;
+    max-width: 0;
+}
+
+.audit-details code {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
 /* Reports that share a stack signature, folded under the most recent one. */
 .report-group-toggle {
     display: flex;
@@ -2652,6 +2669,70 @@ pre {
 /* Responsive layout */
 
 @media (max-width: 760px) {
+    .audit-table,
+    .audit-table tbody {
+        display: block;
+    }
+
+    .audit-table thead {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip-path: inset(50%);
+        white-space: nowrap;
+    }
+
+    .audit-table tr {
+        display: grid;
+        padding: 0.85rem 1.15rem;
+        grid-template-areas:
+            "time action"
+            "actor target"
+            "details details";
+        grid-template-columns: minmax(0, 1fr) auto;
+        column-gap: 0.75rem;
+        row-gap: 0.3rem;
+        align-items: center;
+        border-bottom: 1px solid var(--border);
+    }
+
+    .audit-table tr:last-child {
+        border-bottom: 0;
+    }
+
+    .audit-table td {
+        min-width: 0;
+        padding: 0;
+        border: 0;
+    }
+
+    .audit-time {
+        grid-area: time;
+    }
+
+    .audit-action {
+        grid-area: action;
+        text-align: right;
+    }
+
+    .audit-actor {
+        grid-area: actor;
+    }
+
+    .audit-target {
+        grid-area: target;
+        overflow: hidden;
+        text-align: right;
+        text-overflow: ellipsis;
+    }
+
+    .audit-table .audit-details {
+        grid-area: details;
+        width: auto;
+        max-width: none;
+    }
+
     .report-table-scroll {
         overflow-x: visible;
     }
