@@ -58,6 +58,9 @@ pub struct ReportSummary {
     pub url: Option<String>,
     pub state: ReportState,
     pub created_at: DateTime<Utc>,
+    /// The stack signature, for the lists that group reports by it.
+    #[sqlx(default)]
+    pub signature: Option<String>,
 }
 
 #[derive(Clone, Debug)]

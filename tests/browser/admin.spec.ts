@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { type Page, expect, test } from "@playwright/test";
 import { createHmac } from "node:crypto";
 
 // The addresses of the test server and the fake GitHub, as set in playwright.config.ts.
@@ -112,6 +112,15 @@ test("sign-in ignores an external return destination", async ({ page }) => {
     .toHaveAttribute("href", "/auth/github");
 });
 
+// Reports that share a stack signature are folded into groups in the report
+// list. Most tests want to see every report, so they open the groups first.
+async function openGroups(page: Page) {
+  const closed = page.locator('.report-group-toggle[aria-expanded="false"]');
+  while ((await closed.count()) > 0) {
+    await closed.first().click();
+  }
+}
+
 test.describe("authenticated management UI", () => {
   test.use({
     storageState: "target/browser-test-storage-state.json",
@@ -155,6 +164,7 @@ test.describe("authenticated management UI", () => {
       /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
     );
     await expect(page.getByText("Reporting database setup is incomplete.")).toBeVisible();
+    await openGroups(page);
     const reportLink = page.locator(`a[href="/reports/${reportId}"]`);
     await expect(reportLink).toHaveText(
       "Web compatibility: WebContent::ConnectionFromClient::debug_request",
@@ -388,7 +398,8 @@ test.describe("authenticated management UI", () => {
   test("keeps report rows readable on desktop and mobile", async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.goto("/");
-    const row = page.locator(".report-table tbody tr").first();
+    await openGroups(page);
+    const row = page.locator(".report-table tbody tr:not(.report-group-row)").first();
     const title = row.locator(".report-title-link");
     const metadata = row.locator(".report-table-metadata");
     await expect(metadata).toContainText("macOS · arm64 · 0.1.0-browser-test");
@@ -417,8 +428,9 @@ test.describe("authenticated management UI", () => {
   test("keeps legacy build details on a complete final overview row", async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.goto("/");
+    await openGroups(page);
 
-    const legacyReport = page.locator(".report-table tbody tr")
+    const legacyReport = page.locator(".report-table tbody tr:not(.report-group-row)")
       .filter({ hasText: "macOS · arm64 · Ladybird Nightly 2026-09-15" }).first();
     await legacyReport.getByRole("link", {
       name: "Crash: WebContent::ConnectionFromClient::debug_request",
@@ -605,6 +617,7 @@ test.describe("authenticated management UI", () => {
 
   test("searches existing internal issues in the issue workflow", async ({ page }) => {
     await page.goto("/?q=state%3Atriage+platform%3APaginationOS");
+    await openGroups(page);
     await page.locator(".report-title-link").first().click();
     await page.getByRole("button", { name: "Add report to issue" }).click();
 
@@ -646,15 +659,16 @@ test.describe("authenticated management UI", () => {
       .toBe("state:triage platform:macos kind:crash");
     expect(await page.evaluate(() => (window as any).reportPageStayedLoaded)).toBe(true);
     await expect(search).toBeFocused();
-    await expect(page.locator("tbody tr")).toHaveCount(2);
-    await expect(page.locator("tbody tr").nth(0)).toContainText("macOS");
-    await expect(page.locator("tbody tr").nth(1)).toContainText("macOS");
+    const reports = page.locator("tbody tr:not(.report-group-row)");
+    await expect(reports).toHaveCount(2);
+    await expect(reports.nth(0)).toContainText("macOS");
+    await expect(reports.nth(1)).toContainText("macOS");
 
     await search.fill("platform:linux");
     await search.blur();
     await expect.poll(() => new URL(page.url()).searchParams.get("q"))
       .toBe("platform:linux");
-    await expect(page.locator("tbody tr")).toHaveCount(2);
+    await expect(reports).toHaveCount(2);
 
     await search.fill("plat");
     await expect(page.getByRole("option", { name: /^platform:/ })).toBeVisible();
@@ -662,7 +676,7 @@ test.describe("authenticated management UI", () => {
     await search.press("Enter");
     await expect.poll(() => new URL(page.url()).searchParams.get("q"))
       .toBe("state:triage platform:macos platform:linux");
-    await expect(page.locator("tbody tr")).toHaveCount(4);
+    await expect(reports).toHaveCount(4);
   });
 
   test("defaults to triage and confirmed reports", async ({ page }) => {
@@ -702,10 +716,11 @@ test.describe("authenticated management UI", () => {
 
   test("loads reports fifty at a time without navigating", async ({ page }) => {
     await page.goto("/");
-    await expect(page.locator("tbody tr")).toHaveCount(50);
+    const reports = page.locator("tbody tr:not(.report-group-row)");
+    await expect(reports).toHaveCount(50);
     const initialUrl = page.url();
     await page.getByRole("button", { name: "Show more…" }).click();
-    await expect(page.locator("tbody tr")).toHaveCount(58);
+    await expect(reports).toHaveCount(58);
     expect(page.url()).toBe(initialUrl);
     await expect(page.getByRole("button", { name: "Show more…" })).toHaveCount(0);
   });
@@ -811,8 +826,82 @@ test.describe("authenticated management UI", () => {
     expect(await signOut.evaluate((button) => getComputedStyle(button).borderTopWidth)).toBe("0px");
   });
 
+  test.describe("grouping reports by stack signature", () => {
+    // 52 reports of two kinds that share one stack: two signatures, 26 reports
+    // each, with the last two of them on the second page.
+    const fixtureReports = '/?q=version%3A"Pagination fixture"';
+    const groups = (page: Page) => page.locator(".report-group-row");
+    const toggle = (page: Page, index: number) => groups(page).nth(index).getByRole("button");
+
+    test("folds reports with the same signature into collapsed groups", async ({ page }) => {
+      await page.goto(fixtureReports);
+
+      await expect(groups(page)).toHaveCount(2);
+      await expect(toggle(page, 0)).toHaveAttribute("aria-expanded", "false");
+      await expect(toggle(page, 0)).toContainText("25 reports");
+      await expect(toggle(page, 1)).toContainText("25 reports");
+
+      // Only the headers show, and the first one is the most recent report.
+      await expect(page.locator("tbody tr:visible")).toHaveCount(2);
+      await expect(page.locator(".report-group-member")).toHaveCount(50);
+      await expect(groups(page).nth(0)).toContainText("Crash");
+      await expect(groups(page).nth(1)).toContainText("Web compatibility");
+    });
+
+    test("opens a group to its reports, which open as usual", async ({ page }) => {
+      await page.goto(fixtureReports);
+
+      await toggle(page, 0).click();
+      await expect(toggle(page, 0)).toHaveAttribute("aria-expanded", "true");
+      await expect(page.locator("tbody tr:visible")).toHaveCount(2 + 25);
+
+      await page.locator(".report-group-member:visible .report-title-link").nth(3).click();
+      await expect(page).toHaveURL(/\/reports\/[0-9a-f-]{36}$/);
+
+      await page.goBack();
+      await toggle(page, 0).click();
+      await toggle(page, 0).click();
+      await expect(page.locator("tbody tr:visible")).toHaveCount(2);
+    });
+
+    test("adds the reports of the next page to the groups that are already there", async ({ page }) => {
+      await page.goto(fixtureReports);
+      await toggle(page, 1).click();
+      await page.getByRole("button", { name: "Show more…" }).click();
+
+      await expect(toggle(page, 0)).toContainText("26 reports");
+      await expect(toggle(page, 1)).toContainText("26 reports");
+      await expect(groups(page)).toHaveCount(2);
+      await expect(page.locator(".report-group-member")).toHaveCount(52);
+
+      // The group that was open takes its new report open, the other does not.
+      await expect(toggle(page, 0)).toHaveAttribute("aria-expanded", "false");
+      await expect(toggle(page, 1)).toHaveAttribute("aria-expanded", "true");
+      await expect(page.locator("tbody tr:visible")).toHaveCount(2 + 26);
+    });
+
+    test("opens a list that is a single group", async ({ page }) => {
+      await page.goto('/?q=version%3A"Pagination fixture" kind%3Acrash');
+
+      await expect(groups(page)).toHaveCount(1);
+      await expect(toggle(page, 0)).toHaveAttribute("aria-expanded", "true");
+      await expect(page.locator("tbody tr:visible")).toHaveCount(1 + 26);
+    });
+
+    test("groups the results of a search", async ({ page }) => {
+      await page.goto("/");
+      const search = page.getByLabel("Search reports");
+      await search.fill('version:"Pagination fixture"');
+      await search.press("Enter");
+
+      await expect(groups(page)).toHaveCount(2);
+      await expect(toggle(page, 0)).toContainText("25 reports");
+    });
+  });
+
   test("rejects and restores reports while retaining their details", async ({ page }) => {
     await page.goto("/?q=state%3Atriage+platform%3APaginationOS");
+    await openGroups(page);
     const reportLink = page.locator(".report-title-link").first();
     const href = await reportLink.getAttribute("href");
     expect(href).not.toBeNull();
@@ -900,6 +989,7 @@ test.describe("authenticated management UI", () => {
     await page.getByLabel("Search reports").press("Enter");
     await expect.poll(() => new URL(page.url()).searchParams.get("q"))
       .toBe("state:confirmed");
+    await openGroups(page);
     await expect(page.locator(`a[href="/reports/${reportId}"]`)).toBeVisible();
   });
 

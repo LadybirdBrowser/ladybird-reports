@@ -63,6 +63,7 @@ pub struct ReportRow {
     state_label: &'static str,
     state_tone: &'static str,
     pub(super) received_at: String,
+    pub(super) signature: Option<String>,
 }
 
 impl From<ReportSummary> for ReportRow {
@@ -76,6 +77,7 @@ impl From<ReportSummary> for ReportRow {
             title: report.title,
             state_label,
             state_tone,
+            signature: report.signature,
         }
     }
 }

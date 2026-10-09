@@ -16,7 +16,10 @@
             </thead>
             <tbody data-rows>
                 {% for report in reports %}
-                    <tr class="clickable-report-row">
+                    <tr
+                        class="clickable-report-row"
+                        {% if let Some(signature) = report.signature %}data-signature="{{ signature }}"{% endif %}
+                    >
                         <td class="report-table-report">
                             <a
                                 class="primary-link report-title-link row-link"

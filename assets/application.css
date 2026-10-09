@@ -1244,6 +1244,64 @@ button:active,
     white-space: nowrap;
 }
 
+/* Reports that share a stack signature, folded under the most recent one. */
+.report-group-toggle {
+    display: flex;
+    width: 100%;
+    min-width: 0;
+    min-height: 0;
+    padding: 0;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 0.55rem;
+    border: 0;
+    background: none;
+    box-shadow: none;
+    color: var(--ink);
+    font: inherit;
+    font-weight: 700;
+    text-align: left;
+}
+
+.report-group-toggle:hover {
+    background: none;
+    color: var(--brand);
+}
+
+.report-group-title {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.report-group-count {
+    flex: 0 0 auto;
+}
+
+.report-group-chevron {
+    flex: 0 0 auto;
+    width: 0.4rem;
+    height: 0.4rem;
+    border-top: 2px solid currentcolor;
+    border-right: 2px solid currentcolor;
+    transform: rotate(45deg);
+    transition: transform 100ms ease;
+}
+
+.report-group-toggle[aria-expanded="true"] .report-group-chevron {
+    transform: rotate(135deg);
+}
+
+.report-group-member {
+    background: var(--surface-subtle);
+}
+
+.report-group-member td:first-child {
+    padding-left: 2.2rem;
+    box-shadow: inset 3px 0 0 var(--border-strong);
+}
+
 /* Data and status */
 
 .table-scroll {
@@ -2647,6 +2705,15 @@ pre {
         grid-area: received;
         white-space: normal;
         text-align: right;
+    }
+
+    .report-group-member {
+        padding-left: 2.2rem;
+    }
+
+    .report-group-member td:first-child {
+        padding-left: 0;
+        box-shadow: none;
     }
 
     .issue-report-table tr {

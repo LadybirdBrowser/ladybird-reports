@@ -35,6 +35,11 @@ exactly matches one active issue is linked to it automatically; other possible
 matches appear on unassigned report pages for maintainers to review and link
 manually. Signature data is removed when its report is purged.
 
+The report list folds reports with the same stack signature into one row, with
+the number of reports it holds. The row is placed where the most recent of them is,
+and opens to show them. Groups are made in the browser from the reports that are
+loaded, so a group grows as more reports are loaded, and nothing is stored.
+
 Report actions can confirm a report, return an unlinked report to triage, or
 reject a report with a confirmation dialog. Rejected reports remain available through
 `state:rejected`; retention still governs when their data is removed. Adding

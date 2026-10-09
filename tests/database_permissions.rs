@@ -17,7 +17,7 @@ use ladybird_reports::{
     infrastructure::{
         SecretCipher,
         attachments::FileAttachmentStore,
-        database::{AdminDatabase, IngestDatabase, NewSession, initialize_database},
+        database::{AdminDatabase, IngestDatabase, NewSession, ReportQuery, initialize_database},
         github::{GithubIssue, GithubIssueState},
     },
     web::public::{PublicState, router},
@@ -363,6 +363,18 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
         .expect("read the signature stored with the report")
     };
     assert!(unmatched().await);
+
+    // The report list tells which reports share a signature.
+    let listed = admin_database
+        .list_reports(&ReportQuery::default())
+        .await
+        .expect("list reports");
+    assert!(
+        listed
+            .iter()
+            .find(|listed| listed.id == report_id)
+            .is_some_and(|listed| listed.signature.is_some())
+    );
     admin_database
         .index_pending_stack_traces()
         .await

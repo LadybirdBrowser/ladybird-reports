@@ -5,7 +5,7 @@ use sqlx::{Postgres, QueryBuilder, Row};
 use crate::{
     domain::{
         AttachmentId, AuditAction, IssueId, REPORT_TITLE_STACK_CHARACTERS, ReportId, ReportKind,
-        ReportState, ReportTitleInput, generate_report_title,
+        ReportState, ReportTitleInput, STACK_SIGNATURE_VERSION, generate_report_title,
     },
     error::{AppError, Result},
     infrastructure::database::AdminDatabase,
@@ -100,7 +100,15 @@ impl AdminDatabase {
                 reports.kind,
                 reports.client_version,
                 reports.state,
-                reports.created_at
+                reports.created_at,
+                (SELECT signatures.fingerprint
+                 FROM report_stack_signatures AS signatures
+                 WHERE signatures.report_id = reports.id
+                    AND signatures.algorithm_version = ",
+        );
+        sql.push_bind(STACK_SIGNATURE_VERSION).push(
+            ")
+                AS signature
              FROM reports
              WHERE reports.storage_state = 'ready'",
         );
