@@ -11,8 +11,8 @@ use ladybird_reports::{
     domain::{
         AttachmentManifest, AttachmentMediaType, AuditAction, DiagnosticField, FieldKind,
         FieldValue, GithubLinkState, GithubSyncSource, IssueId, IssueReportAction, IssueSearch,
-        IssueState, ReportId, ReportKind, ReportManifest, ReportState, StorageState, SubmissionId,
-        UploadId, proof_is_valid, sha256_hex,
+        IssueState, ReportId, ReportKind, ReportManifest, ReportState, STACK_SIGNATURE_VERSION,
+        StorageState, SubmissionId, UploadId, proof_is_valid, sha256_hex,
     },
     infrastructure::{
         SecretCipher,
@@ -1506,7 +1506,7 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
     .fetch_one(&admin_pool)
     .await
     .expect("read regenerated signature");
-    assert_eq!(current_version, 1);
+    assert_eq!(current_version, STACK_SIGNATURE_VERSION);
 
     let matching_issue = IssueId::new();
     sqlx::query(

@@ -293,7 +293,8 @@ impl IngestDatabase {
                             request.manifest.kind,
                             text_of("process"),
                             text_of("signal"),
-                            &parse_stack_trace(stack).frame_keys,
+                            text_of("failure_reason"),
+                            &parse_stack_trace(stack),
                         ))
                         .execute(&mut *transaction)
                         .await?;

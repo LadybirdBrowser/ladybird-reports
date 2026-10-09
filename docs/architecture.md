@@ -82,9 +82,13 @@ Older `stack` fields tagged `multiline` remain valid; newer clients can use the
 first stack trace by key. The public process derives it while accepting the report;
 the admin process parses either form for a frame table, matches new signatures
 against issues, and signs stack traces that arrived without one. The signature is a
-versioned fingerprint of normalized function names, report kind, and optional
-process and signal. Build IDs, addresses, paths, URLs, and source IPs do
-not enter the signature. Unrecognized lines remain visible and the original text
+versioned fingerprint of the report kind, the process, the signal name, the
+failure reason without its numbers and line, and the first five function names in the
+stack. Function names are bare, so symbol formats and inlining do not matter, and the
+plumbing that ends a process (abort, panic and signal frames, event loop frames) is
+left out. A stack without symbols is told apart by its build ID and addresses, and a
+failure reason alone can sign a stack with nothing in it. Paths, URLs, and source IPs
+do not enter the signature. Unrecognized lines remain visible and the original text
 is always available in the report view.
 
 An admin background job indexes existing and new reports in bounded batches.

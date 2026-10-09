@@ -142,13 +142,16 @@ impl AdminDatabase {
             "SELECT reports.id AS report_id, reports.kind, reports.auto_match_eligible,
                     traces.text,
                     signal.value #>> '{}' AS signal,
-                    process.value #>> '{}' AS process
+                    process.value #>> '{}' AS process,
+                    failure.value #>> '{}' AS failure_reason
              FROM report_stack_traces AS traces
              JOIN reports ON reports.id = traces.report_id
              LEFT JOIN report_fields AS signal
                 ON signal.report_id = reports.id AND signal.key = 'signal'
              LEFT JOIN report_fields AS process
                 ON process.report_id = reports.id AND process.key = 'process'
+             LEFT JOIN report_fields AS failure
+                ON failure.report_id = reports.id AND failure.key = 'failure_reason'
              LEFT JOIN report_stack_signatures AS signatures
                 ON signatures.report_id = reports.id
              WHERE reports.storage_state = 'ready'
@@ -173,7 +176,8 @@ impl AdminDatabase {
                 trace.kind,
                 trace.process.as_deref(),
                 trace.signal.as_deref(),
-                &parse_stack_trace(&trace.text).frame_keys,
+                trace.failure_reason.as_deref(),
+                &parse_stack_trace(&trace.text),
             );
 
             let mut transaction = self.pool.begin().await?;
@@ -375,5 +379,6 @@ struct PendingStackTrace {
     text: String,
     signal: Option<String>,
     process: Option<String>,
+    failure_reason: Option<String>,
     auto_match_eligible: bool,
 }

@@ -509,6 +509,7 @@ pub async fn show(
 
     let signal = field_string(&details.fields, "signal");
     let process = field_string(&details.fields, "process");
+    let failure_reason = field_string(&details.fields, "failure_reason");
     let report_kind = details.report.kind;
 
     for field in details.fields {
@@ -534,7 +535,8 @@ pub async fn show(
                 report_kind,
                 process.as_deref(),
                 signal.as_deref(),
-                &parsed.frame_keys,
+                failure_reason.as_deref(),
+                parsed,
             )
             .map(|full| StackSignatureView {
                 short: full[..12].to_owned(),
