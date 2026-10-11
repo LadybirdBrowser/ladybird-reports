@@ -50,3 +50,24 @@ Both periods are configurable in the management UI. Active source blocks retain
 their own keyed identifier; lifted or expired blocks are removed after the source
 retention period. Review retention settings as operational
 and privacy requirements become clearer.
+
+## Database statistics
+
+Index and table usage is tracked by PostgreSQL by default, in `pg_stat_user_indexes`
+and `pg_stat_user_tables`. Function calls are not: `track_functions` is `none`, so
+there is no way to tell whether a function is still used. Before removing a
+function or trigger, a superuser can turn tracking on for the database and read
+`pg_stat_user_functions` after a representative period:
+
+```sql
+ALTER DATABASE ladybird_reports SET track_functions = 'pl';
+SELECT funcname, calls FROM pg_stat_user_functions ORDER BY calls;
+```
+
+The setting applies to new connections, so restart the services after changing it.
+It is not part of the migrations because only superusers can set it.
+
+Judge indexes on a database of realistic size. With a few hundred reports
+PostgreSQL reads tables sequentially and a useful index shows no scans; at tens of
+thousands of reports the list, expiry, issue and GitHub lookups all use the
+indexes the schema defines.
