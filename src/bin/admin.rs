@@ -192,6 +192,7 @@ async fn run_maintenance(state: AdminState) {
                     .begin_maintenance_sweep(
                         configuration.maintenance.report_retention_days,
                         configuration.maintenance.submission_source_retention_days,
+                        configuration.audit.retention_days,
                     )
                     .await;
 
@@ -223,6 +224,7 @@ async fn run_maintenance(state: AdminState) {
                             || result.oauth_states_deleted > 0
                             || result.submission_sources_deleted > 0
                             || result.inactive_source_blocks_deleted > 0
+                            || result.audit_events_deleted > 0
                             || reports_deleted > 0
                         {
                             tracing::info!(
@@ -232,6 +234,7 @@ async fn run_maintenance(state: AdminState) {
                                 submission_sources_deleted = result.submission_sources_deleted,
                                 inactive_source_blocks_deleted =
                                     result.inactive_source_blocks_deleted,
+                                audit_events_deleted = result.audit_events_deleted,
                                 reports_deleted,
                             );
                         }

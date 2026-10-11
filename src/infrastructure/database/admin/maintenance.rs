@@ -8,6 +8,7 @@ pub struct AdminSweepResult {
     pub oauth_states_deleted: u64,
     pub submission_sources_deleted: u64,
     pub inactive_source_blocks_deleted: u64,
+    pub audit_events_deleted: u64,
     pub reports_ready_for_purge: Vec<ReportId>,
 }
 
@@ -16,6 +17,7 @@ impl AdminDatabase {
         &self,
         report_retention_days: u32,
         source_retention_days: u32,
+        audit_retention_days: u32,
     ) -> Result<AdminSweepResult> {
         let mut transaction = self.pool.begin().await?;
 
@@ -47,6 +49,15 @@ impl AdminDatabase {
                     AND expires_at <= now() - make_interval(days => $1))",
         )
         .bind(source_retention_days as i32)
+        .execute(&mut *transaction)
+        .await?
+        .rows_affected();
+
+        let audit_events_deleted = sqlx::query(
+            "DELETE FROM audit_events
+             WHERE created_at <= now() - make_interval(days => $1)",
+        )
+        .bind(audit_retention_days as i32)
         .execute(&mut *transaction)
         .await?
         .rows_affected();
@@ -87,6 +98,7 @@ impl AdminDatabase {
             oauth_states_deleted,
             submission_sources_deleted,
             inactive_source_blocks_deleted,
+            audit_events_deleted,
             reports_ready_for_purge: rows.into_iter().map(|row| row.get("id")).collect(),
         })
     }

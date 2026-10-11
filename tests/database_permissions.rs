@@ -750,10 +750,26 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
         .execute(&admin_pool)
         .await
         .expect("expire accepted report");
+    sqlx::query(
+        "INSERT INTO audit_events (action, created_at)
+         VALUES ('test.too_old', now() - interval '4000 days'),
+                ('test.recent', now() - interval '1 day')",
+    )
+    .execute(&admin_pool)
+    .await
+    .expect("record an old and a recent audit event");
     let admin_sweep = admin_database
-        .begin_maintenance_sweep(3_650, 30)
+        .begin_maintenance_sweep(3_650, 30, 3_650)
         .await
         .expect("begin admin maintenance sweep");
+    assert_eq!(admin_sweep.audit_events_deleted, 1);
+    let remaining: Vec<String> = sqlx::query_scalar(
+        "SELECT action FROM audit_events WHERE action LIKE 'test.%' ORDER BY action",
+    )
+    .fetch_all(&admin_pool)
+    .await
+    .expect("read the remaining audit events");
+    assert_eq!(remaining, ["test.recent"]);
     assert_eq!(admin_sweep.sessions_deleted, 1);
     assert_eq!(admin_sweep.oauth_states_deleted, 1);
     assert!(admin_sweep.reports_ready_for_purge.contains(&report_id));
@@ -945,7 +961,7 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
     .await
     .expect("expire the report source identifier");
     admin_database
-        .begin_maintenance_sweep(3_650, 30)
+        .begin_maintenance_sweep(3_650, 30, 3_650)
         .await
         .expect("sweep expired source identifiers");
     let source_key: Option<String> =
@@ -975,7 +991,7 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
     .await
     .expect("age the lifted block");
     admin_database
-        .begin_maintenance_sweep(3_650, 30)
+        .begin_maintenance_sweep(3_650, 30, 3_650)
         .await
         .expect("sweep inactive block records");
     let inactive_block_count: i64 =

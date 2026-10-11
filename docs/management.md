@@ -99,7 +99,9 @@ retry delays, and the native-stack excerpt included in each message.
 
 The `audit` object controls audit log behavior. `denied_sign_in_window_seconds`
 (default 600) limits how often one GitHub account that is denied at sign-in is
-recorded; set it to 0 to record every denial.
+recorded; set it to 0 to record every denial. `retention_days` (default
+3650, as for reports; 30 to 36500) is how long audit events are kept. The maintenance
+sweep removes older ones, including the events of reports that have been purged.
 
 `trusted_proxies` lists the proxies whose forwarding headers identify the original
 client address. Each entry is a CIDR range or a DNS name. The public API resolves

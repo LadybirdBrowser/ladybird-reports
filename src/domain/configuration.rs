@@ -45,12 +45,14 @@ pub struct RuntimeConfiguration {
 #[serde(default, deny_unknown_fields)]
 pub struct AuditConfiguration {
     pub denied_sign_in_window_seconds: u64,
+    pub retention_days: u32,
 }
 
 impl Default for AuditConfiguration {
     fn default() -> Self {
         Self {
             denied_sign_in_window_seconds: 10 * 60,
+            retention_days: 3_650,
         }
     }
 }
@@ -457,6 +459,13 @@ pub const SETTING_DEFINITIONS: &[SettingDefinition] = &[
         "Records a denied sign-in once per GitHub account in this window, so one account cannot flood the audit log.",
         "Seconds between audit entries for one account; 0 records every denied sign-in.",
     ),
+    setting(
+        "audit_retention_days",
+        "audit.retention_days",
+        "Audit log retention",
+        "Removes audit events once they are this old, so the log does not grow without bound.",
+        "Days from when an event was recorded; the default is ten years, as for reports.",
+    ),
 ];
 
 /// Whether changing the setting at `path` must sign out every existing session.
@@ -670,7 +679,8 @@ impl RuntimeConfiguration {
             || !(3600..=2_592_000).contains(&self.session_lifetime_seconds)
             || !(60..=3600).contains(&self.token_refresh_before_seconds)
             || !(30..=3600).contains(&self.membership_recheck_seconds)
-            || self.audit.denied_sign_in_window_seconds > 86_400;
+            || self.audit.denied_sign_in_window_seconds > 86_400
+            || !(30..=36_500).contains(&self.audit.retention_days);
 
         let invalid = invalid
             || !(60..=86_400).contains(&maintenance.sweep_interval_seconds)
@@ -853,6 +863,16 @@ mod tests {
             serde_json::from_value(stored.clone().into()).expect("empty audit group");
         assert_eq!(configuration.audit.denied_sign_in_window_seconds, 600);
 
+        // Audit settings stored before retention was one of them keep the default.
+        stored.insert(
+            "audit".into(),
+            serde_json::json!({ "denied_sign_in_window_seconds": 5 }),
+        );
+        let configuration: RuntimeConfiguration =
+            serde_json::from_value(stored.clone().into()).expect("audit group without retention");
+        assert_eq!(configuration.audit.denied_sign_in_window_seconds, 5);
+        assert_eq!(configuration.audit.retention_days, 3_650);
+
         stored.insert("audit".into(), serde_json::json!({ "unknown_setting": 1 }));
         assert!(serde_json::from_value::<RuntimeConfiguration>(stored.clone().into()).is_err());
 
@@ -860,11 +880,30 @@ mod tests {
             let configuration = RuntimeConfiguration {
                 audit: AuditConfiguration {
                     denied_sign_in_window_seconds: seconds,
+                    ..AuditConfiguration::default()
                 },
                 ..RuntimeConfiguration::default()
             };
 
             assert_eq!(configuration.validate().is_ok(), valid, "{seconds} seconds");
+        }
+
+        for (days, valid) in [
+            (29, false),
+            (30, true),
+            (3_650, true),
+            (36_500, true),
+            (36_501, false),
+        ] {
+            let configuration = RuntimeConfiguration {
+                audit: AuditConfiguration {
+                    retention_days: days,
+                    ..AuditConfiguration::default()
+                },
+                ..RuntimeConfiguration::default()
+            };
+
+            assert_eq!(configuration.validate().is_ok(), valid, "{days} days");
         }
     }
 
