@@ -1415,14 +1415,24 @@ tbody tr:hover {
     color: var(--warning);
 }
 
+/* Done. */
 .badge-success,
-.badge-confirmed,
-.entity-selector-badge.is-assigned,
-.entity-selector-badge.is-confirmed {
+.badge-resolved,
+.entity-selector-badge.is-resolved {
     --pill-glow: color-mix(in srgb, var(--success) 30%, transparent);
     border-color: color-mix(in srgb, var(--success) 22%, transparent);
     background: var(--success-soft);
     color: var(--success);
+}
+
+/* Being tracked against an issue, which is not the same as being done. */
+.badge-confirmed,
+.entity-selector-badge.is-assigned,
+.entity-selector-badge.is-confirmed {
+    --pill-glow: color-mix(in srgb, var(--brand) 30%, transparent);
+    border-color: color-mix(in srgb, var(--brand) 24%, transparent);
+    background: var(--brand-soft);
+    color: var(--brand-strong);
 }
 
 .badge-rejected,

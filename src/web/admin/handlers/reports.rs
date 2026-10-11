@@ -982,6 +982,7 @@ fn report_state(state: ReportState) -> (&'static str, &'static str) {
     let label = match state {
         ReportState::Triage => "Needs triage",
         ReportState::Confirmed => "Confirmed",
+        ReportState::Resolved => "Resolved",
         ReportState::Rejected => "Rejected",
     };
 

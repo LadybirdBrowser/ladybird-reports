@@ -18,7 +18,7 @@ state:triage state:confirmed signal:sigabrt
 
 Built-in qualifiers are `state`, `kind`, `version`, `client_version`, `build`,
 `id` and `report`. State values are `triage`, `confirmed`,
-and `rejected`, or `all`. Repeating a qualifier matches any of its values, so
+`resolved` and `rejected`, or `all`. Repeating a qualifier matches any of its values, so
 `state:triage state:confirmed` includes both states. Different qualifiers are
 combined, so adding `platform:linux` restricts both states to Linux reports.
 The default is `state:triage state:confirmed`. Any other qualifier is treated
@@ -39,6 +39,11 @@ The report list folds reports with the same stack signature into one row, with
 the number of reports it holds. The row is placed where the most recent of them is,
 and opens to show them. Groups are made in the browser from the reports that are
 loaded, so a group grows as more reports are loaded, and nothing is stored.
+
+A report that is linked to an issue is confirmed while the issue is open and
+resolved when the issue is. Resolving or reopening an issue, on GitHub or here,
+moves its reports along, and the audit log records those changes without an
+actor. Resolved reports are not in the default list; `state:resolved` finds them.
 
 Report actions can confirm a report, return an unlinked report to triage, or
 reject a report with a confirmation dialog. Rejected reports remain available through

@@ -4,8 +4,8 @@ use sqlx::{Postgres, QueryBuilder, Row};
 
 use crate::{
     domain::{
-        AttachmentId, AuditAction, IssueId, REPORT_TITLE_STACK_CHARACTERS, ReportId, ReportKind,
-        ReportState, ReportTitleInput, STACK_SIGNATURE_VERSION, generate_report_title,
+        AttachmentId, AuditAction, IssueId, IssueState, REPORT_TITLE_STACK_CHARACTERS, ReportId,
+        ReportKind, ReportState, ReportTitleInput, STACK_SIGNATURE_VERSION, generate_report_title,
     },
     error::{AppError, Result},
     infrastructure::database::AdminDatabase,
@@ -558,6 +558,19 @@ impl AdminDatabase {
             return Err(AppError::InvalidRequest(
                 "Unlink the report before returning it to triage",
             ));
+        }
+
+        // A confirmed report of a resolved issue is resolved, as the issue is.
+        let mut target = target;
+        if let Some(issue_id) = previous.1.filter(|_| target == ReportState::Confirmed) {
+            let issue_state: IssueState =
+                sqlx::query_scalar("SELECT state FROM issues WHERE id = $1")
+                    .bind(issue_id)
+                    .fetch_one(&mut *transaction)
+                    .await?;
+            if issue_state == IssueState::Resolved {
+                target = ReportState::Resolved;
+            }
         }
 
         sqlx::query(

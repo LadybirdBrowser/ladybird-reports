@@ -3,6 +3,7 @@ text_enum! {
     pub enum ReportState {
         Triage => "triage",
         Confirmed => "confirmed",
+        Resolved => "resolved",
         Rejected => "rejected",
     }
 }

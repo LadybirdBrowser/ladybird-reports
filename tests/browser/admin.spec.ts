@@ -1,4 +1,4 @@
-import { type Page, expect, test } from "@playwright/test";
+import { type Locator, type Page, expect, test } from "@playwright/test";
 import { createHmac } from "node:crypto";
 
 // The addresses of the test server and the fake GitHub, as set in playwright.config.ts.
@@ -585,14 +585,14 @@ test.describe("authenticated management UI", () => {
     await expect(search).toHaveValue("state:unresolved state:needs_attention");
     await page.evaluate(() => ((window as any).issuePageStayedLoaded = true));
 
-    await search.fill("state:resolved");
+    await search.fill("state:rejected");
     await page.waitForTimeout(800);
-    await expect(search).toHaveValue("state:resolved");
+    await expect(search).toHaveValue("state:rejected");
     expect(new URL(page.url()).searchParams.has("q")).toBe(false);
     await search.press("Enter");
 
     await expect.poll(() => new URL(page.url()).searchParams.get("q"))
-      .toBe("state:resolved");
+      .toBe("state:rejected");
     expect(await page.evaluate(() => (window as any).issuePageStayedLoaded)).toBe(true);
     await expect(page.getByText("No matching issues")).toBeVisible();
 
@@ -899,6 +899,27 @@ test.describe("authenticated management UI", () => {
     });
   });
 
+  test("tells confirmed reports from resolved ones", async ({ page }) => {
+    // The report of a resolved issue is resolved, and not in the default list.
+    await page.goto("/");
+    await expect(page.locator("tbody .badge-resolved")).toHaveCount(0);
+
+    await page.goto("/?q=state%3Aresolved");
+    const resolved = page.locator("tbody .badge-resolved");
+    await expect(resolved).toHaveCount(1);
+    await expect(resolved).toHaveText("Resolved");
+    await expect(page.locator("tbody tr")).toHaveCount(1);
+    const color = (pill: Locator) => pill.evaluate((element) => getComputedStyle(element).color);
+    const resolvedColor = await color(resolved);
+
+    await page.goto("/?q=state%3Aconfirmed");
+    const confirmed = page.locator("tbody .badge-confirmed").first();
+    await expect(confirmed).toHaveText("Confirmed");
+
+    // Being tracked is not being done: the pills do not share a colour.
+    expect(await color(confirmed)).not.toBe(resolvedColor);
+  });
+
   test("rejects and restores reports while retaining their details", async ({ page }) => {
     await page.goto("/?q=state%3Atriage+platform%3APaginationOS");
     await openGroups(page);
@@ -1135,7 +1156,8 @@ test.describe("authenticated management UI", () => {
     issue.updated_at = new Date(Date.now() + 20_000).toISOString();
     expect((await deliverWebhook("closed")).status()).toBe(204);
     await page.goto("/issues?q=state%3Aresolved");
-    await expect(page.getByText("Resolved", { exact: true })).toBeVisible();
+    await expect(page.locator(`tr:has(a[href="/issues/${trackedIssueId}"])`)
+      .getByText("Resolved", { exact: true })).toBeVisible();
 
     issue.state = "open";
     issue.updated_at = new Date(Date.now() + 40_000).toISOString();

@@ -1835,6 +1835,8 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
     .expect("count canonical issues");
     assert_eq!(destination_count, 1);
 
+    assert_reports_follow_their_issue(&admin_pool, &admin_database).await;
+
     // The indexer is event-driven. Reports that became ready before it started
     // are found by its startup check, spanning more than one batch; a report that
     // becomes ready afterwards is found because the database announces it, as
@@ -1857,6 +1859,102 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
             .await;
     wait_until_indexed(&admin_pool, &[late_report]).await;
     indexer.abort();
+}
+
+/// The reports of an issue are confirmed while it is open and resolved when it is,
+/// whichever way they are linked or the issue changes.
+async fn assert_reports_follow_their_issue(pool: &sqlx::PgPool, database: &AdminDatabase) {
+    async fn state_of(pool: &sqlx::PgPool, report_id: ReportId) -> String {
+        sqlx::query_scalar("SELECT state FROM reports WHERE id = $1")
+            .bind(report_id)
+            .fetch_one(pool)
+            .await
+            .expect("read report state")
+    }
+    async fn issue_state(pool: &sqlx::PgPool, issue_id: IssueId, state: &str, github: &str) {
+        sqlx::query(
+            "UPDATE issues
+             SET state = $2, github_state = $3,
+                 resolved_at = CASE WHEN $2 = 'resolved' THEN now() END
+             WHERE id = $1",
+        )
+        .bind(issue_id)
+        .bind(state)
+        .bind(github)
+        .execute(pool)
+        .await
+        .expect("change issue state");
+    }
+    async fn automatic_changes(pool: &sqlx::PgPool, report_id: ReportId) -> i64 {
+        sqlx::query_scalar(
+            "SELECT count(*) FROM audit_events
+             WHERE entity_id = $1 AND action = 'report.update_state'
+                AND details->>'source' = 'issue'",
+        )
+        .bind(report_id.0)
+        .fetch_one(pool)
+        .await
+        .expect("count automatic state changes")
+    }
+
+    let issue_id = IssueId::new();
+    sqlx::query(
+        "INSERT INTO issues
+            (id, title, description, github_number, github_url, github_repository)
+         VALUES ($1, 'Follows its reports', '', 9100,
+            'https://github.com/example/example/issues/9100', 'example/example')",
+    )
+    .bind(issue_id)
+    .execute(pool)
+    .await
+    .expect("insert issue");
+    let tracked =
+        insert_stack_report_for_matching(pool, "#0 in Follow0::crash() at liblagom.so", 0).await;
+    let linked_later =
+        insert_stack_report_for_matching(pool, "#0 in Follow1::crash() at liblagom.so", 0).await;
+    sqlx::query("UPDATE reports SET issue_id = $2, state = 'confirmed' WHERE id = $1")
+        .bind(tracked)
+        .bind(issue_id)
+        .execute(pool)
+        .await
+        .expect("link report");
+    assert_eq!(state_of(pool, tracked).await, "confirmed");
+
+    // Resolving the issue resolves its reports, and reopening it undoes that.
+    issue_state(pool, issue_id, "resolved", "closed").await;
+    assert_eq!(state_of(pool, tracked).await, "resolved");
+    assert_eq!(automatic_changes(pool, tracked).await, 1);
+    issue_state(pool, issue_id, "unresolved", "open").await;
+    assert_eq!(state_of(pool, tracked).await, "confirmed");
+    assert_eq!(automatic_changes(pool, tracked).await, 2);
+
+    // A report that is linked, or confirmed again, takes the issue's state.
+    issue_state(pool, issue_id, "resolved", "closed").await;
+    sqlx::query("UPDATE reports SET issue_id = $2, state = 'confirmed' WHERE id = $1")
+        .bind(linked_later)
+        .bind(issue_id)
+        .execute(pool)
+        .await
+        .expect("link report to the resolved issue");
+    assert_eq!(state_of(pool, linked_later).await, "resolved");
+    sqlx::query("UPDATE reports SET state = 'rejected' WHERE id = $1")
+        .bind(tracked)
+        .execute(pool)
+        .await
+        .expect("reject report");
+    database
+        .set_report_state(tracked, ReportState::Confirmed, 999)
+        .await
+        .expect("restore the report");
+    assert_eq!(state_of(pool, tracked).await, "resolved");
+
+    // A report that was taken out of triage by hand is not touched by an issue
+    // that it is not linked to.
+    let unlinked =
+        insert_stack_report_for_matching(pool, "#0 in Follow2::crash() at liblagom.so", 0).await;
+    issue_state(pool, issue_id, "unresolved", "open").await;
+    assert_eq!(state_of(pool, unlinked).await, "triage");
+    assert_eq!(state_of(pool, tracked).await, "confirmed");
 }
 
 fn new_session<'a>(authorized_team: &'a str, token_hash: &'a str) -> NewSession<'a> {

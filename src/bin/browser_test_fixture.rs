@@ -233,6 +233,22 @@ async fn main() -> Result<()> {
     .execute(&mut *transaction)
     .await?;
 
+    let resolved_issue_id = IssueId::new();
+    sqlx::query(
+        "INSERT INTO issues (
+            id, title, description, github_number, github_url, github_repository,
+            state, github_state, resolved_at
+         )
+         VALUES (
+            $1, 'Fixed in a nightly', 'Already fixed.', 5000,
+            'https://github.com/LadybirdBrowser/ladybird/issues/5000',
+            'LadybirdBrowser/ladybird', 'resolved', 'closed', now()
+         )",
+    )
+    .bind(resolved_issue_id)
+    .execute(&mut *transaction)
+    .await?;
+
     let existing_issue_id = IssueId::new();
     sqlx::query(
         "INSERT INTO issues (
@@ -312,6 +328,22 @@ async fn main() -> Result<()> {
     for report in example_reports {
         insert_example_report(&mut transaction, report).await?;
     }
+
+    // Linked to a resolved issue, so the report is resolved too.
+    insert_example_report(
+        &mut transaction,
+        ExampleReport {
+            kind: ReportKind::Crash,
+            client_version: "Resolved fixture",
+            build: "ResolvedOS · arm64 · Release",
+            platform: "ResolvedOS",
+            architecture: "arm64",
+            hours_ago: 5,
+            issue_id: Some(resolved_issue_id),
+            confirmed: false,
+        },
+    )
+    .await?;
 
     // Keep one older, exact-signature report in triage for the issue view.
     // Historical reports are reviewed by a maintainer rather than auto-linked.
