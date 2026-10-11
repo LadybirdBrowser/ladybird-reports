@@ -99,6 +99,39 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
             .expect("reporting role reads the numeric signal definition");
     assert_eq!(signal_number_kind, "number");
 
+    // Exactly the allowlisted functions, none of them through PUBLIC: functions
+    // that later migrations add are closed until someone opens them on purpose.
+    let executable: Vec<String> = sqlx::query_scalar(
+        "SELECT p.proname::text
+         FROM pg_proc AS p
+         JOIN pg_namespace AS n ON n.oid = p.pronamespace
+         WHERE n.nspname = 'public'
+            AND has_function_privilege(current_user, p.oid, 'EXECUTE')
+         ORDER BY 1",
+    )
+    .fetch_all(&reporting_pool)
+    .await
+    .expect("list the functions the reporting role can execute");
+    assert_eq!(
+        executable,
+        [
+            "accept_report",
+            "accept_stack_signature",
+            "acquire_upload_lease",
+            "configure_report_retention",
+            "consume_rate_limit",
+            "find_report_receipt",
+            "issue_challenge",
+            "mark_report_storage_ready",
+            "pending_report_storage",
+            "release_upload_lease",
+            "reporting_runtime_configuration",
+            "source_has_active_rate_limit",
+            "staging_upload_is_referenced",
+            "sweep_expired_ingestion_state",
+        ]
+    );
+
     assert!(
         sqlx::query("SELECT * FROM report_stack_signatures LIMIT 1")
             .execute(&reporting_pool)

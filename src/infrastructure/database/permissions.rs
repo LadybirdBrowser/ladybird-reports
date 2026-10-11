@@ -136,6 +136,10 @@ pub async fn apply_ingest_permissions(admin_pool: &PgPool, ingest_role: &str) ->
     // Every dynamic fragment below is either quoted by PostgreSQL or selected
     // from the fixed function allowlist in this module.
     let statements = [
+        // Functions are executable by everyone when they are created. Without
+        // this, a function added by a later migration would be open to the role
+        // whether or not the allowlist below names it.
+        "REVOKE EXECUTE ON ALL FUNCTIONS IN SCHEMA public FROM PUBLIC".to_owned(),
         format!("REVOKE ALL ON ALL TABLES IN SCHEMA public FROM {quoted_role}"),
         format!("REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM {quoted_role}"),
         format!("REVOKE ALL ON ALL FUNCTIONS IN SCHEMA public FROM {quoted_role}"),
