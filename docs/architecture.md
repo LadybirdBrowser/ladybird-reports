@@ -38,8 +38,7 @@ the session record. A request refreshes the access token shortly before it
 expires, then extends the session expiry and cookie to 24 hours from that
 request. Team membership is rechecked every 10 minutes. These intervals are
 runtime settings: `token_refresh_before_seconds`, `session_lifetime_seconds`,
-and `membership_recheck_seconds`. Sessions created before refresh-token storage
-was introduced keep their original expiry and require a new sign-in.
+and `membership_recheck_seconds`.
 
 Each process keeps a validated runtime configuration in memory. The admin
 process updates the database and emits a PostgreSQL notification in the same
@@ -164,17 +163,13 @@ unreferenced by a report.
 
 ## Retention
 
-New reports and attachments receive an expiry derived from the database-backed runtime
-configuration. The default is ten years. The admin maintenance loop backfills that
-expiry on older records, marks expired records for deletion, removes their attachment
-directories, and then deletes the database rows. It also removes expired sessions and
-OAuth state. Sweep frequency, staging retention, and report retention are editable in
-the management settings and constrained by compiled safety ranges.
+New reports and attachments receive an expiry derived from the runtime configuration
+(ten years by default). The admin maintenance loop marks expired records for deletion,
+removes their attachment directories, and then deletes the database rows. It also
+removes expired sessions, OAuth state, and old audit events. The periods are editable in
+the management settings within compiled safety ranges; see [Operations](operations.md).
 
 ## Operations
 
-Both HTTP processes emit compact, line-oriented text to container output. Every request
-is assigned a UUID that is included in its response and in a completion event with
-the method, path, status, and latency. Domain lifecycle events use stable `event`
-values. Sensitive report values and secrets are excluded so container logs remain
-safe enough for routine diagnostics and forwarding.
+Logging, health checks, caching, and retention are described in
+[Operations](operations.md).

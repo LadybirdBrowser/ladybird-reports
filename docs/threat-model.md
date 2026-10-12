@@ -32,9 +32,9 @@ description. The initial proposal includes selected report context and the raw
 stack trace, while omitting URL fields, attachments, and unknown fields. Maintainers
 review the public draft before creating the issue.
 
-Reports and attachments expire after the configured long retention period. Maintenance
-deletes expired database content and attachment files. Short-lived unauthenticated and
-authentication records are removed after their individual expiry timestamps.
+Reports, attachments, and audit events expire after the configured retention period;
+short-lived unauthenticated and authentication records expire individually.
+Maintenance deletes them along with attachment files.
 
 Secrets are supplied at runtime by the deployment platform. They are absent from
 the source tree, container build arguments, image environment, and logs.

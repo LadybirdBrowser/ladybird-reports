@@ -37,19 +37,17 @@ available for older pages and use ETags with mandatory revalidation.
 
 The public API periodically removes expired challenges, rate buckets, upload
 leases, and abandoned staging directories. The admin service removes expired
-authentication state, reports, attachment metadata, and attachment files.
+authentication state, reports, attachment metadata and files, and audit events.
 
-Sweep frequency, staging retention, and report retention live in the database-backed
-runtime configuration and are editable in the management UI. New reports and
-attachments receive expiry timestamps when accepted. The maintenance loop also
-backfills expiry timestamps for records created before retention was enabled.
+Sweep frequency, staging retention, and the retention of reports, submission sources
+and audit events live in the runtime configuration and are editable in the
+management UI. Records get their expiry when accepted, and the maintenance loop
+backfills it for older records.
 
-The default report retention is ten years. The keyed submission source identifier
-on a report expires after 30 days by default, independently of report retention.
-Both periods are configurable in the management UI. Active source blocks retain
-their own keyed identifier; lifted or expired blocks are removed after the source
-retention period. Review retention settings as operational
-and privacy requirements become clearer.
+Report and audit retention default to ten years. The keyed submission source
+identifier on a report expires after 30 days by default, independently of report
+retention. Active source blocks keep their own identifier; lifted or expired blocks
+are removed after the source retention period.
 
 ## Database statistics
 

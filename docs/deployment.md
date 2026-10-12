@@ -103,8 +103,8 @@ directory outside ephemeral container storage; for example:
 
 ## Image delivery
 
-GitHub Actions runs formatting, Clippy, Rust tests, and browser tests before it
-builds an image. A successful push to `master` publishes immutable commit and
+After the checks in [Development](development.md#continuous-integration) pass, a
+push to `master` publishes immutable commit and
 moving `master` tags to GitHub Container Registry. The final workflow job sends
 signed deployment events to the configured deployment targets. The container
 platform pulls the published image and does not build application source.

@@ -97,11 +97,10 @@ incoming-webhook URL to enable delivery, or to `null` to pause it without discar
 queued notifications. The remaining values control queue polling, request timeouts,
 retry delays, and the native-stack excerpt included in each message.
 
-The `audit` object controls audit log behavior. `denied_sign_in_window_seconds`
-(default 600) limits how often one GitHub account that is denied at sign-in is
-recorded; set it to 0 to record every denial. `retention_days` (default
-3650, as for reports; 30 to 36500) is how long audit events are kept. The maintenance
-sweep removes older ones, including the events of reports that have been purged.
+The `audit` object controls the audit log. `denied_sign_in_window_seconds`
+(default 600) limits how often one denied GitHub account is recorded; 0 records every
+denial. `retention_days` (default 3650; 30 to 36500) is how long events are kept,
+including those of purged reports.
 
 `trusted_proxies` lists the proxies whose forwarding headers identify the original
 client address. Each entry is a CIDR range or a DNS name. The public API resolves
@@ -126,8 +125,7 @@ Configuration events record changed setting paths without storing their values
 again. Anonymous report submission events have no maintainer actor.
 
 `session.denied` records a GitHub account that completed sign-in but is not on
-the authorization team. The account is not a maintainer, so its login is shown in
-the actor column and its GitHub ID is in the details. Repeated denials from the
-same account within `audit.denied_sign_in_window_seconds` (default 600) are
-recorded once; set it to 0 to record every denial. GitHub outages and rate limits
-during sign-in are not recorded as denials.
+the authorization team. Its login is shown in the actor column and its GitHub ID is
+in the details. Repeated denials are limited by `audit.denied_sign_in_window_seconds`
+(see Runtime settings). GitHub outages and rate limits during sign-in are not
+recorded as denials.
