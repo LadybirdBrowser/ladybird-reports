@@ -170,8 +170,12 @@ test.describe("authenticated management UI", () => {
       "Web compatibility: WebContent::ConnectionFromClient::debug_request",
     );
     await expect(page.locator("tbody")).not.toContainText(reportId);
-    await expect(reportLink.locator("xpath=ancestor::tr"))
-      .toContainText(/\d{2} [A-Z][a-z]{2} \d{4}, \d{2}:\d{2} UTC/);
+    const received = reportLink.locator("xpath=ancestor::tr").locator("time");
+    await expect(received).toHaveText("now");
+    await expect(received).toHaveAttribute(
+      "title",
+      /\d{2} [A-Z][a-z]{2} \d{4}, \d{2}:\d{2} UTC/,
+    );
 
     await reportLink.click();
     await expect(page.getByRole("heading", {

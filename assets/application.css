@@ -1370,6 +1370,12 @@ tbody tr:hover {
     content: "";
 }
 
+.clickable-report-row time {
+    /* Above the row link, so its tooltip shows. */
+    position: relative;
+    z-index: 1;
+}
+
 .clickable-report-row form {
     position: relative;
     z-index: 1;

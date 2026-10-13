@@ -784,6 +784,58 @@ document.addEventListener("click", async (event) => {
     }
 });
 
+// Timestamps from the server are full dates in <time> elements. Recent ones are
+// shown relative to now, with the full date on hover.
+function relativeTime(milliseconds) {
+    const minutes = Math.floor(milliseconds / 60000);
+    if (minutes < 1) {
+        return "now";
+    }
+    if (minutes < 60) {
+        return formatCount(minutes, "minute ago", "minutes ago");
+    }
+    return formatCount(Math.floor(minutes / 60), "hour ago", "hours ago");
+}
+
+function refreshTimestamps(root = document) {
+    for (const element of root.querySelectorAll("time[datetime]")) {
+        element.dataset.full ??= element.textContent;
+        const age = Date.now() - Date.parse(element.getAttribute("datetime"));
+        const recent = age <= 23 * 3600000 && age > -60000;
+        element.textContent = recent ? relativeTime(Math.max(age, 0)) : element.dataset.full;
+        if (recent) {
+            element.title = element.dataset.full;
+        } else {
+            element.removeAttribute("title");
+        }
+    }
+}
+
+function initializeTimestamps() {
+    // A timestamp sits above its row's link to show a tooltip, so pass clicks on.
+    document.addEventListener("click", (event) => {
+        if (event.target instanceof Element) {
+            event.target.closest(".clickable-report-row time")
+                ?.closest("tr")
+                ?.querySelector(".row-link")
+                ?.click();
+        }
+    });
+    refreshTimestamps();
+    setInterval(refreshTimestamps, 30000);
+    // Lists are replaced and extended in place.
+    new MutationObserver((records) => {
+        for (const record of records) {
+            for (const node of record.addedNodes) {
+                if (node instanceof Element) {
+                    refreshTimestamps(node);
+                }
+            }
+        }
+    }).observe(document.body, { childList: true, subtree: true });
+}
+
+initializeTimestamps();
 initializeEntitySelectors();
 initializeSelectControls();
 initializeFieldOrdering();

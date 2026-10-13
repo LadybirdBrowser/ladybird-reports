@@ -18,8 +18,10 @@ use crate::{
 };
 
 use super::super::{
-    AdminState, TemplateResponse, authentication::Navigation, session::Session,
-    templates::display_timestamp,
+    AdminState, TemplateResponse,
+    authentication::Navigation,
+    session::Session,
+    templates::{Timestamp, display_timestamp},
 };
 
 #[derive(Template)]
@@ -55,7 +57,7 @@ pub struct EventView {
     target_label: Option<String>,
     target_url: Option<String>,
     details: String,
-    created_at: String,
+    created_at: Timestamp,
 }
 
 pub async fn show(

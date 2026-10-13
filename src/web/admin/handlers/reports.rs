@@ -25,7 +25,7 @@ use super::super::{
     AdminState, TemplateResponse,
     authentication::Navigation,
     session::{CsrfForm, Session},
-    templates::{HistoryEvent, display_timestamp},
+    templates::{HistoryEvent, Timestamp, display_timestamp},
 };
 
 #[derive(Deserialize)]
@@ -62,7 +62,7 @@ pub struct ReportRow {
     pub(super) metadata: String,
     state_label: &'static str,
     state_tone: &'static str,
-    pub(super) received_at: String,
+    pub(super) received_at: Timestamp,
     pub(super) signature: Option<String>,
 }
 
@@ -169,6 +169,8 @@ pub enum FieldLink {
     UntrustedUrl,
     /// The commit in the upstream repository, built here from a validated ID.
     Commit(String),
+    /// A time shown like every other timestamp.
+    Time(DateTime<Utc>),
 }
 
 pub struct FieldView {
@@ -286,7 +288,7 @@ pub async fn search_options(
                 identifier: report.id.to_string(),
                 badge,
                 badge_tone,
-                footnote: format!("Received {}", display_timestamp(report.created_at)),
+                footnote: format!("Received {}", display_timestamp(report.created_at).text()),
                 group: None,
             }
         })
@@ -470,12 +472,12 @@ pub async fn show(
 
     overview.push(OverviewField {
         label: "Submitted",
-        value: display_timestamp(details.report.created_at),
+        value: display_timestamp(details.report.created_at).text(),
         filter_url: Some(submitted_date_filter_url(
             details.report.created_at.date_naive(),
         )),
         full_width: true,
-        link: FieldLink::None,
+        link: FieldLink::Time(details.report.created_at),
     });
 
     // Older clients only supplied the combined build envelope. Put that long

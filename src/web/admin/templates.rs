@@ -24,9 +24,33 @@ where
     }
 }
 
-/// The timestamp format used throughout the admin UI.
-pub fn display_timestamp(timestamp: DateTime<Utc>) -> String {
-    timestamp.format("%d %b %Y, %H:%M UTC").to_string()
+/// A point in time, rendered as a `<time>` element. The text is the full timestamp;
+/// `application.js` swaps it for a relative one while it is recent.
+#[derive(Clone, Copy)]
+pub struct Timestamp(pub DateTime<Utc>);
+
+impl Timestamp {
+    /// The full timestamp as plain text.
+    pub fn text(self) -> String {
+        self.0.format("%d %b %Y, %H:%M UTC").to_string()
+    }
+}
+
+impl std::fmt::Display for Timestamp {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            formatter,
+            r#"<time datetime="{}">{}</time>"#,
+            self.0.to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+            self.text()
+        )
+    }
+}
+
+impl askama::filters::HtmlSafe for Timestamp {}
+
+pub fn display_timestamp(timestamp: DateTime<Utc>) -> Timestamp {
+    Timestamp(timestamp)
 }
 
 /// An audit event as listed in the activity section of a report or issue page.
@@ -34,7 +58,7 @@ pub struct HistoryEvent {
     pub action: String,
     pub actor: String,
     pub details: String,
-    pub created_at: DateTime<Utc>,
+    pub created_at: Timestamp,
 }
 
 impl From<AuditEvent> for HistoryEvent {
@@ -43,7 +67,7 @@ impl From<AuditEvent> for HistoryEvent {
             action: event.action,
             actor: event.actor_login.unwrap_or_else(|| "system".into()),
             details: event.details.to_string(),
-            created_at: event.created_at,
+            created_at: Timestamp(event.created_at),
         }
     }
 }
