@@ -2658,6 +2658,10 @@ pre {
     width: 4.5rem;
     height: 4.5rem;
     margin: 0 auto 1.35rem;
+.setting-help-entry .eyebrow {
+    overflow-wrap: anywhere;
+}
+
     border: 1px solid color-mix(in srgb, var(--brand) 18%, var(--border));
     border-radius: 1.3rem;
     background:
