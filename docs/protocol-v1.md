@@ -1,11 +1,10 @@
 # Report protocol version 1
 
-Version 1 accepts diagnostic reports as `multipart/form-data`. The report `kind` is
-either `crash` or `web_compat`; both use the same flexible field and attachment model.
+Version 1 accepts diagnostic reports as `multipart/form-data`. The report `kind` is either `crash` or `web_compat`; both
+use the same flexible field and attachment model.
 
-The first part must be named `manifest` and contain UTF-8 JSON. Its exact uploaded
-bytes are hashed with SHA-256. JSON is not canonicalized. The remaining parts are
-named with the attachment `id` from the manifest.
+The first part must be named `manifest` and contain UTF-8 JSON. Its exact uploaded bytes are hashed with SHA-256. JSON
+is not canonicalized. The remaining parts are named with the attachment `id` from the manifest.
 
 ## Manifest
 
@@ -26,17 +25,15 @@ named with the attachment `id` from the manifest.
 }
 ```
 
-The supported field value types are `text`, `multiline`, `stack_trace`, `url`,
-`commit_id`, `number`, `boolean`, and `attachment`. `stack_trace` accepts the same text length as
-`multiline` and preserves the submitted text exactly. The server also interprets
-it for display, similarity search, and exact signature matching. `url` and
-`commit_id` carry short text that is not otherwise validated, so a build without
-git information may send `unknown`. The management interface shows a `url`
-behind a warning before it can be opened, and links a `commit_id` to the commit in
-the configured GitHub repository only when it is 7 to 64 hexadecimal characters.
-Fields defined as `url` or `commit_id` also accept plain `text` values. Field keys are extensible. Unknown keys receive generic validation
-limits and are identified as unknown in the management interface. Unknown envelope
-members are rejected; envelope changes require a new protocol version.
+The supported field value types are `text`, `multiline`, `stack_trace`, `url`, `commit_id`, `number`, `boolean`, and
+`attachment`. `stack_trace` accepts the same text length as `multiline` and preserves the submitted text exactly. The
+server also interprets it for display, similarity search, and exact signature matching. `url` and `commit_id` carry
+short text that is not otherwise validated, so a build without git information may send `unknown`. The management
+interface shows a `url` behind a warning before it can be opened, and links a `commit_id` to the commit in the
+configured GitHub repository only when it is 7 to 64 hexadecimal characters. Fields defined as `url` or `commit_id` also
+accept plain `text` values. Field keys are extensible. Unknown keys receive generic validation limits and are identified
+as unknown in the management interface. Unknown envelope members are rejected; envelope changes require a new protocol
+version.
 
 The initial client uses these conventional diagnostic fields:
 
@@ -56,35 +53,28 @@ The initial client uses these conventional diagnostic fields:
 | `hostname` | `text` | Optional website hostname. |
 | `url` | `url` | Optional complete page URL. |
 
-The registry can grow independently of the protocol. A newer client may submit
-other valid keys, which remain visible as unknown fields until maintainers add a
-definition.
-The `build` envelope member remains for protocol compatibility. Clients can put a
-short build identifier there and submit its detailed components as diagnostic
-fields; Ladybird uses the build configuration.
+The registry can grow independently of the protocol. A newer client may submit other valid keys, which remain visible as
+unknown fields until maintainers add a definition. The `build` envelope member remains for protocol compatibility.
+Clients can put a short build identifier there and submit its detailed components as diagnostic fields; Ladybird uses
+the build configuration.
 
-Ladybird crash clients also attach the complete saved diagnostic text as
-`crash-diagnostics.txt` with media type `text/plain`. The separate `stack`
-field remains available for display and manual matching.
+Ladybird crash clients also attach the complete saved diagnostic text as `crash-diagnostics.txt` with media type
+`text/plain`. The separate `stack` field remains available for display and manual matching.
 
-A client generates a fresh `submission_id` when it first creates a report and reuses
-that value when retrying the same submission. It may be any UUID version, but must
-use the RFC 9562 variant, and it is unique across all reports: a retry with the same
-manifest receives the original receipt, and different manifests under one
-`submission_id` are rejected.
+A client generates a fresh `submission_id` when it first creates a report and reuses that value when retrying the same
+submission. It may be any UUID version, but must use the RFC 9562 variant, and it is unique across all reports: a retry
+with the same manifest receives the original receipt, and different manifests under one `submission_id` are rejected.
 
-An attachment `id` only names the attachment within its submission: it is the name
-of the attachment's multipart part and the value of any `attachment` field that
-refers to it. It consists of 1 to 64 ASCII letters, digits, hyphens or underscores,
-such as `diagnostics`, and is unique within the manifest.
+An attachment `id` only names the attachment within its submission: it is the name of the attachment's multipart part
+and the value of any `attachment` field that refers to it. It consists of 1 to 64 ASCII letters, digits, hyphens or
+underscores, such as `diagnostics`, and is unique within the manifest.
 
 Challenge IDs and report receipt IDs are generated by the server and are UUIDv7.
 
 ## Proof of work
 
-The client requests a challenge with the lowercase hexadecimal SHA-256 digest of the
-exact manifest bytes. A challenge contains a random identifier, manifest digest,
-expiry, and expected work factor, authenticated by the server.
+The client requests a challenge with the lowercase hexadecimal SHA-256 digest of the exact manifest bytes. A challenge
+contains a random identifier, manifest digest, expiry, and expected work factor, authenticated by the server.
 
 For each candidate nonce, the client computes:
 
@@ -93,10 +83,9 @@ seed = SHA-256(UTF-8 challenge token)
 candidate = SHA-256(seed || nonce encoded as unsigned 64-bit little endian)
 ```
 
-Interpret the first eight candidate bytes as an unsigned big-endian integer. A proof
-is valid when that integer is at most `floor(UINT64_MAX / expected_work)`.
+Interpret the first eight candidate bytes as an unsigned big-endian integer. A proof is valid when that integer is at
+most `floor(UINT64_MAX / expected_work)`.
 
-The initial factor of `5,244,236` uses the median of five Rust 1.88 release runs on
-an Apple M4 Pro on 2026-09-15: 8,740,394 attempts per second. Its expected solve time
-on that machine is approximately 600 ms. Individual solve times follow a geometric
-distribution and therefore vary.
+The initial factor of `5,244,236` uses the median of five Rust 1.88 release runs on an Apple M4 Pro on 2026-09-15:
+8,740,394 attempts per second. Its expected solve time on that machine is approximately 600 ms. Individual solve times
+follow a geometric distribution and therefore vary.

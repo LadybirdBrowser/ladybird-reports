@@ -1,15 +1,12 @@
 # Ladybird Reports
 
-Ladybird Reports accepts anonymous diagnostic reports and provides a private
-interface for triage and issue management. It is designed to support different
-report types, client versions, typed fields, and PNG attachments.
+Ladybird Reports accepts anonymous diagnostic reports and provides a private interface for triage and issue management.
+It is designed to support different report types, client versions, typed fields, and PNG attachments.
 
 The application runs as two services from one container image:
 
-- `ladybird-reports-public-api` accepts untrusted submissions with a restricted
-  PostgreSQL role.
-- `ladybird-reports-admin` migrates the database and serves the management UI
-  with the administrative PostgreSQL role.
+- `ladybird-reports-public-api` accepts untrusted submissions with a restricted PostgreSQL role.
+- `ladybird-reports-admin` migrates the database and serves the management UI with the administrative PostgreSQL role.
 
 Run the complete local test suite with:
 

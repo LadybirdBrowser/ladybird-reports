@@ -10,10 +10,9 @@ Run:
 ./scripts/test-local.sh
 ```
 
-The script installs locked Node dependencies and Chromium, creates an isolated
-temporary PostgreSQL cluster on a free loopback port, runs Rust unit and integration
-tests, launches the real admin binary, and runs Playwright through the management
-workflow. It stops and deletes the temporary cluster when finished.
+The script installs locked Node dependencies and Chromium, creates an isolated temporary PostgreSQL cluster on a free
+loopback port, runs Rust unit and integration tests, launches the real admin binary, and runs Playwright through the
+management workflow. It stops and deletes the temporary cluster when finished.
 
 ## Existing test database
 
@@ -28,8 +27,8 @@ GITHUB_CLIENT_SECRET=test \
 npm run test:browser
 ```
 
-The browser fixture truncates application tables. Never point
-`TEST_ADMIN_DATABASE_URL` at a database containing data you need to keep.
+The browser fixture truncates application tables. Never point `TEST_ADMIN_DATABASE_URL` at a database containing data
+you need to keep.
 
 ## Continuous integration
 

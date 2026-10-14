@@ -6,170 +6,133 @@ Ladybird Reports is distributed as one image with three executable modes:
 - `admin` serves the authenticated management interface.
 - `migrate` applies schema migrations explicitly; normal admin startup also migrates.
 
-The public and admin processes are separate deployments. The public process only
-receives the restricted ingestion database credential and proof-of-work key. The
-admin process receives the full database credential and GitHub secrets. Keeping
-both credentials out of one address space is a deliberate security boundary.
+The public and admin processes are separate deployments. The public process only receives the restricted ingestion
+database credential and proof-of-work key. The admin process receives the full database credential and GitHub secrets.
+Keeping both credentials out of one address space is a deliberate security boundary.
 
 ## Layers
 
-The domain layer contains validated values and state transitions. It has no HTTP,
-database, template, or filesystem dependencies beyond serialization types.
+The domain layer contains validated values and state transitions. It has no HTTP, database, template, or filesystem
+dependencies beyond serialization types.
 
-The application layer coordinates use cases such as accepting a report or assigning
-reports to an issue. It depends on narrow infrastructure interfaces.
+The application layer coordinates use cases such as accepting a report or assigning reports to an issue. It depends on
+narrow infrastructure interfaces.
 
-The infrastructure layer implements PostgreSQL access, attachment storage, and the
-GitHub API. SQL and filesystem recovery behavior live here.
+The infrastructure layer implements PostgreSQL access, attachment storage, and the GitHub API. SQL and filesystem
+recovery behavior live here.
 
-The admin service authenticates with GitHub App user access tokens. The app requests
-only read-only organization membership and read-write issue permissions.
-Maintainer actions are limited by both the app's permissions and the signed-in
-user's permissions. Duplicate lookups use a read-only installation token instead.
-The login flow separately verifies active membership in the
-configured authorization team.
-The team is stored as `github_authorization_team` in the database-backed runtime
-configuration, using an `organization/team-slug` value. Its initial value is
-`LadybirdBrowser/maintainers`. Updating the team revokes current sessions; users
-must sign in again and pass the new team's membership check.
+The admin service authenticates with GitHub App user access tokens. The app requests only read-only organization
+membership and read-write issue permissions. Maintainer actions are limited by both the app's permissions and the
+signed-in user's permissions. Duplicate lookups use a read-only installation token instead. The login flow separately
+verifies active membership in the configured authorization team. The team is stored as `github_authorization_team` in
+the database-backed runtime configuration, using an `organization/team-slug` value. Its initial value is
+`LadybirdBrowser/maintainers`. Updating the team revokes current sessions; users must sign in again and pass the new
+team's membership check.
 
-The app encrypts both the GitHub access token and its rotating refresh token in
-the session record. A request refreshes the access token shortly before it
-expires, then extends the session expiry and cookie to 24 hours from that
-request. Team membership is rechecked every 10 minutes. These intervals are
-runtime settings: `token_refresh_before_seconds`, `session_lifetime_seconds`,
-and `membership_recheck_seconds`.
+The app encrypts both the GitHub access token and its rotating refresh token in the session record. A request refreshes
+the access token shortly before it expires, then extends the session expiry and cookie to 24 hours from that request.
+Team membership is rechecked every 10 minutes. These intervals are runtime settings: `token_refresh_before_seconds`,
+`session_lifetime_seconds`, and `membership_recheck_seconds`.
 
-Each process keeps a validated runtime configuration in memory. The admin
-process updates the database and emits a PostgreSQL notification in the same
-transaction; both services reload after receiving it. They also reload once a
-minute and after reconnecting, because notifications are not durable. The
-admin process updates its own cache immediately after a successful save.
+Each process keeps a validated runtime configuration in memory. The admin process updates the database and emits a
+PostgreSQL notification in the same transaction; both services reload after receiving it. They also reload once a minute
+and after reconnecting, because notifications are not durable. The admin process updates its own cache immediately after
+a successful save.
 
-GitHub is authoritative for an issue's title, description, and open or closed
-state. The admin service accepts signed GitHub App issue webhooks and refreshes
-an issue from GitHub when
-it is opened in the management UI. Reports owns assignment and visibility:
-closing or deleting a GitHub issue never removes its linked reports. A missing
-or moved GitHub issue stays visible as needing attention until a maintainer
-links a replacement. Old GitHub links remain searchable through aliases.
-When a tracked GitHub issue closes as a duplicate, the webhook queues a job.
-The admin worker uses a short-lived installation token to read GitHub's
-`duplicateOf` relationship, creates the target Reports issue if needed, and
-moves the linked reports in one database transaction. The source issue remains
-resolved as history. Failed lookups retry without delaying webhook delivery.
+GitHub is authoritative for an issue's title, description, and open or closed state. The admin service accepts signed
+GitHub App issue webhooks and refreshes an issue from GitHub when it is opened in the management UI. Reports owns
+assignment and visibility: closing or deleting a GitHub issue never removes its linked reports. A missing or moved
+GitHub issue stays visible as needing attention until a maintainer links a replacement. Old GitHub links remain
+searchable through aliases. When a tracked GitHub issue closes as a duplicate, the webhook queues a job. The admin
+worker uses a short-lived installation token to read GitHub's `duplicateOf` relationship, creates the target Reports
+issue if needed, and moves the linked reports in one database transaction. The source issue remains resolved as history.
+Failed lookups retry without delaying webhook delivery.
 
-The web layer translates requests into application calls. Public handlers return
-JSON. Admin handlers construct typed view models rendered by Askama templates.
+The web layer translates requests into application calls. Public handlers return JSON. Admin handlers construct typed
+view models rendered by Askama templates.
 
 ## Report titles
 
-Report titles are generated when reports are read, including for older reports. A
-crash with a source location in its failure reason is titled with that location,
-followed by the failed verification's condition when it is a short plain
-expression. Otherwise the
-first parsed stack frame supplies a shortened function name when possible;
-otherwise the title uses report type and available process, platform, and signal
-name, or the version when there is no process or platform. The original stack text
-is unchanged. The same generated title is suggested when creating a GitHub issue.
+Report titles are generated when reports are read, including for older reports. A crash with a source location in its
+failure reason is titled with that location, followed by the failed verification's condition when it is a short plain
+expression. Otherwise the first parsed stack frame supplies a shortened function name when possible; otherwise the title
+uses report type and available process, platform, and signal name, or the version when there is no process or platform.
+The original stack text is unchanged. The same generated title is suggested when creating a GitHub issue.
 
 ## Stack signatures
 
-The public API stores stack trace text exactly as submitted in `report_fields`.
-Older `stack` fields tagged `multiline` remain valid; newer clients can use the
-`stack_trace` type. A report has one signature, from its `stack` field or else its
-first stack trace by key. The public process derives it while accepting the report;
-the admin process parses either form for a frame table, matches new signatures
-against issues, and signs stack traces that arrived without one. The signature is a
-versioned fingerprint of the report kind, the process, the signal name, the
-failure reason without its numbers and line, and the first five function names in the
-stack. Function names are bare, so symbol formats and inlining do not matter, and the
-plumbing that ends a process (abort, panic and signal frames, event loop frames) is
-left out. A stack without symbols is told apart by its build ID and addresses, and a
-failure reason alone can sign a stack with nothing in it. Paths, URLs, and source IPs
-do not enter the signature. Unrecognized lines remain visible and the original text
-is always available in the report view.
+The public API stores stack trace text exactly as submitted in `report_fields`. Older `stack` fields tagged `multiline`
+remain valid; newer clients can use the `stack_trace` type. A report has one signature, from its `stack` field or else
+its first stack trace by key. The public process derives it while accepting the report; the admin process parses either
+form for a frame table, matches new signatures against issues, and signs stack traces that arrived without one. The
+signature is a versioned fingerprint of the report kind, the process, the signal name, the failure reason without its
+numbers and line, and the first five function names in the stack. Function names are bare, so symbol formats and
+inlining do not matter, and the plumbing that ends a process (abort, panic and signal frames, event loop frames) is left
+out. A stack without symbols is told apart by its build ID and addresses, and a failure reason alone can sign a stack
+with nothing in it. Paths, URLs, and source IPs do not enter the signature. Unrecognized lines remain visible and the
+original text is always available in the report view.
 
-An admin background job indexes existing and new reports in bounded batches.
-It waits for announcements instead of polling. PostgreSQL notifies the
-`ladybird_reports_stack_index` channel when a report becomes ready and when a
-field definition changes, because defining a field as a stack trace gives
-existing fields a signature to compute. On startup the job subscribes first, then
-scans for any trace without a current signature, so a report that became ready
-while the service was down is found. It repeats that scan if its connection is
-lost and re-established, or if an indexing run fails. When the algorithm version
-changes, the startup scan rebuilds older signatures from their preserved source
-text. The signature table is owned by the admin database role
-and cascades away with its report at retention time. Similarity candidates
-are shown to maintainers on an unassigned report. A new report with an exact
-signature match to one active, linked issue is assigned to that issue by the
-background job during its first index. Historical and reindexed reports are not
-assigned automatically. Conflicting issue matches stay in triage for a maintainer to
-resolve. Similarity without an exact signature match never assigns a report.
+An admin background job indexes existing and new reports in bounded batches. It waits for announcements instead of
+polling. PostgreSQL notifies the `ladybird_reports_stack_index` channel when a report becomes ready and when a field
+definition changes, because defining a field as a stack trace gives existing fields a signature to compute. On startup
+the job subscribes first, then scans for any trace without a current signature, so a report that became ready while the
+service was down is found. It repeats that scan if its connection is lost and re-established, or if an indexing run
+fails. When the algorithm version changes, the startup scan rebuilds older signatures from their preserved source text.
+The signature table is owned by the admin database role and cascades away with its report at retention time. Similarity
+candidates are shown to maintainers on an unassigned report. A new report with an exact signature match to one active,
+linked issue is assigned to that issue by the background job during its first index. Historical and reindexed reports
+are not assigned automatically. Conflicting issue matches stay in triage for a maintainer to resolve. Similarity without
+an exact signature match never assigns a report.
 
 ## Discord notifications
 
-When a report becomes ready, a database trigger adds it to a transactional outbox in
-the same transaction. The public request finishes without waiting for signature
-indexing or Discord. The admin process indexes stacks first and removes an outbox
-entry if an exact signature links the report to an issue, or if an unlinked report
-with the same signature arrived in the preceding five minutes. Reports with
-conflicting issue matches still notify maintainers. The admin process only claims
-stack reports after indexing, then claims the oldest eligible notification and
-sends a bounded report summary through the configured Discord webhook. The summary
-includes an excerpt of the native stack when one is available, with each run of
-consecutive frames that have no symbol shown as one line with its frame range, and
-links to the full report in the management interface. The build's commit, when it
-is a plain commit ID, is shown shortened and linked to that commit in the
-configured GitHub repository. The page URL a report came from, when it has one, is
-included without its query and fragment, as plain text in a code quote, so Discord
-does not make an address chosen by an anonymous user clickable. Source addresses
-and other report fields are not copied into the message.
+When a report becomes ready, a database trigger adds it to a transactional outbox in the same transaction. The public
+request finishes without waiting for signature indexing or Discord. The admin process indexes stacks first and removes
+an outbox entry if an exact signature links the report to an issue, or if an unlinked report with the same signature
+arrived in the preceding five minutes. Reports with conflicting issue matches still notify maintainers. The admin
+process only claims stack reports after indexing, then claims the oldest eligible notification and sends a bounded
+report summary through the configured Discord webhook. The summary includes an excerpt of the native stack when one is
+available, with each run of consecutive frames that have no symbol shown as one line with its frame range, and links to
+the full report in the management interface. The build's commit, when it is a plain commit ID, is shown shortened and
+linked to that commit in the configured GitHub repository. The page URL a report came from, when it has one, is included
+without its query and fragment, as plain text in a code quote, so Discord does not make an address chosen by an
+anonymous user clickable. Source addresses and other report fields are not copied into the message.
 
-Only one delivery may be in progress across all admin replicas. An unsuccessful
-request pauses the complete queue and retries its oldest entry with exponential
-backoff. Discord rate-limit delays are honored. A notification is marked delivered
-only after Discord confirms the message; a process or database failure after that
-confirmation can therefore produce a duplicate during recovery. This at-least-once
-behavior avoids silently losing a notification.
+Only one delivery may be in progress across all admin replicas. An unsuccessful request pauses the complete queue and
+retries its oldest entry with exponential backoff. Discord rate-limit delays are honored. A notification is marked
+delivered only after Discord confirms the message; a process or database failure after that confirmation can therefore
+produce a duplicate during recovery. This at-least-once behavior avoids silently losing a notification.
 
-The webhook URL lives in the database-backed runtime configuration. The reporting
-database role reads a projection that excludes Discord configuration, so the public
-API process cannot retrieve the credential.
+The webhook URL lives in the database-backed runtime configuration. The reporting database role reads a projection that
+excludes Discord configuration, so the public API process cannot retrieve the credential.
 
 ## Identifiers
 
-The server generates report, challenge, upload, issue, attachment, GitHub-attempt,
-and request identifiers, all UUIDv7. Rust types reject other UUID versions at input
-boundaries, and database checks enforce the same rule for privileged writes.
+The server generates report, challenge, upload, issue, attachment, GitHub-attempt, and request identifiers, all UUIDv7.
+Rust types reject other UUID versions at input boundaries, and database checks enforce the same rule for privileged
+writes.
 
-Clients generate submission identifiers, which may be any UUID version, and name
-their attachments with short references that are only unique within a submission.
-Staged and stored attachment files are named after the server's attachment
+Clients generate submission identifiers, which may be any UUID version, and name their attachments with short references
+that are only unique within a submission. Staged and stored attachment files are named after the server's attachment
 identifier, never after client input.
 
 ## Attachments
 
-Attachments are written beneath `staging/<upload-id>` and validated before database
-acceptance. The database transaction creates a report in `pending_files` and consumes
-the challenge. The application then atomically renames the staging directory to
-`reports/<report-id>` and marks the report `ready`.
+Attachments are written beneath `staging/<upload-id>` and validated before database acceptance. The database transaction
+creates a report in `pending_files` and consumes the challenge. The application then atomically renames the staging
+directory to `reports/<report-id>` and marks the report `ready`.
 
-The public API can recover an interrupted finalization. Admin pages only expose ready
-reports. Dropping an interrupted request schedules immediate staging cleanup. A
-periodic public API sweep is the durable fallback: it removes expired challenges,
-rate buckets, upload leases, and staging directories that are both old enough and
-unreferenced by a report.
+The public API can recover an interrupted finalization. Admin pages only expose ready reports. Dropping an interrupted
+request schedules immediate staging cleanup. A periodic public API sweep is the durable fallback: it removes expired
+challenges, rate buckets, upload leases, and staging directories that are both old enough and unreferenced by a report.
 
 ## Retention
 
-New reports and attachments receive an expiry derived from the runtime configuration
-(ten years by default). The admin maintenance loop marks expired records for deletion,
-removes their attachment directories, and then deletes the database rows. It also
-removes expired sessions, OAuth state, and old audit events. The periods are editable in
-the management settings within compiled safety ranges; see [Operations](operations.md).
+New reports and attachments receive an expiry derived from the runtime configuration (ten years by default). The admin
+maintenance loop marks expired records for deletion, removes their attachment directories, and then deletes the database
+rows. It also removes expired sessions, OAuth state, and old audit events. The periods are editable in the management
+settings within compiled safety ranges; see [Operations](operations.md).
 
 ## Operations
 
-Logging, health checks, caching, and retention are described in
-[Operations](operations.md).
+Logging, health checks, caching, and retention are described in [Operations](operations.md).
