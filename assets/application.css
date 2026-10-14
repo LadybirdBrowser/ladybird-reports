@@ -1257,9 +1257,9 @@ button:active,
 
 .event-details {
     display: block;
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
-}
     cursor: pointer;
 }
 
@@ -1268,6 +1268,7 @@ button:active,
     overflow: visible;
     white-space: normal;
     overflow-wrap: anywhere;
+}
 
 /* Reports that share a stack signature, folded under the most recent one. */
 .report-group-toggle {
@@ -2147,6 +2148,27 @@ tbody tr:hover {
     height: 1rem;
 }
 
+:is(.overview-value, .report-field-value, .report-field) .button-group {
+    opacity: 0;
+    pointer-events: none;
+}
+
+/* The buttons of a value show while the mouse is over it, while it has focus, or
+   after a tap (reports.js). The stack trace always keeps its copy button. */
+@media (hover: hover) {
+    :is(.overview-value, .report-field-value, .report-field):hover .button-group {
+        opacity: 1;
+        pointer-events: auto;
+    }
+}
+
+:is(.overview-value, .report-field-value, .report-field):focus-within .button-group,
+:is(.overview-value, .report-field-value, .report-field)[data-actions-shown] .button-group,
+.stack-header-actions .button-group {
+    opacity: 1;
+    pointer-events: auto;
+}
+
 /* Adjacent buttons that act on the same thing share their borders. */
 .button-group {
     display: inline-flex;
@@ -2434,11 +2456,14 @@ pre {
     list-style: none;
 }
 
+/* Action, time and actor, then as much of the details as fits, on one line. */
 .history li {
     position: relative;
+    display: flex;
     margin-left: 0.35rem;
-    padding: 0 0 1rem 1.4rem;
-    border-left: 1px solid var(--border-strong);
+    padding: 0 0 0.9rem 1.4rem;
+    align-items: baseline;
+    gap: 0.2rem 0.75rem;
     color: var(--ink-soft);
     font-size: 0.84rem;
 }
@@ -2451,8 +2476,13 @@ pre {
 .history li::before,
 .history li::after {
     position: absolute;
-    top: 0.35rem;
     left: 0;
+    content: "";
+    transform: translateX(-50%);
+}
+
+.history li::before {
+    top: 0.3rem;
     width: 0.55rem;
     height: 0.55rem;
     border: 2px solid var(--surface);
@@ -2485,12 +2515,6 @@ pre {
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
     font-size: 0.8rem;
     line-height: 1.55;
-    content: "";
-    transform: translateX(-50%);
-}
-
-.history li::before {
-    top: 0.3rem;
     tab-size: 4;
 }
 
@@ -2634,6 +2658,10 @@ pre {
     margin: 0;
 }
 
+.setting-help-entry .eyebrow {
+    overflow-wrap: anywhere;
+}
+
 .setting-help-entry h3 {
     margin-bottom: 0.55rem;
     font-size: 1.15rem;
@@ -2686,10 +2714,6 @@ pre {
     width: 4.5rem;
     height: 4.5rem;
     margin: 0 auto 1.35rem;
-.setting-help-entry .eyebrow {
-    overflow-wrap: anywhere;
-}
-
     border: 1px solid color-mix(in srgb, var(--brand) 18%, var(--border));
     border-radius: 1.3rem;
     background:

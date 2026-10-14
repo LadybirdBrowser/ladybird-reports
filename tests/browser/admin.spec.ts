@@ -6,6 +6,14 @@ const adminUrl = "http://127.0.0.1:3100";
 const fakeGithub = "http://127.0.0.1:3101";
 const reportId = "01a0a536-01cd-7ac7-a3cf-ae6a2d5030e5";
 
+// Value buttons only show while their value is hovered, so move the mouse onto the value first.
+async function hoverValueOf(button: Locator) {
+  await button.locator(
+    "xpath=ancestor::*[contains(@class,'overview-value') or contains(@class,'report-field-value')"
+      + " or contains(@class,'report-field')][1]",
+  ).hover();
+}
+
 test("unauthenticated visitors can only reach the sign-in page", async ({ page }) => {
   await page.setExtraHTTPHeaders({ "x-request-id": "caller-controlled" });
   const response = await page.goto("/");
@@ -260,9 +268,10 @@ test.describe("authenticated management UI", () => {
       await stackTrace.evaluate((element) => element.scrollWidth <= element.clientWidth),
     ).toBe(true);
 
-    await page.getByRole("region", { name: "Overview" })
-      .getByRole("link", { name: "Filter reports by Platform" })
-      .click();
+    const platformFilter = page.getByRole("region", { name: "Overview" })
+      .getByRole("link", { name: "Filter reports by Platform" });
+    await hoverValueOf(platformFilter);
+    await platformFilter.click();
     expect(new URL(page.url()).searchParams.get("q")).toBe("platform:macos");
     await expect(page.locator(`a[href="/reports/${reportId}"]`)).toBeVisible();
 
@@ -289,7 +298,9 @@ test.describe("authenticated management UI", () => {
     await expect(overview.getByRole("link", { name: /example\.test/ })).toHaveCount(0);
     await expect(page.getByText(pageUrl)).toHaveCount(1);
 
-    await overview.getByRole("link", { name: "Filter reports by Page URL" }).click();
+    const urlFilter = overview.getByRole("link", { name: "Filter reports by Page URL" });
+    await hoverValueOf(urlFilter);
+    await urlFilter.click();
     expect(new URL(page.url()).searchParams.get("q")).toContain("url:");
     await expect(page.locator(`a[href="/reports/${reportId}"]`)).toBeVisible();
   });
@@ -352,15 +363,19 @@ test.describe("authenticated management UI", () => {
         return [Math.round(box.width), Math.round(box.height)];
       }));
     expect(sizes[0]).toEqual(sizes[1]);
+    await hoverValueOf(platformButtons.nth(0));
     await platformButtons.nth(0).click();
     await expect(platformButtons.nth(0)).toHaveAttribute("data-copy-state", "copied");
     expect(await clipboard()).toBe("macOS");
     await expect(platformButtons.nth(0)).not.toHaveAttribute("data-copy-state");
 
     // A diagnostic field copies exactly the value it shows.
-    await page.getByRole("button", { name: "Copy Git commit" }).click();
+    const commitCopy = page.getByRole("button", { name: "Copy Git commit" });
+    await hoverValueOf(commitCopy);
+    await commitCopy.click();
     expect(await clipboard()).toBe("654cf9b187384fa8855eac4fbafaa70e75497083");
     const unknownValue = page.locator(".report-field-value").filter({ hasText: "<script>" });
+    await unknownValue.hover();
     await unknownValue.getByRole("button", { name: /^Copy / }).click();
     expect(await clipboard()).toBe(await unknownValue.locator("[data-copy-source]").innerText());
     expect(await clipboard()).toContain("<script>");
@@ -374,6 +389,34 @@ test.describe("authenticated management UI", () => {
     const rawStack = await page.locator(".stack-raw-text").evaluate((pre) => pre.textContent);
     expect(await clipboard()).toBe(rawStack);
     expect(await clipboard()).toContain("Native stack (binary build ID, object address):");
+  });
+
+  test("shows value buttons on hover or tap, except where they are always needed", async ({ page }) => {
+    await page.goto(`/reports/${reportId}`);
+    const overview = page.getByRole("region", { name: "Overview" });
+    const platform = overview.locator(".definition-list > div").filter({ hasText: "Platform" });
+    const platformGroup = platform.locator(".button-group");
+    const opacity = (group: Locator) => group.evaluate((element) => getComputedStyle(element).opacity);
+
+    await page.mouse.move(0, 0);
+    expect(await opacity(platformGroup)).toBe("0");
+    await platform.locator("dd").hover();
+    expect(await opacity(platformGroup)).toBe("1");
+
+    // A tap, which has no hover, shows the buttons of its value and hides those of others.
+    await page.mouse.move(0, 0);
+    expect(await opacity(platformGroup)).toBe("0");
+    await platform.locator("dd").dispatchEvent("pointerdown", { pointerType: "touch" });
+    expect(await opacity(platformGroup)).toBe("1");
+    await page.locator("h1").first().dispatchEvent("pointerdown", { pointerType: "touch" });
+    expect(await opacity(platformGroup)).toBe("0");
+
+    // The stack trace keeps its copy button, and attachments their buttons.
+    const stackCopy = page.getByRole("button", { name: "Copy Stack trace" });
+    expect(await opacity(stackCopy.locator("xpath=.."))).toBe("1");
+    for (const button of await page.locator(".attachment-actions .icon-button, .attachment-actions a").all()) {
+      await expect(button).toBeVisible();
+    }
   });
 
   test("joins the attachment buttons", async ({ page }) => {
@@ -1038,6 +1081,25 @@ test.describe("authenticated management UI", () => {
     await expect(page.getByText("session.signed_in", { exact: true }).first()).toBeVisible();
   });
 
+  test("shows the audit columns in order and expands details on click", async ({ page }) => {
+    await page.goto("/operations");
+
+    await expect(page.locator(".audit-table th")).toHaveText(["Time", "Action", "Actor", "Target", "Details"]);
+
+    const details = page.locator(".event-details").first();
+    await expect(details).toHaveAttribute("title", /.+/);
+    const collapsed = await details.evaluate((element) => element.getBoundingClientRect().height);
+    await details.click();
+    await expect(details).toHaveAttribute("aria-expanded", "true");
+    expect(await details.evaluate((element) => getComputedStyle(element).textOverflow)).toBe("ellipsis");
+    expect(await details.evaluate((element) => getComputedStyle(element).whiteSpace)).toBe("normal");
+    expect(await details.evaluate((element) => element.getBoundingClientRect().height)).toBeGreaterThanOrEqual(
+      collapsed,
+    );
+    await details.click();
+    await expect(details).toHaveAttribute("aria-expanded", "false");
+  });
+
   test("loads older audit events without reloading the page", async ({ page }) => {
     await page.goto("/operations");
 
@@ -1081,25 +1143,6 @@ test.describe("authenticated management UI", () => {
 
   test("links an exact issue match and unlinks it from the report", async ({ page }) => {
     await page.goto("/issues");
-  test("shows the audit columns in order and expands details on click", async ({ page }) => {
-    await page.goto("/operations");
-
-    await expect(page.locator(".audit-table th")).toHaveText(["Time", "Action", "Actor", "Target", "Details"]);
-
-    const details = page.locator(".event-details").first();
-    await expect(details).toHaveAttribute("title", /.+/);
-    const collapsed = await details.evaluate((element) => element.getBoundingClientRect().height);
-    await details.click();
-    await expect(details).toHaveAttribute("aria-expanded", "true");
-    expect(await details.evaluate((element) => getComputedStyle(element).textOverflow)).toBe("ellipsis");
-    expect(await details.evaluate((element) => getComputedStyle(element).whiteSpace)).toBe("normal");
-    expect(await details.evaluate((element) => element.getBoundingClientRect().height)).toBeGreaterThanOrEqual(
-      collapsed,
-    );
-    await details.click();
-    await expect(details).toHaveAttribute("aria-expanded", "false");
-  });
-
     await page.getByRole("link", { name: "Intermittent navigation timeout" }).click();
 
     const matches = page.getByRole("region", { name: "Potential matches" });

@@ -134,4 +134,22 @@ function initializeCopyButtons() {
     }
 }
 
+// Touch screens have no hover: a tap on a value shows its buttons.
+function initializeTouchActions() {
+    document.addEventListener("pointerdown", (event) => {
+        if (event.pointerType !== "touch" || !(event.target instanceof Element)) {
+            return;
+        }
+
+        const value = event.target.closest(".overview-value, .report-field-value, .report-field");
+        for (const shown of document.querySelectorAll("[data-actions-shown]")) {
+            if (shown !== value) {
+                shown.removeAttribute("data-actions-shown");
+            }
+        }
+        value?.setAttribute("data-actions-shown", "");
+    });
+}
+
 initializeCopyButtons();
+initializeTouchActions();
