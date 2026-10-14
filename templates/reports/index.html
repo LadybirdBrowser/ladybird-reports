@@ -16,7 +16,26 @@
                 Review incoming diagnostics and group matching reports into issues.
             </p>
         </div>
+        <p class="new-triage" aria-label="New reports to triage in the last 24 hours">
+            <a href="/?q=state:triage">
+                <strong>{{ new_triage }}</strong>
+                <span>new to triage<br>in the last 24 hours</span>
+            </a>
+        </p>
     </header>
+
+    <nav class="state-filters" aria-label="Filter by report status">
+        {% for filter in state_filters %}
+            <a
+                class="state-filter state-filter-{{ filter.tone }}{% if filter.active %} is-active{% endif %}"
+                href="/?q={{ filter.query }}"
+                {% if filter.active %}aria-current="page"{% endif %}
+            >
+                <span class="state-filter-label">{{ filter.label }}</span>
+                <span class="state-filter-count">{{ filter.count }}</span>
+            </a>
+        {% endfor %}
+    </nav>
 
     <section class="filter-panel" aria-label="Report filters">
         <form

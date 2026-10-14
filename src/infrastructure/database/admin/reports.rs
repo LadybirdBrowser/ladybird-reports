@@ -13,8 +13,8 @@ use crate::{
 
 use super::{
     AuditEvent, BlockReportSourceOutcome, ReportDetails, ReportQuery, ReportRecord,
-    ReportSearchResult, ReportSummary, StoredAttachment, StoredDiagnosticField, insert_audit_event,
-    lock_issue_operations,
+    ReportSearchResult, ReportStateCounts, ReportSummary, StoredAttachment, StoredDiagnosticField,
+    insert_audit_event, lock_issue_operations,
 };
 
 #[derive(Default)]
@@ -160,6 +160,39 @@ impl AdminDatabase {
             .await?;
         self.populate_report_titles(&mut reports).await?;
         Ok(reports)
+    }
+
+    /// Counts come from two queries, each answered from an index alone: the
+    /// per-state totals from `reports_state_counts`, the recent triage reports
+    /// from the newest end of `reports_triage`.
+    pub async fn report_state_counts(&self) -> Result<ReportStateCounts> {
+        let totals = sqlx::query_as::<_, (ReportState, i64)>(
+            "SELECT state, count(*) FROM reports WHERE storage_state = 'ready' GROUP BY state",
+        )
+        .fetch_all(&self.pool);
+        let new_triage = sqlx::query_scalar::<_, i64>(
+            "SELECT count(*)
+             FROM reports
+             WHERE state = 'triage'
+                AND storage_state = 'ready'
+                AND created_at >= now() - interval '24 hours'",
+        )
+        .fetch_one(&self.pool);
+        let (totals, new_triage) = tokio::try_join!(totals, new_triage)?;
+
+        let mut counts = ReportStateCounts {
+            new_triage,
+            ..ReportStateCounts::default()
+        };
+        for (state, count) in totals {
+            match state {
+                ReportState::Triage => counts.triage = count,
+                ReportState::Confirmed => counts.confirmed = count,
+                ReportState::Resolved => counts.resolved = count,
+                ReportState::Rejected => counts.rejected = count,
+            }
+        }
+        Ok(counts)
     }
 
     pub async fn search_reports(&self, search: &str) -> Result<Vec<ReportSearchResult>> {

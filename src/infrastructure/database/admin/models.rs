@@ -41,6 +41,16 @@ pub struct ReportQuery {
     pub before_id: Option<ReportId>,
 }
 
+/// How many reports there are per state, and how many arrived to be triaged recently.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct ReportStateCounts {
+    pub triage: i64,
+    pub confirmed: i64,
+    pub resolved: i64,
+    pub rejected: i64,
+    pub new_triage: i64,
+}
+
 /// The title, platform, architecture and URL are filled in after loading, so they
 /// are not read from the row.
 #[derive(Clone, Debug, sqlx::FromRow)]
