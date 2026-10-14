@@ -48,133 +48,136 @@
                 </div>
             </section>
 
-            <section class="card" aria-labelledby="assigned-reports-title">
-                <div class="card-header">
-                    <h2 id="assigned-reports-title">Assigned reports</h2>
-                    <span class="badge badge-neutral">{{ reports.len() }}</span>
-                </div>
-                {% if reports.is_empty() %}
-                    <div class="empty-state">
-                        <strong>No assigned reports</strong>
-                        Reports grouped into this issue will appear here.
-                    </div>
-                {% else %}
-                    <div class="table-scroll">
-                        <table class="report-table issue-report-table">
-                            <thead>
-                                <tr>
-                                    <th>Report</th>
-                                    <th>Received</th>
-                                    <th><span class="visually-hidden">Action</span></th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% for report in reports %}
-                                    <tr class="clickable-report-row">
-                                        <td class="report-table-report">
-                                            <a
-                                                class="primary-link report-title-link row-link"
-                                                href="/reports/{{ report.id }}"
-                                            >
-                                                {{ report.title }}
-                                            </a>
-                                            <span class="report-table-metadata">{{ report.metadata }}</span>
-                                        </td>
-                                        <td class="quiet report-received-at report-table-received">
-                                            {{ report.received_at }}
-                                        </td>
-                                        <td class="report-table-action">
-                                            <form
-                                                method="post"
-                                                action="/issues/{{ issue.id }}/reports/{{ report.id }}/unlink"
-                                            >
-                                                <input type="hidden" name="csrf" value="{{ navigation.as_ref().unwrap().csrf_token }}">
-                                                <button
-                                                    class="button-secondary table-action"
-                                                    type="submit"
-                                                    aria-label="Unlink report {{ report.id }}"
-                                                >
-                                                    Unlink
-                                                </button>
-                                            </form>
-                                        </td>
-                                    </tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
-                    </div>
-                {% endif %}
-            </section>
-
-            {% if !potential_matches.is_empty() %}
-                <section class="card" aria-labelledby="potential-matches-title">
+            <div class="stack" data-live-region>
+                <section class="card" aria-labelledby="assigned-reports-title">
                     <div class="card-header">
-                        <h2 id="potential-matches-title">Potential matches</h2>
-                        <span class="badge badge-neutral">{{ potential_matches.len() }}</span>
+                        <h2 id="assigned-reports-title">Assigned reports</h2>
+                        <span class="badge badge-neutral">{{ reports.len() }}</span>
                     </div>
-                    <div class="table-scroll">
-                        <table class="report-table issue-report-table">
-                            <thead>
-                                <tr>
-                                    <th>Report</th>
-                                    <th>Received</th>
-                                    <th><span class="visually-hidden">Action</span></th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% for report in potential_matches %}
-                                    <tr class="clickable-report-row">
-                                        <td class="report-table-report">
-                                            <a
-                                                class="primary-link report-title-link row-link"
-                                                href="/reports/{{ report.id }}"
-                                            >
-                                                {{ report.title }}
-                                            </a>
-                                            <span class="report-table-metadata">{{ report.metadata }}</span>
-                                        </td>
-                                        <td class="quiet report-received-at report-table-received">
-                                            {{ report.received_at }}
-                                        </td>
-                                        <td class="report-table-action">
-                                            <form method="post" action="/reports/{{ report.id }}/issue">
-                                                <input type="hidden" name="csrf" value="{{ navigation.as_ref().unwrap().csrf_token }}">
-                                                <input type="hidden" name="issue_selection" value="issue:{{ issue.id }}">
-                                                <button class="button-secondary table-action" type="submit" aria-label="Link report {{ report.id }}">Link</button>
-                                            </form>
-                                        </td>
-                                    </tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
-                    </div>
-                </section>
-            {% endif %}
-
-            <section class="card" aria-labelledby="issue-history-title">
-                <div class="card-header">
-                    <h2 id="issue-history-title">Activity</h2>
-                    <p>Recorded actions</p>
-                </div>
-                <div class="card-body">
-                    {% if events.is_empty() %}
+                    {% if reports.is_empty() %}
                         <div class="empty-state">
-                            <strong>No activity yet</strong>
-                            Changes to this issue will appear here.
+                            <strong>No assigned reports</strong>
+                            Reports grouped into this issue will appear here.
                         </div>
                     {% else %}
-                        <ol class="history">
-                            {% for event in events %}
-                                <li>
-                                    <strong>{{ event.action }}</strong>
-                                    <span class="quiet">{{ event.created_at }} · {{ event.actor }}</span>
-                                    <code class="event-details" title="{{ event.details }}">{{ event.details }}</code>
-                                </li>
-                            {% endfor %}
-                        </ol>
+                        <div class="table-scroll">
+                            <table class="report-table issue-report-table">
+                                <thead>
+                                    <tr>
+                                        <th>Report</th>
+                                        <th>Received</th>
+                                        <th><span class="visually-hidden">Action</span></th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for report in reports %}
+                                        <tr class="clickable-report-row">
+                                            <td class="report-table-report">
+                                                <a
+                                                    class="primary-link report-title-link row-link"
+                                                    href="/reports/{{ report.id }}"
+                                                >
+                                                    {{ report.title }}
+                                                </a>
+                                                <span class="report-table-metadata">{{ report.metadata }}</span>
+                                            </td>
+                                            <td class="quiet report-received-at report-table-received">
+                                                {{ report.received_at }}
+                                            </td>
+                                            <td class="report-table-action">
+                                                <form
+                                                    method="post"
+                                                    action="/issues/{{ issue.id }}/reports/{{ report.id }}/unlink"
+                                                data-live-form
+                                                >
+                                                    <input type="hidden" name="csrf" value="{{ navigation.as_ref().unwrap().csrf_token }}">
+                                                    <button
+                                                        class="button-secondary table-action"
+                                                        type="submit"
+                                                        aria-label="Unlink report {{ report.id }}"
+                                                    >
+                                                        Unlink
+                                                    </button>
+                                                </form>
+                                            </td>
+                                        </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
                     {% endif %}
-                </div>
-            </section>
+                </section>
+
+                {% if !potential_matches.is_empty() %}
+                    <section class="card" aria-labelledby="potential-matches-title">
+                        <div class="card-header">
+                            <h2 id="potential-matches-title">Potential matches</h2>
+                            <span class="badge badge-neutral">{{ potential_matches.len() }}</span>
+                        </div>
+                        <div class="table-scroll">
+                            <table class="report-table issue-report-table">
+                                <thead>
+                                    <tr>
+                                        <th>Report</th>
+                                        <th>Received</th>
+                                        <th><span class="visually-hidden">Action</span></th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for report in potential_matches %}
+                                        <tr class="clickable-report-row">
+                                            <td class="report-table-report">
+                                                <a
+                                                    class="primary-link report-title-link row-link"
+                                                    href="/reports/{{ report.id }}"
+                                                >
+                                                    {{ report.title }}
+                                                </a>
+                                                <span class="report-table-metadata">{{ report.metadata }}</span>
+                                            </td>
+                                            <td class="quiet report-received-at report-table-received">
+                                                {{ report.received_at }}
+                                            </td>
+                                            <td class="report-table-action">
+                                                <form method="post" action="/reports/{{ report.id }}/issue" data-live-form>
+                                                    <input type="hidden" name="csrf" value="{{ navigation.as_ref().unwrap().csrf_token }}">
+                                                    <input type="hidden" name="issue_selection" value="issue:{{ issue.id }}">
+                                                    <button class="button-secondary table-action" type="submit" aria-label="Link report {{ report.id }}">Link</button>
+                                                </form>
+                                            </td>
+                                        </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </section>
+                {% endif %}
+
+                <section class="card" aria-labelledby="issue-history-title">
+                    <div class="card-header">
+                        <h2 id="issue-history-title">Activity</h2>
+                        <p>Recorded actions</p>
+                    </div>
+                    <div class="card-body">
+                        {% if events.is_empty() %}
+                            <div class="empty-state">
+                                <strong>No activity yet</strong>
+                                Changes to this issue will appear here.
+                            </div>
+                        {% else %}
+                            <ol class="history">
+                                {% for event in events %}
+                                    <li>
+                                        <strong>{{ event.action }}</strong>
+                                        <span class="quiet">{{ event.created_at }} · {{ event.actor }}</span>
+                                        <code class="event-details" title="{{ event.details }}">{{ event.details }}</code>
+                                    </li>
+                                {% endfor %}
+                            </ol>
+                        {% endif %}
+                    </div>
+                </section>
+            </div>
         </div>
 
         <aside class="stack sticky-card" aria-label="Issue links and actions">

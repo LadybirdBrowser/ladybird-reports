@@ -843,6 +843,50 @@ function initializeTimestamps() {
     }).observe(document.body, { childList: true, subtree: true });
 }
 
+// Forms marked data-live-form post in the background. The server answers with the page
+// the form would have led to, and the part of the page marked data-live-region is
+// replaced by that page's version, so nothing reloads or jumps.
+function initializeLiveForms() {
+    const status = document.createElement("div");
+    status.className = "visually-hidden";
+    status.setAttribute("role", "status");
+    document.body.append(status);
+
+    document.addEventListener("submit", async (event) => {
+        const form = event.target;
+        const region = document.querySelector("[data-live-region]");
+        if (!(form instanceof HTMLFormElement) || !form.hasAttribute("data-live-form") || !region) {
+            return;
+        }
+
+        event.preventDefault();
+        const submitter = event.submitter;
+        if (submitter) {
+            submitter.disabled = true;
+        }
+
+        try {
+            const response = await fetch(form.action, {
+                method: "POST",
+                body: new URLSearchParams(new FormData(form)),
+                headers: { Accept: "text/html" },
+            });
+            const page = new DOMParser().parseFromString(await response.text(), "text/html");
+            const updated = page.querySelector("[data-live-region]");
+            if (!response.ok || !updated || new URL(response.url).pathname !== location.pathname) {
+                throw new Error("The page did not come back");
+            }
+
+            region.replaceChildren(...updated.childNodes);
+            status.textContent = "Updated.";
+        } catch {
+            // Let the browser do it the ordinary way, which also shows any error.
+            form.submit();
+        }
+    });
+}
+
+initializeLiveForms();
 initializeTimestamps();
 initializeEntitySelectors();
 initializeSelectControls();

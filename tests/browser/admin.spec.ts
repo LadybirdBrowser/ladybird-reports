@@ -1151,6 +1151,25 @@ test.describe("authenticated management UI", () => {
     const candidateUrl = await candidate.getAttribute("href");
     expect(candidateUrl).toMatch(/^\/reports\/[0-9a-f-]+$/);
 
+    // Linking and unlinking happen in place: this marker is lost if the page reloads.
+    const stillSamePage = () => page.evaluate(
+      () => (window as unknown as { samePage?: boolean }).samePage === true,
+    );
+    await page.evaluate(() => {
+      (window as unknown as { samePage: boolean }).samePage = true;
+    });
+    const assigned = page.getByRole("region", { name: "Assigned reports" });
+    await matches.getByRole("button", { name: /Link report/ }).first().click();
+    await expect(assigned.locator(`a[href="${candidateUrl}"]`)).toBeVisible();
+    await expect(matches.locator(`a[href="${candidateUrl}"]`)).toHaveCount(0);
+    expect(await stillSamePage()).toBe(true);
+
+    await assigned.getByRole("row").filter({ has: page.locator(`a[href="${candidateUrl}"]`) })
+      .getByRole("button", { name: /Unlink report/ }).click();
+    await expect(assigned.locator(`a[href="${candidateUrl}"]`)).toHaveCount(0);
+    await expect(matches.locator(`a[href="${candidateUrl}"]`)).toBeVisible();
+    expect(await stillSamePage()).toBe(true);
+
     await matches.getByRole("button", { name: /Link report/ }).first().click();
     await expect(page).toHaveURL(/\/issues\/[0-9a-f-]+$/);
     await expect(page.locator(`a[href="${candidateUrl}"]`)).toBeVisible();
