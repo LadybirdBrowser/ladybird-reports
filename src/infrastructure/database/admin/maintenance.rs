@@ -16,7 +16,7 @@ impl AdminDatabase {
     pub async fn begin_maintenance_sweep(
         &self,
         report_retention_days: u32,
-        source_retention_days: u32,
+        source_retention_hours: u32,
         audit_retention_days: u32,
     ) -> Result<AdminSweepResult> {
         let mut transaction = self.pool.begin().await?;
@@ -33,10 +33,11 @@ impl AdminDatabase {
 
         let submission_sources_deleted = sqlx::query(
             "UPDATE reports
-             SET source_client_key = NULL,
-                 source_client_key_expires_at = NULL
-             WHERE source_client_key_expires_at <= now()",
+             SET source_client_key = NULL
+             WHERE source_client_key IS NOT NULL
+                AND created_at <= now() - make_interval(hours => $1)",
         )
+        .bind(source_retention_hours as i32)
         .execute(&mut *transaction)
         .await?
         .rows_affected();
@@ -44,11 +45,11 @@ impl AdminDatabase {
         let inactive_source_blocks_deleted = sqlx::query(
             "DELETE FROM source_rate_limits
              WHERE (lifted_at IS NOT NULL
-                    AND lifted_at <= now() - make_interval(days => $1))
+                    AND lifted_at <= now() - make_interval(hours => $1))
                 OR (expires_at IS NOT NULL
-                    AND expires_at <= now() - make_interval(days => $1))",
+                    AND expires_at <= now() - make_interval(hours => $1))",
         )
-        .bind(source_retention_days as i32)
+        .bind(source_retention_hours as i32)
         .execute(&mut *transaction)
         .await?
         .rows_affected();

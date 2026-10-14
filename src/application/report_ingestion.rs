@@ -171,7 +171,6 @@ impl ReportIngestionService {
                 attachment_ids: &prepared.attachment_ids,
                 upload_id: prepared.upload_id,
                 source_client_key,
-                source_retention_days: configuration.maintenance.submission_source_retention_days,
                 definitions: &prepared.definitions,
                 retention_days: configuration.maintenance.report_retention_days,
             })

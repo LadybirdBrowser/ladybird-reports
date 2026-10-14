@@ -96,7 +96,7 @@ pub struct MaintenanceConfiguration {
     pub sweep_interval_seconds: u64,
     pub staging_retention_seconds: u64,
     pub report_retention_days: u32,
-    pub submission_source_retention_days: u32,
+    pub submission_source_retention_hours: u32,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -130,7 +130,7 @@ impl Default for RuntimeConfiguration {
                 sweep_interval_seconds: 900,
                 staging_retention_seconds: 3_600,
                 report_retention_days: 3_650,
-                submission_source_retention_days: 30,
+                submission_source_retention_hours: 48,
             },
             discord: DiscordConfiguration::default(),
             session_lifetime_seconds: default_session_lifetime_seconds(),
@@ -376,11 +376,11 @@ pub const SETTING_DEFINITIONS: &[SettingDefinition] = &[
         "Days from report creation before deletion is scheduled.",
     ),
     setting(
-        "submission_source_retention_days",
-        "maintenance.submission_source_retention_days",
+        "submission_source_retention_hours",
+        "maintenance.submission_source_retention_hours",
         "Submission source retention",
-        "Keeps a report's keyed source identifier available for blocking and clears inactive block records. Changing it affects new report identifiers and the cleanup of inactive blocks.",
-        "Days from submission or when a block ended; the default is 30 days.",
+        "Keeps a report's keyed source identifier available for blocking, then clears it, and clears inactive block records. Applies to existing reports as well.",
+        "Hours from submission or from when a block ended, 1 to 8760; the default is 48.",
     ),
     setting(
         "webhook_url",
@@ -687,7 +687,7 @@ impl RuntimeConfiguration {
             || maintenance.staging_retention_seconds < limits.upload_timeout_seconds + 60
             || maintenance.staging_retention_seconds > 604_800
             || !(30..=36_500).contains(&maintenance.report_retention_days)
-            || !(1..=365).contains(&maintenance.submission_source_retention_days);
+            || !(1..=8_760).contains(&maintenance.submission_source_retention_hours);
 
         if invalid {
             return Err(AppError::InvalidRequest("Unsafe operational limits"));

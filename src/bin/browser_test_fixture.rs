@@ -112,8 +112,7 @@ async fn main() -> Result<()> {
             build,
             storage_state,
             staging_id,
-            source_client_key,
-            source_client_key_expires_at
+            source_client_key
          )
          VALUES (
             $1,
@@ -124,8 +123,7 @@ async fn main() -> Result<()> {
             'debug',
             'ready',
             $3,
-            repeat('b', 64),
-            now() + interval '30 days'
+            repeat('b', 64)
          )
          ON CONFLICT (id) DO NOTHING",
     )
@@ -429,7 +427,6 @@ async fn insert_example_report(
             storage_state,
             staging_id,
             source_client_key,
-            source_client_key_expires_at,
             issue_id,
             state,
             created_at,
@@ -445,7 +442,6 @@ async fn insert_example_report(
             'ready',
             $6,
             repeat('d', 64),
-            now() + interval '30 days',
             $7,
             CASE WHEN $7::uuid IS NOT NULL OR $9 THEN 'confirmed' ELSE 'triage' END,
             now() - make_interval(hours => $8),

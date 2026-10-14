@@ -344,8 +344,7 @@ impl AdminDatabase {
                 build,
                 issue_id,
                 state,
-                ((source_client_key IS NOT NULL
-                    AND source_client_key_expires_at > now()) OR EXISTS (
+                (source_client_key IS NOT NULL OR EXISTS (
                     SELECT 1 FROM source_rate_limits
                     WHERE source_rate_limits.source_report_id = reports.id
                         AND source_rate_limits.lifted_at IS NULL
@@ -669,7 +668,7 @@ impl AdminDatabase {
              FROM reports
              WHERE id = $1
                 AND storage_state = 'ready'
-                AND source_client_key_expires_at > now()
+                AND source_client_key IS NOT NULL
              FOR UPDATE",
         )
         .bind(report_id)

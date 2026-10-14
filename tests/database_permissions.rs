@@ -453,15 +453,6 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
     assert_constraint_values(&admin_pool, "reports_kind_check", ReportKind::ALL).await;
     assert_constraint_values(&admin_pool, "report_fields_kind_check", FieldKind::ALL).await;
     assert_constraint_values(&admin_pool, "field_definitions_kind_check", FieldKind::ALL).await;
-    let source_retention_is_one_month: bool = sqlx::query_scalar(
-        "SELECT source_client_key_expires_at = created_at + interval '30 days'
-         FROM reports WHERE id = $1",
-    )
-    .bind(report_id)
-    .fetch_one(&admin_pool)
-    .await
-    .expect("check submission source retention");
-    assert!(source_retention_is_one_month);
     assert!(
         report
             .events
@@ -759,7 +750,7 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
     .await
     .expect("record an old and a recent audit event");
     let admin_sweep = admin_database
-        .begin_maintenance_sweep(3_650, 30, 3_650)
+        .begin_maintenance_sweep(3_650, 48, 3_650)
         .await
         .expect("begin admin maintenance sweep");
     assert_eq!(admin_sweep.audit_events_deleted, 1);
@@ -826,7 +817,6 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
                 storage_state,
                 staging_id,
                 source_client_key,
-                source_client_key_expires_at,
                 issue_id,
                 state
              ) VALUES (
@@ -839,7 +829,6 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
                 'ready',
                 $3,
                 repeat('8', 64),
-                now() + interval '30 days',
                 $4,
                 CASE WHEN $4::uuid IS NULL THEN 'triage' ELSE 'confirmed' END
              )",
@@ -953,7 +942,7 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
 
     sqlx::query(
         "UPDATE reports
-         SET source_client_key_expires_at = now() - interval '1 second'
+         SET created_at = now() - interval '49 hours'
          WHERE id = $1",
     )
     .bind(first_triage_report)
@@ -961,7 +950,7 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
     .await
     .expect("expire the report source identifier");
     admin_database
-        .begin_maintenance_sweep(3_650, 30, 3_650)
+        .begin_maintenance_sweep(3_650, 48, 3_650)
         .await
         .expect("sweep expired source identifiers");
     let source_key: Option<String> =
@@ -983,7 +972,7 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
         .expect("unblock from the report after its source identifier expired");
     sqlx::query(
         "UPDATE source_rate_limits
-         SET lifted_at = now() - interval '31 days'
+         SET lifted_at = now() - interval '49 hours'
          WHERE source_report_id = $1",
     )
     .bind(first_triage_report)
@@ -991,7 +980,7 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
     .await
     .expect("age the lifted block");
     admin_database
-        .begin_maintenance_sweep(3_650, 30, 3_650)
+        .begin_maintenance_sweep(3_650, 48, 3_650)
         .await
         .expect("sweep inactive block records");
     let inactive_block_count: i64 =

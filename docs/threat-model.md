@@ -12,7 +12,7 @@ IP rate limits and global capacity limits remain necessary.
 
 The server HMACs normalized client addresses for rate-limit buckets and source blocks.
 Reports retain that keyed identifier for the configured submission source retention
-period (30 days by default), so an administrator can block abusive sources from the
+period (48 hours by default), so an administrator can block abusive sources from the
 report action panel. The maintenance sweep clears expired identifiers from reports.
 Active blocks keep their own keyed identifiers. Lifted or expired blocks are removed
 after the configured retention period. Raw source addresses are

@@ -50,7 +50,10 @@ reject a report with a confirmation dialog. Rejected reports remain available th
 `state:rejected`; retention still governs when their data is removed. Adding
 a report to an issue confirms it.
 
-Blocking a submission source rejects its future public API requests and
+Blocking a submission source needs the report's stored identifier, which is cleared
+after the submission source retention period (48 hours by default); the block action
+is then not shown. An active block keeps its own identifier until it is lifted.
+Blocking rejects its future public API requests and
 rejects the selected report. The confirmation also offers to reject other
 reports from that source that are still in triage.
 

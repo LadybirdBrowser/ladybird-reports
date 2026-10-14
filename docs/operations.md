@@ -45,8 +45,11 @@ management UI. Records get their expiry when accepted, and the maintenance loop
 backfills it for older records.
 
 Report and audit retention default to ten years. The keyed submission source
-identifier on a report expires after 30 days by default, independently of report
-retention. Active source blocks keep their own identifier; lifted or expired blocks
+identifier on a report is cleared 48 hours after the report was created by default
+(`submission_source_retention_hours`), independently of report retention. The
+maintenance sweep does this, so an identifier can outlast the period by up to one
+sweep interval. Rate-limit buckets and upload leases, which also hold the keyed
+identifier, expire within hours and are removed by the public API sweep. Active source blocks keep their own identifier; lifted or expired blocks
 are removed after the source retention period.
 
 ## Database statistics

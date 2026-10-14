@@ -191,7 +191,7 @@ async fn run_maintenance(state: AdminState) {
                     .database
                     .begin_maintenance_sweep(
                         configuration.maintenance.report_retention_days,
-                        configuration.maintenance.submission_source_retention_days,
+                        configuration.maintenance.submission_source_retention_hours,
                         configuration.audit.retention_days,
                     )
                     .await;

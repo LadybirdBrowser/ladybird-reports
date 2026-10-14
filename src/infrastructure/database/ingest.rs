@@ -43,7 +43,6 @@ pub struct AcceptReportRequest<'a> {
     pub attachment_ids: &'a HashMap<AttachmentReference, AttachmentId>,
     pub upload_id: UploadId,
     pub source_client_key: &'a str,
-    pub source_retention_days: u32,
     pub definitions: &'a HashMap<String, FieldDefinition>,
     pub retention_days: u32,
 }
@@ -247,7 +246,7 @@ impl IngestDatabase {
 
         let row = sqlx::query(
             "SELECT * FROM accept_report(
-                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::integer, $12, $13
+                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12
             )",
         )
         .bind(request.claims.id)
@@ -260,7 +259,6 @@ impl IngestDatabase {
         .bind(&request.manifest.build)
         .bind(request.upload_id)
         .bind(request.source_client_key)
-        .bind(request.source_retention_days as i32)
         .bind(serde_json::to_value(fields).expect("stored fields are serializable"))
         .bind(serde_json::to_value(attachments).expect("stored attachments are serializable"))
         .fetch_one(&mut *transaction)

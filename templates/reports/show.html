@@ -229,68 +229,66 @@
                     </section>
                 {% endif %}
 
+                {% if report.has_submission_source %}
                 <section class="danger-zone">
-                    {% if report.has_submission_source %}
-                        {% if report.submission_source_is_blocked %}
-                            <div class="source-status">IP is blocked indefinitely</div>
-                            <p>
-                                Requests from this source receive a rate-limit response before
-                                a challenge is issued.
-                            </p>
-                            <form method="post" action="/reports/{{ report.id }}/unblock-ip">
-                                <input type="hidden" name="csrf" value="{{ navigation.as_ref().unwrap().csrf_token }}">
-                                <button class="button-secondary" type="submit">
-                                    Unblock submission IP
-                                </button>
-                            </form>
-                        {% else %}
-                            <button
-                                class="button-danger"
-                                type="button"
-                                data-dialog-open="block-source-dialog"
-                            >
-                                Block submission IP
+                    {% if report.submission_source_is_blocked %}
+                        <div class="source-status">IP is blocked indefinitely</div>
+                        <p>
+                            Requests from this source receive a rate-limit response before
+                            a challenge is issued.
+                        </p>
+                        <form method="post" action="/reports/{{ report.id }}/unblock-ip">
+                            <input type="hidden" name="csrf" value="{{ navigation.as_ref().unwrap().csrf_token }}">
+                            <button class="button-secondary" type="submit">
+                                Unblock submission IP
                             </button>
-                            <dialog
-                                class="issue-dialog compact-dialog modal-overlay"
-                                id="block-source-dialog"
-                                aria-labelledby="block-source-dialog-title"
-                            >
-                                <div class="issue-dialog-header">
-                                    <div>
-                                        <p class="eyebrow">Submission source</p>
-                                        <h2 id="block-source-dialog-title">Block this IP?</h2>
-                                    </div>
-                                    <button class="dialog-close" type="button" data-dialog-close aria-label="Close dialog">×</button>
-                                </div>
-                                <form method="post" action="/reports/{{ report.id }}/block-ip">
-                                    <input type="hidden" name="csrf" value="{{ navigation.as_ref().unwrap().csrf_token }}">
-                                    <p>
-                                        Future requests from this address will be rejected before
-                                        the server issues a proof-of-work challenge.
-                                    </p>
-                                    <label class="checkbox-row">
-                                        <input
-                                            type="checkbox"
-                                            name="remove_triage_reports"
-                                            value="true"
-                                            checked
-                                        >
-                                        <span>Reject all triage reports from this IP</span>
-                                    </label>
-                                    <div class="dialog-actions">
-                                        <button class="button-secondary" type="button" data-dialog-close autofocus>
-                                            Cancel
-                                        </button>
-                                        <button class="button-danger" type="submit">Block IP</button>
-                                    </div>
-                                </form>
-                            </dialog>
-                        {% endif %}
+                        </form>
                     {% else %}
-                        <p>This report predates submission-source tracking and cannot be blocked.</p>
+                        <button
+                            class="button-danger"
+                            type="button"
+                            data-dialog-open="block-source-dialog"
+                        >
+                            Block submission IP
+                        </button>
+                        <dialog
+                            class="issue-dialog compact-dialog modal-overlay"
+                            id="block-source-dialog"
+                            aria-labelledby="block-source-dialog-title"
+                        >
+                            <div class="issue-dialog-header">
+                                <div>
+                                    <p class="eyebrow">Submission source</p>
+                                    <h2 id="block-source-dialog-title">Block this IP?</h2>
+                                </div>
+                                <button class="dialog-close" type="button" data-dialog-close aria-label="Close dialog">×</button>
+                            </div>
+                            <form method="post" action="/reports/{{ report.id }}/block-ip">
+                                <input type="hidden" name="csrf" value="{{ navigation.as_ref().unwrap().csrf_token }}">
+                                <p>
+                                    Future requests from this address will be rejected before
+                                    the server issues a proof-of-work challenge.
+                                </p>
+                                <label class="checkbox-row">
+                                    <input
+                                        type="checkbox"
+                                        name="remove_triage_reports"
+                                        value="true"
+                                        checked
+                                    >
+                                    <span>Reject all triage reports from this IP</span>
+                                </label>
+                                <div class="dialog-actions">
+                                    <button class="button-secondary" type="button" data-dialog-close autofocus>
+                                        Cancel
+                                    </button>
+                                    <button class="button-danger" type="submit">Block IP</button>
+                                </div>
+                            </form>
+                        </dialog>
                     {% endif %}
                 </section>
+                {% endif %}
             </div>
         </aside>
     </div>
