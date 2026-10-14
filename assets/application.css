@@ -2472,7 +2472,8 @@ pre {
     flex: 1 1 10rem;
 }
 
-/* The dot and the line are centred on the same vertical axis. */
+/* The dot and the line share a vertical axis, 0 from the left edge of the entry, and
+   whole pixels keep both crisp. The dot covers the line. */
 .history li::before,
 .history li::after {
     position: absolute;
