@@ -141,7 +141,7 @@ function initializeTouchActions() {
             return;
         }
 
-        const value = event.target.closest(".overview-value, .report-field-value, .report-field");
+        const value = event.target.closest(".value-area");
         for (const shown of document.querySelectorAll("[data-actions-shown]")) {
             if (shown !== value) {
                 shown.removeAttribute("data-actions-shown");

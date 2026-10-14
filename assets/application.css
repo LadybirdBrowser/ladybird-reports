@@ -2148,22 +2148,23 @@ tbody tr:hover {
     height: 1rem;
 }
 
-:is(.overview-value, .report-field-value, .report-field) .button-group {
+.value-area .button-group {
     opacity: 0;
     pointer-events: none;
+    transition: opacity 140ms ease;
 }
 
-/* The buttons of a value show while the mouse is over it, while it has focus, or
+/* The buttons of a value show while the mouse is over its whole area (label and all), while it has focus, or
    after a tap (reports.js). The stack trace always keeps its copy button. */
 @media (hover: hover) {
-    :is(.overview-value, .report-field-value, .report-field):hover .button-group {
+    .value-area:hover .button-group {
         opacity: 1;
         pointer-events: auto;
     }
 }
 
-:is(.overview-value, .report-field-value, .report-field):focus-within .button-group,
-:is(.overview-value, .report-field-value, .report-field)[data-actions-shown] .button-group,
+.value-area:focus-within .button-group,
+.value-area[data-actions-shown] .button-group,
 .stack-header-actions .button-group {
     opacity: 1;
     pointer-events: auto;
@@ -2460,7 +2461,7 @@ pre {
 .history li {
     position: relative;
     display: flex;
-    margin-left: 0.35rem;
+    margin-left: 6px;
     padding: 0 0 0.9rem 1.4rem;
     align-items: baseline;
     gap: 0.2rem 0.75rem;
@@ -2477,24 +2478,26 @@ pre {
 .history li::before,
 .history li::after {
     position: absolute;
-    left: 0;
     content: "";
-    transform: translateX(-50%);
 }
 
 .history li::before {
-    top: 0.3rem;
-    width: 0.55rem;
-    height: 0.55rem;
+    top: 4px;
+    left: -5px;
+    z-index: 1;
+    box-sizing: border-box;
+    width: 10px;
+    height: 10px;
     border: 2px solid var(--surface);
     border-radius: 50%;
     background: var(--brand);
 }
 
 .history li::after {
-    top: 0.575rem;
-    bottom: -0.575rem;
-    width: 1px;
+    top: 9px;
+    bottom: -9px;
+    left: -1px;
+    width: 2px;
     background: var(--border-strong);
 }
 

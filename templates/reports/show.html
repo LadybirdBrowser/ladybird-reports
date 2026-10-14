@@ -30,7 +30,7 @@
                 </div>
                 <dl class="definition-list">
                     {% for field in report.overview %}
-                        <div{% if field.full_width %} class="overview-wide"{% endif %}>
+                        <div class="value-area{% if field.full_width %} overview-wide{% endif %}">
                             <dt>{{ field.label }}</dt>
                             <dd class="overview-value" data-copy-scope>
                                 <span data-copy-source>{% include "reports/_linked_value.html" %}</span>

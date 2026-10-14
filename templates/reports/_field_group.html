@@ -3,7 +3,7 @@
         <table class="report-field-table">
             <tbody>
                 {% for field in group.fields %}
-                    <tr>
+                    <tr class="value-area">
                         <th scope="row">
                             <strong>{{ field.label }}</strong>
                             {% if field.known %}
@@ -23,7 +23,7 @@
     </div>
 {% else %}
     {% for field in group.fields %}
-        <article class="report-field" data-copy-scope>
+        <article class="report-field value-area" data-copy-scope>
             <header class="report-field-header">
                 <div>
                     <h3>{{ field.label }}</h3>

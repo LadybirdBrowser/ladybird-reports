@@ -9,8 +9,7 @@ const reportId = "01a0a536-01cd-7ac7-a3cf-ae6a2d5030e5";
 // Value buttons only show while their value is hovered, so move the mouse onto the value first.
 async function hoverValueOf(button: Locator) {
   await button.locator(
-    "xpath=ancestor::*[contains(@class,'overview-value') or contains(@class,'report-field-value')"
-      + " or contains(@class,'report-field')][1]",
+    "xpath=ancestor::*[contains(@class,'value-area')][1]",
   ).hover();
 }
 
@@ -396,24 +395,25 @@ test.describe("authenticated management UI", () => {
     const overview = page.getByRole("region", { name: "Overview" });
     const platform = overview.locator(".definition-list > div").filter({ hasText: "Platform" });
     const platformGroup = platform.locator(".button-group");
-    const opacity = (group: Locator) => group.evaluate((element) => getComputedStyle(element).opacity);
+    const shown = (group: Locator, visible: boolean) => expect(group).toHaveCSS("opacity", visible ? "1" : "0");
 
     await page.mouse.move(0, 0);
-    expect(await opacity(platformGroup)).toBe("0");
-    await platform.locator("dd").hover();
-    expect(await opacity(platformGroup)).toBe("1");
+    await shown(platformGroup, false);
+    // Anywhere in the field's area counts, the label included.
+    await platform.locator("dt").hover();
+    await shown(platformGroup, true);
 
     // A tap, which has no hover, shows the buttons of its value and hides those of others.
     await page.mouse.move(0, 0);
-    expect(await opacity(platformGroup)).toBe("0");
-    await platform.locator("dd").dispatchEvent("pointerdown", { pointerType: "touch" });
-    expect(await opacity(platformGroup)).toBe("1");
+    await shown(platformGroup, false);
+    await platform.locator("dt").dispatchEvent("pointerdown", { pointerType: "touch" });
+    await shown(platformGroup, true);
     await page.locator("h1").first().dispatchEvent("pointerdown", { pointerType: "touch" });
-    expect(await opacity(platformGroup)).toBe("0");
+    await shown(platformGroup, false);
 
     // The stack trace keeps its copy button, and attachments their buttons.
     const stackCopy = page.getByRole("button", { name: "Copy Stack trace" });
-    expect(await opacity(stackCopy.locator("xpath=.."))).toBe("1");
+    await shown(stackCopy.locator("xpath=.."), true);
     for (const button of await page.locator(".attachment-actions .icon-button, .attachment-actions a").all()) {
       await expect(button).toBeVisible();
     }
