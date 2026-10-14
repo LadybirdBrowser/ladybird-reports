@@ -811,6 +811,14 @@ function refreshTimestamps(root = document) {
     }
 }
 
+// Audit details are cut off to one line; a click shows them in full.
+document.addEventListener("click", (event) => {
+    const details = event.target instanceof Element ? event.target.closest(".event-details") : null;
+    if (details) {
+        details.setAttribute("aria-expanded", details.getAttribute("aria-expanded") === "true" ? "false" : "true");
+    }
+});
+
 function initializeTimestamps() {
     // A timestamp sits above its row's link to show a tooltip, so pass clicks on.
     document.addEventListener("click", (event) => {

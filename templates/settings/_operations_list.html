@@ -10,8 +10,8 @@
                 <thead>
                     <tr>
                         <th>Time</th>
-                        <th>Actor</th>
                         <th>Action</th>
+                        <th>Actor</th>
                         <th>Target</th>
                         <th>Details</th>
                     </tr>
@@ -20,8 +20,8 @@
                     {% for event in events %}
                         <tr>
                             <td class="quiet audit-time">{{ event.created_at }}</td>
-                            <td class="audit-actor">{{ event.actor }}</td>
                             <td class="audit-action"><span class="badge badge-neutral">{{ event.action }}</span></td>
+                            <td class="audit-actor">{{ event.actor }}</td>
                             <td class="audit-target">
                                 {% if let Some(url) = event.target_url %}
                                     <a href="{{ url }}" title="Open {{ event.target_label.as_ref().unwrap() }}">
@@ -31,7 +31,7 @@
                                     <span class="quiet">{{ label }}</span>
                                 {% endif %}
                             </td>
-                            <td class="audit-details"><code title="{{ event.details }}">{{ event.details }}</code></td>
+                            <td class="audit-details"><code class="event-details" title="{{ event.details }}">{{ event.details }}</code></td>
                         </tr>
                     {% endfor %}
                 </tbody>

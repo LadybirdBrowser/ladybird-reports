@@ -135,9 +135,9 @@
                         <ol class="history">
                             {% for event in events %}
                                 <li>
-                                    <strong>{{ event.action }}</strong><br>
-                                    {{ event.created_at }} · {{ event.actor }}<br>
-                                    <code>{{ event.details }}</code>
+                                    <strong>{{ event.action }}</strong>
+                                    <span class="quiet">{{ event.created_at }} · {{ event.actor }}</span>
+                                    <code class="event-details" title="{{ event.details }}">{{ event.details }}</code>
                                 </li>
                             {% endfor %}
                         </ol>

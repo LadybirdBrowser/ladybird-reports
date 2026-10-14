@@ -101,7 +101,7 @@ test("records a denied sign-in once and still lets maintainers in", async ({ pag
   await page.goto("/operations");
   const denied = page.locator("[data-rows] tr").filter({ hasText: "session.denied" });
   await expect(denied).toHaveCount(1);
-  await expect(denied.locator("td").nth(1)).toHaveText("browser-tester");
+  await expect(denied.locator("td").nth(2)).toHaveText("browser-tester");
   await expect(denied.locator("code")).toContainText('"github_id":12345');
   await expect(denied.locator("code")).toContainText('"login":"browser-tester"');
 });
@@ -1081,6 +1081,25 @@ test.describe("authenticated management UI", () => {
 
   test("links an exact issue match and unlinks it from the report", async ({ page }) => {
     await page.goto("/issues");
+  test("shows the audit columns in order and expands details on click", async ({ page }) => {
+    await page.goto("/operations");
+
+    await expect(page.locator(".audit-table th")).toHaveText(["Time", "Action", "Actor", "Target", "Details"]);
+
+    const details = page.locator(".event-details").first();
+    await expect(details).toHaveAttribute("title", /.+/);
+    const collapsed = await details.evaluate((element) => element.getBoundingClientRect().height);
+    await details.click();
+    await expect(details).toHaveAttribute("aria-expanded", "true");
+    expect(await details.evaluate((element) => getComputedStyle(element).textOverflow)).toBe("ellipsis");
+    expect(await details.evaluate((element) => getComputedStyle(element).whiteSpace)).toBe("normal");
+    expect(await details.evaluate((element) => element.getBoundingClientRect().height)).toBeGreaterThanOrEqual(
+      collapsed,
+    );
+    await details.click();
+    await expect(details).toHaveAttribute("aria-expanded", "false");
+  });
+
     await page.getByRole("link", { name: "Intermittent navigation timeout" }).click();
 
     const matches = page.getByRole("region", { name: "Potential matches" });

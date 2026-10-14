@@ -1255,11 +1255,19 @@ button:active,
     max-width: 0;
 }
 
-.audit-details code {
+.event-details {
     display: block;
     overflow: hidden;
     text-overflow: ellipsis;
 }
+    cursor: pointer;
+}
+
+/* A click on the details shows all of them, wrapped. */
+.event-details[aria-expanded="true"] {
+    overflow: visible;
+    white-space: normal;
+    overflow-wrap: anywhere;
 
 /* Reports that share a stack signature, folded under the most recent one. */
 .report-group-toggle {
@@ -2435,7 +2443,13 @@ pre {
     font-size: 0.84rem;
 }
 
-.history li::before {
+.history li .event-details {
+    flex: 1 1 10rem;
+}
+
+/* The dot and the line are centred on the same vertical axis. */
+.history li::before,
+.history li::after {
     position: absolute;
     top: 0.35rem;
     left: 0;
@@ -2444,13 +2458,21 @@ pre {
     border: 2px solid var(--surface);
     border-radius: 50%;
     background: var(--brand);
-    content: "";
-    transform: translateX(-50%);
+}
+
+.history li::after {
+    top: 0.575rem;
+    bottom: -0.575rem;
+    width: 1px;
+    background: var(--border-strong);
 }
 
 .history li:last-child {
     padding-bottom: 0;
-    border-left-color: transparent;
+}
+
+.history li:last-child::after {
+    display: none;
 }
 
 .form-note {
@@ -2463,6 +2485,12 @@ pre {
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
     font-size: 0.8rem;
     line-height: 1.55;
+    content: "";
+    transform: translateX(-50%);
+}
+
+.history li::before {
+    top: 0.3rem;
     tab-size: 4;
 }
 
