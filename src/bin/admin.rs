@@ -1,7 +1,10 @@
 use std::sync::Arc;
 
 use ladybird_reports::{
-    application::{DiscordNotificationService, backfill_failure_reasons, run_stack_indexer},
+    application::{
+        DiscordNotificationService, backfill_failure_reasons, run_session_verification,
+        run_stack_indexer,
+    },
     error::Result,
     infrastructure::{
         SecretCipher,
@@ -80,6 +83,11 @@ async fn run() -> Result<()> {
     let stack_indexer = tokio::spawn(run_stack_indexer(state.database.clone()));
     let failure_reason_backfill = tokio::spawn(run_failure_reason_backfill(state.clone()));
     let github_duplicates = tokio::spawn(run_github_duplicates(state.clone()));
+    let session_verification = tokio::spawn(run_session_verification(
+        state.database.clone(),
+        state.github.clone(),
+        state.secret_cipher.clone(),
+    ));
 
     let address = listen_address("ADMIN_LISTEN_ADDRESS", "0.0.0.0:3000")?;
     let listener = tokio::net::TcpListener::bind(address).await?;
@@ -99,6 +107,8 @@ async fn run() -> Result<()> {
     let _ = failure_reason_backfill.await;
     github_duplicates.abort();
     let _ = github_duplicates.await;
+    session_verification.abort();
+    let _ = session_verification.await;
     configuration_listener.abort();
     let _ = configuration_listener.await;
 

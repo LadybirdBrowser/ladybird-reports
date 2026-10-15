@@ -135,7 +135,7 @@ impl Default for RuntimeConfiguration {
             discord: DiscordConfiguration::default(),
             session_lifetime_seconds: default_session_lifetime_seconds(),
             token_refresh_before_seconds: default_token_refresh_before_seconds(),
-            membership_recheck_seconds: 600,
+            membership_recheck_seconds: 1800,
             audit: AuditConfiguration::default(),
         }
     }

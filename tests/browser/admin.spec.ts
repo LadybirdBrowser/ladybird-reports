@@ -59,24 +59,23 @@ test("sign-in returns to the requested report and preserves its query", async ({
     .toBe(false);
 });
 
-test("refreshes GitHub tokens and keeps an active session for 24 hours", async ({ page }) => {
-  const before = await (await page.request.get(`${fakeGithub}/test/token-refresh-count`)).json();
+// Requests accept a session from what is stored with it and never call GitHub.
+test("keeps an active session for 24 hours without calling GitHub", async ({ page }) => {
+  const refreshCount = async () =>
+    (await (await page.request.get(`${fakeGithub}/test/token-refresh-count`)).json()).count;
 
   await page.goto("/login");
   await page.getByRole("link", { name: "Continue with GitHub" }).click();
   await expect(page).toHaveURL(`${adminUrl}/`);
 
-  const after = await (await page.request.get(`${fakeGithub}/test/token-refresh-count`)).json();
-  expect(after.count).toBeGreaterThan(before.count);
-
   const sessionCookie = (await page.context().cookies()).find((cookie) => cookie.name === "session");
   expect(sessionCookie).toBeDefined();
   expect(sessionCookie!.expires - Date.now() / 1000).toBeGreaterThan(23 * 60 * 60);
 
+  const afterSignIn = await refreshCount();
   await page.reload();
   await expect(page).toHaveURL(`${adminUrl}/`);
-  const rotatedAgain = await (await page.request.get(`${fakeGithub}/test/token-refresh-count`)).json();
-  expect(rotatedAgain.count).toBeGreaterThan(after.count);
+  expect(await refreshCount()).toBe(afterSignIn);
 
   await page.getByRole("button", { name: "Open account menu for browser-tester" }).click();
   await page.getByRole("button", { name: "Sign out" }).click();
@@ -1390,4 +1389,22 @@ test.describe("authenticated management UI", () => {
 
 
 
+});
+
+// Last, because it waits for a sweep of the background task. The fake GitHub issues tokens that expire inside the
+// refresh window, so the task rotates them.
+test("rotates GitHub tokens in the background", async ({ page }) => {
+  test.setTimeout(120_000);
+  const refreshCount = async () =>
+    (await (await page.request.get(`${fakeGithub}/test/token-refresh-count`)).json()).count;
+
+  await page.goto("/login");
+  await page.getByRole("link", { name: "Continue with GitHub" }).click();
+  await expect(page).toHaveURL(`${adminUrl}/`);
+
+  const afterSignIn = await refreshCount();
+  await expect.poll(refreshCount, { timeout: 90_000 }).toBeGreaterThan(afterSignIn);
+
+  await page.reload();
+  await expect(page).toHaveURL(`${adminUrl}/`);
 });

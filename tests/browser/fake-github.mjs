@@ -52,7 +52,7 @@ const server = createServer((request, response) => {
         activeRefreshTokens.add(rotatedRefreshToken);
         sendJson(response, 200, {
           access_token: `browser-test-token-${refreshCount}`,
-          expires_in: 1,
+          expires_in: 600,
           refresh_token: rotatedRefreshToken,
           refresh_token_expires_in: 3600,
         });
@@ -64,7 +64,7 @@ const server = createServer((request, response) => {
       activeRefreshTokens.add(issuedRefreshToken);
       sendJson(response, 200, {
         access_token: "browser-test-token",
-        expires_in: 1,
+        expires_in: 600,
         refresh_token: issuedRefreshToken,
         refresh_token_expires_in: 3600,
       });

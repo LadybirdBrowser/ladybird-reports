@@ -9,10 +9,7 @@ use cookie::Cookie;
 use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
 
-use crate::{
-    error::{AppError, Result},
-    infrastructure::hash_secret,
-};
+use crate::{error::Result, infrastructure::hash_secret};
 
 use super::{AdminState, authentication::session_cookie, templates::redirect_to_login};
 
@@ -64,59 +61,23 @@ pub async fn require_session(
     }
 
     let token_hash = hash_secret(&session_token);
-    let Some(mut record) = state.database.find_session(&token_hash).await? else {
+    let Some(record) = state.database.find_session(&token_hash).await? else {
         return Ok(redirect_to_login(request.method(), request.uri()));
     };
 
+    // Only what is stored with the session is checked here. A background task keeps it current: it rotates GitHub
+    // tokens and verifies team membership. A session it could not keep current stops being accepted, so a failing task
+    // ends access instead of leaving it open.
     let configuration = state.database.configuration().await?;
-    let refresh_before = Duration::seconds(configuration.token_refresh_before_seconds as i64);
-
-    if record
+    let now = Utc::now();
+    let membership_expired = now - record.membership_verified_at
+        >= Duration::seconds(configuration.membership_recheck_seconds as i64);
+    let token_expired = record
         .access_token_expires_at
-        .is_some_and(|expiry| expiry <= Utc::now() + refresh_before)
-    {
-        match state
-            .database
-            .refresh_session_token(
-                &token_hash,
-                refresh_before,
-                &state.github,
-                &state.secret_cipher,
-            )
-            .await
-        {
-            Ok(Some(encrypted_access_token)) => {
-                record.encrypted_access_token = encrypted_access_token
-            }
-            Ok(None) => return Ok(redirect_to_login(request.method(), request.uri())),
-            Err(AppError::AuthenticationRequired) => {
-                state.database.revoke_session(&token_hash).await?;
-                return Ok(redirect_to_login(request.method(), request.uri()));
-            }
-            Err(error) => return Err(error),
-        }
-    }
+        .is_some_and(|expiry| expiry <= now);
 
-    let verification_age = Utc::now() - record.membership_verified_at;
-
-    if verification_age >= Duration::seconds(configuration.membership_recheck_seconds as i64) {
-        let access_token = state
-            .secret_cipher
-            .decrypt(&record.encrypted_access_token)?;
-
-        state
-            .github
-            .verify_team_member_identity(
-                &access_token,
-                &configuration.github_authorization_team,
-                record.github_id,
-            )
-            .await?;
-
-        state
-            .database
-            .refresh_membership_verification(&record.token_hash)
-            .await?;
+    if membership_expired || token_expired {
+        return Ok(redirect_to_login(request.method(), request.uri()));
     }
 
     let extended = state

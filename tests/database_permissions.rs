@@ -469,7 +469,7 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
         .configuration()
         .await
         .expect("load runtime configuration");
-    assert_eq!(configuration.membership_recheck_seconds, 600);
+    assert_eq!(configuration.membership_recheck_seconds, 30 * 60);
     assert_eq!(configuration.session_lifetime_seconds, 24 * 60 * 60);
     assert_eq!(configuration.token_refresh_before_seconds, 15 * 60);
     assert_eq!(configuration.audit.denied_sign_in_window_seconds, 10 * 60);
@@ -507,6 +507,63 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
     .await
     .expect("count session audit events");
     assert_eq!(session_audit_count, 2);
+
+    // Background verification picks one session per person, and only when one of their sessions has an old check.
+    let verified_session_hash = "8".repeat(64);
+    let second_session_hash = "7".repeat(64);
+    for hash in [&verified_session_hash, &second_session_hash] {
+        admin_database
+            .create_session(new_session(&original_team, hash))
+            .await
+            .expect("create session to verify");
+    }
+    let due = |verified_before: Duration| {
+        let admin_database = admin_database.clone();
+        async move {
+            admin_database
+                .due_session_per_user(verified_before)
+                .await
+                .expect("list sessions due for verification")
+                .into_iter()
+                .filter(|session| session.github_id == 999)
+                .count()
+        }
+    };
+    assert_eq!(due(Duration::hours(1)).await, 0, "just verified");
+    sqlx::query(
+        "UPDATE sessions SET membership_verified_at = now() - interval '2 hours'
+         WHERE token_hash = $1",
+    )
+    .bind(&verified_session_hash)
+    .execute(&admin_pool)
+    .await
+    .expect("age the membership check of one session");
+    assert_eq!(
+        due(Duration::hours(1)).await,
+        1,
+        "one session of two is stale, and the person is listed once"
+    );
+    admin_database
+        .refresh_membership_verification_for_user(999)
+        .await
+        .expect("verify the person");
+    assert_eq!(due(Duration::hours(1)).await, 0, "verified again");
+    let unverified: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM sessions
+         WHERE github_id = 999 AND membership_verified_at < now() - interval '1 minute'",
+    )
+    .fetch_one(&admin_pool)
+    .await
+    .expect("count stale sessions");
+    assert_eq!(unverified, 0, "all of their sessions are verified");
+    admin_database
+        .delete_session(&second_session_hash, 999)
+        .await
+        .expect("delete second session");
+    admin_database
+        .delete_session(&verified_session_hash, 999)
+        .await
+        .expect("delete verified session");
 
     // A denied account is not a maintainer, so it is recorded without an actor,
     // and repeated denials of the same account do not flood the log.

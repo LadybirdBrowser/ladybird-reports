@@ -152,6 +152,58 @@ impl AdminDatabase {
         .map_err(Into::into)
     }
 
+    /// The sessions whose GitHub access token expires within `refresh_before` and can be rotated.
+    pub async fn sessions_with_expiring_tokens(
+        &self,
+        refresh_before: chrono::Duration,
+    ) -> Result<Vec<String>> {
+        sqlx::query_scalar(
+            "SELECT token_hash
+             FROM sessions
+             WHERE expires_at > now()
+                AND encrypted_refresh_token IS NOT NULL
+                AND access_token_expires_at <= $1",
+        )
+        .bind(Utc::now() + refresh_before)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(Into::into)
+    }
+
+    /// One session for each person who has a session due for a membership check: one whose last check is older than
+    /// `verified_before`. The session is the one used last among those whose GitHub token is still valid, as its token
+    /// is the freshest.
+    pub async fn due_session_per_user(
+        &self,
+        verified_before: chrono::Duration,
+    ) -> Result<Vec<SessionRecord>> {
+        sqlx::query_as(
+            "SELECT DISTINCT ON (sessions.github_id)
+                sessions.github_id,
+                maintainers.login,
+                sessions.csrf_token,
+                sessions.token_hash,
+                sessions.encrypted_access_token,
+                sessions.encrypted_refresh_token,
+                sessions.access_token_expires_at,
+                sessions.membership_verified_at
+             FROM sessions
+             JOIN maintainers USING (github_id)
+             WHERE sessions.expires_at > now()
+                AND (sessions.access_token_expires_at IS NULL
+                    OR sessions.access_token_expires_at > now())
+                AND sessions.github_id IN (
+                    SELECT github_id FROM sessions
+                    WHERE expires_at > now() AND membership_verified_at <= $1
+                )
+             ORDER BY sessions.github_id, sessions.expires_at DESC",
+        )
+        .bind(Utc::now() - verified_before)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(Into::into)
+    }
+
     pub async fn extend_session(
         &self,
         token_hash: &str,
@@ -250,11 +302,15 @@ impl AdminDatabase {
         Ok(Some(encrypted_access_token))
     }
 
-    pub async fn refresh_membership_verification(&self, token_hash: &str) -> Result<()> {
-        sqlx::query("UPDATE sessions SET membership_verified_at = now() WHERE token_hash = $1")
-            .bind(token_hash)
-            .execute(&self.pool)
-            .await?;
+    /// Membership belongs to the person, so one check covers all of their sessions.
+    pub async fn refresh_membership_verification_for_user(&self, github_id: i64) -> Result<()> {
+        sqlx::query(
+            "UPDATE sessions SET membership_verified_at = now()
+             WHERE github_id = $1 AND expires_at > now()",
+        )
+        .bind(github_id)
+        .execute(&self.pool)
+        .await?;
 
         Ok(())
     }
