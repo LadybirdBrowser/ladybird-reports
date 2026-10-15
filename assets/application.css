@@ -4,7 +4,6 @@
     color-scheme: light;
     font: 15px/1.55 Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     --page: #f5f6fa;
-    --page-tint: #eceefa;
     --surface: #ffffff;
     --surface-subtle: #f8f8fc;
     --surface-raised: #ffffff;
@@ -37,6 +36,7 @@
     --section-gap: 1.25rem;
     --heading-gap: 0.85rem;
     --item-gap: 0.9rem;
+    --header-height: 4.2rem;
 }
 
 [hidden] {
@@ -47,8 +47,7 @@
     :root {
         color-scheme: dark;
         --page: #12131a;
-        --page-tint: #191a27;
-        --surface: #1c1e28;
+            --surface: #1c1e28;
         --surface-subtle: #222430;
         --surface-raised: #242632;
         --ink: #f0f0f5;
@@ -82,15 +81,14 @@
 
 html {
     min-height: 100%;
+    scroll-padding-top: calc(var(--header-height) + 1rem);
     background: var(--page);
 }
 
 body {
     min-height: 100vh;
     margin: 0;
-    background:
-        radial-gradient(circle at 10% -10%, var(--page-tint), transparent 32rem),
-        var(--page);
+    background: var(--page);
     color: var(--ink);
 }
 
@@ -142,18 +140,18 @@ code {
 /* Application frame */
 
 .site-header {
-    position: relative;
+    position: sticky;
+    top: 0;
     z-index: 10;
     border-bottom: 1px solid rgb(255 255 255 / 0.08);
     background: var(--header);
     color: var(--header-ink);
-    box-shadow: 0 3px 18px rgb(8 9 16 / 0.16);
 }
 
 .header-inner {
     display: flex;
     width: min(78rem, calc(100% - 3rem));
-    min-height: 4.6rem;
+    min-height: var(--header-height);
     margin: 0 auto;
     align-items: center;
     gap: 2.5rem;
@@ -205,16 +203,19 @@ code {
     text-transform: uppercase;
 }
 
-nav {
+/* The main navigation is a row of tabs standing on the bottom edge of the
+   header; the open one is lit and underlined. */
+nav[aria-label="Main navigation"] {
     display: flex;
-    align-self: stretch;
-    align-items: center;
+    align-self: flex-end;
+    align-items: flex-end;
     gap: 0.25rem;
 }
 
-nav a {
-    padding: 0.55rem 0.78rem;
-    border-radius: var(--radius-sm);
+nav[aria-label="Main navigation"] a {
+    margin-bottom: -1px;
+    padding: 0.7rem 1.15rem 0.75rem;
+    border-radius: var(--radius-md) var(--radius-md) 0 0;
     color: var(--header-soft);
     font-size: 0.9rem;
     font-weight: 600;
@@ -222,9 +223,45 @@ nav a {
     transition: background 120ms ease, color 120ms ease;
 }
 
-nav a:hover {
+nav[aria-label="Main navigation"] a:hover {
     background: rgb(255 255 255 / 0.08);
     color: var(--header-ink);
+}
+
+nav[aria-label="Main navigation"] a[aria-current="page"] {
+    position: relative;
+    background: var(--page);
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.16);
+    color: var(--ink);
+    font-weight: 750;
+}
+
+/* Flared feet that curve the tab into the page. */
+nav[aria-label="Main navigation"] a[aria-current="page"]::before,
+nav[aria-label="Main navigation"] a[aria-current="page"]::after {
+    position: absolute;
+    bottom: 0;
+    width: var(--radius-md);
+    height: var(--radius-md);
+    content: "";
+}
+
+nav[aria-label="Main navigation"] a[aria-current="page"]::before {
+    right: 100%;
+    background: radial-gradient(
+        circle at 0 0,
+        transparent calc(var(--radius-md) - 0.5px),
+        var(--page) var(--radius-md)
+    );
+}
+
+nav[aria-label="Main navigation"] a[aria-current="page"]::after {
+    left: 100%;
+    background: radial-gradient(
+        circle at 100% 0,
+        transparent calc(var(--radius-md) - 0.5px),
+        var(--page) var(--radius-md)
+    );
 }
 
 .account {
@@ -322,7 +359,7 @@ nav a:hover {
 
 .page-shell {
     min-height: calc(100vh - 11rem);
-    padding: 2.7rem 0 4rem;
+    padding: 1.6rem 0 4rem;
 }
 
 .site-footer {
@@ -495,7 +532,7 @@ nav a:hover {
 
 .sticky-card {
     position: sticky;
-    top: 1.25rem;
+    top: calc(var(--header-height) + 1.25rem);
 }
 
 .empty-state {
@@ -1161,6 +1198,19 @@ button:active,
     box-shadow: var(--shadow-sm);
 }
 
+.state-bar {
+    display: flex;
+    margin-bottom: var(--section-gap);
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.6rem 1.5rem;
+}
+
+.state-bar .state-filters {
+    margin-bottom: 0;
+}
+
 .new-triage {
     margin: 0;
     flex: 0 0 auto;
@@ -1168,9 +1218,10 @@ button:active,
 
 .new-triage a {
     display: flex;
-    padding: 0.6rem 1rem;
+    padding: 0.4rem 0.9rem;
     align-items: center;
-    gap: 0.75rem;
+    gap: 0.6rem;
+    border-radius: 999px;
     border: 1px solid color-mix(in srgb, var(--warning) 24%, transparent);
     border-radius: var(--radius-md);
     background: var(--warning-soft);
@@ -1181,7 +1232,7 @@ button:active,
 }
 
 .new-triage strong {
-    font-size: 1.9rem;
+    font-size: 1.15rem;
     font-weight: 750;
     line-height: 1;
 }
@@ -2981,10 +3032,10 @@ pre {
     .header-inner {
         flex-wrap: wrap;
         gap: 0.5rem 1.25rem;
-        padding: 0.8rem 0;
+        padding: 0.8rem 0 0;
     }
 
-    nav {
+    nav[aria-label="Main navigation"] {
         order: 3;
         width: 100%;
     }
@@ -3018,13 +3069,13 @@ pre {
         padding-left: 0.5rem;
     }
 
-    nav {
+    nav[aria-label="Main navigation"] {
         overflow-x: auto;
     }
 
-    nav a {
-        padding-right: 0.55rem;
-        padding-left: 0.55rem;
+    nav[aria-label="Main navigation"] a {
+        padding-right: 0.7rem;
+        padding-left: 0.7rem;
     }
 
     .page-shell {

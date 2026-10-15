@@ -1,18 +1,9 @@
 {% extends "base.html" %}
 
 {% block title %}Audit log{% endblock %}
+{% block nav_audit %}aria-current="page"{% endblock %}
 
 {% block content %}
-    <header class="page-header">
-        <div>
-            <p class="eyebrow">Accountability</p>
-            <h1>Audit log</h1>
-            <p class="page-summary">
-                Review administrative changes, moderation actions, and GitHub activity.
-            </p>
-        </div>
-    </header>
-
     <section
         class="card"
         aria-labelledby="operation-list-title"

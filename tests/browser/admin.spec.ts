@@ -1064,7 +1064,9 @@ test.describe("authenticated management UI", () => {
   test("shows the audit log", async ({ page }) => {
     await page.goto("/operations");
 
-    await expect(page.getByRole("heading", { name: "Audit log" })).toBeVisible();
+    await expect(
+      page.getByRole("navigation", { name: "Main navigation" }).getByRole("link", { name: "Audit log" }),
+    ).toHaveAttribute("aria-current", "page");
     await expect(page.getByText("field_definitions.reorder", { exact: true })).toBeVisible();
     await expect(page.getByText("submission_source.update_state", { exact: true }))
       .toHaveCount(2);

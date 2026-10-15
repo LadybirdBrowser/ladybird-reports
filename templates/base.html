@@ -22,10 +22,26 @@
 
                 {% if let Some(navigation) = navigation %}
                     <nav aria-label="Main navigation">
-                        <a href="/">Reports</a>
-                        <a href="/issues">Issues</a>
-                        <a href="/settings">Settings</a>
-                        <a href="/operations">Audit log</a>
+                        <a
+                            href="/"
+                            title="Review incoming diagnostics and group matching reports into issues."
+                            {% block nav_reports %}{% endblock %}
+                        >Reports</a>
+                        <a
+                            href="/issues"
+                            title="Track groups of related reports and connect them to Ladybird issues on GitHub."
+                            {% block nav_issues %}{% endblock %}
+                        >Issues</a>
+                        <a
+                            href="/settings"
+                            title="Tune runtime limits and define how submitted fields appear in reports. Compiled safety ceilings still apply."
+                            {% block nav_settings %}{% endblock %}
+                        >Settings</a>
+                        <a
+                            href="/operations"
+                            title="Review administrative changes, moderation actions, and GitHub activity."
+                            {% block nav_audit %}{% endblock %}
+                        >Audit log</a>
                     </nav>
 
                     <div class="account">

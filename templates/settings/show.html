@@ -1,19 +1,9 @@
 {% extends "base.html" %}
 
 {% block title %}Settings{% endblock %}
+{% block nav_settings %}aria-current="page"{% endblock %}
 
 {% block content %}
-    <header class="page-header">
-        <div>
-            <p class="eyebrow">Service configuration</p>
-            <h1>Settings</h1>
-            <p class="page-summary">
-                Tune runtime limits and define how submitted fields appear in reports.
-                Compiled safety ceilings still apply.
-            </p>
-        </div>
-    </header>
-
     <div class="settings-grid">
         <section class="card" aria-labelledby="runtime-configuration-title">
             <div class="card-header">
