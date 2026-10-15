@@ -1,11 +1,13 @@
 use std::sync::Arc;
 
+use tokio::task::JoinSet;
+
 use ladybird_reports::{
     application::{
         DiscordNotificationService, backfill_failure_reasons, run_session_verification,
         run_stack_indexer,
     },
-    error::Result,
+    error::{AppError, Result},
     infrastructure::{
         SecretCipher,
         attachments::FileAttachmentStore,
@@ -78,39 +80,81 @@ async fn run() -> Result<()> {
         secret_cipher,
         bootstrap_reporting_database_url: bootstrap.generated_reporting_database_url.map(Arc::from),
     };
-    let maintenance = tokio::spawn(run_maintenance(state.clone()));
-    let discord_notifications = tokio::spawn(discord_notifications.run());
-    let stack_indexer = tokio::spawn(run_stack_indexer(state.database.clone()));
-    let failure_reason_backfill = tokio::spawn(run_failure_reason_backfill(state.clone()));
-    let github_duplicates = tokio::spawn(run_github_duplicates(state.clone()));
-    let session_verification = tokio::spawn(run_session_verification(
-        state.database.clone(),
-        state.github.clone(),
-        state.secret_cipher.clone(),
-    ));
+    // Background tasks run for as long as the process does. None of them should end, so one that does, by a panic or
+    // otherwise, takes the process down for the platform to restart, rather than leaving a service that quietly stops
+    // doing part of its work.
+    let mut background_tasks = JoinSet::new();
+    background_tasks.spawn({
+        let state = state.clone();
+        async move {
+            run_maintenance(state).await;
+            "maintenance"
+        }
+    });
+    background_tasks.spawn(async move {
+        discord_notifications.run().await;
+        "discord_notifications"
+    });
+    background_tasks.spawn({
+        let database = state.database.clone();
+        async move {
+            run_stack_indexer(database).await;
+            "stack_indexer"
+        }
+    });
+    background_tasks.spawn({
+        let state = state.clone();
+        async move {
+            run_failure_reason_backfill(state).await;
+            "failure_reason_backfill"
+        }
+    });
+    background_tasks.spawn({
+        let state = state.clone();
+        async move {
+            run_github_duplicates(state).await;
+            "github_duplicates"
+        }
+    });
+    background_tasks.spawn({
+        let database = state.database.clone();
+        let github = state.github.clone();
+        let cipher = state.secret_cipher.clone();
+        async move {
+            run_session_verification(database, github, cipher).await;
+            "session_verification"
+        }
+    });
 
     let address = listen_address("ADMIN_LISTEN_ADDRESS", "0.0.0.0:3000")?;
     let listener = tokio::net::TcpListener::bind(address).await?;
     tracing::info!(event = "startup.ready", service = "admin", %address);
 
-    axum::serve(listener, router(state))
-        .with_graceful_shutdown(shutdown_signal())
-        .await?;
+    let stopped_task = tokio::select! {
+        result = axum::serve(listener, router(state)).with_graceful_shutdown(shutdown_signal()) => {
+            result?;
+            None
+        }
+        ended = background_tasks.join_next() => ended,
+    };
 
-    maintenance.abort();
-    let _ = maintenance.await;
-    discord_notifications.abort();
-    let _ = discord_notifications.await;
-    stack_indexer.abort();
-    let _ = stack_indexer.await;
-    failure_reason_backfill.abort();
-    let _ = failure_reason_backfill.await;
-    github_duplicates.abort();
-    let _ = github_duplicates.await;
-    session_verification.abort();
-    let _ = session_verification.await;
+    background_tasks.abort_all();
+    while background_tasks.join_next().await.is_some() {}
     configuration_listener.abort();
     let _ = configuration_listener.await;
+
+    if let Some(ended) = stopped_task {
+        return Err(match ended {
+            Ok(task) => {
+                tracing::error!(event = "background_task.ended", task);
+                AppError::internal(anyhow::anyhow!("background task {task} ended"))
+            }
+            Err(error) => {
+                tracing::error!(event = "background_task.failed", ?error);
+                AppError::internal(error)
+            }
+        });
+    }
 
     tracing::info!(event = "shutdown.complete", service = "admin");
     Ok(())
@@ -122,6 +166,8 @@ async fn run_github_duplicates(state: AdminState) {
             event = "github.duplicate_processing_disabled",
             "Configure GITHUB_APP_PRIVATE_KEY_BASE64 to process duplicate closures"
         );
+        // Not finishing, as a task that finished would end the process.
+        std::future::pending::<()>().await;
         return;
     }
 
