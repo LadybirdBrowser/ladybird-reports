@@ -76,12 +76,11 @@ pub fn generate_report_title(input: ReportTitleInput<'_>) -> String {
     title
 }
 
-/// The condition of a failed verification, such as `a <= b`, or the message of
-/// a Rust panic, when it says more than the source location does.
+/// The condition of a failed verification, such as `a <= b`, or the message of a Rust panic, when it says more than the
+/// source location does.
 ///
-/// The text comes from an anonymous client and ends up in titles, including the
-/// one proposed for a public issue, so only characters that make up a plain
-/// expression are kept; anything else means no expression is shown.
+/// The text comes from an anonymous client and ends up in titles, including the one proposed for a public issue, so
+/// only characters that make up a plain expression are kept; anything else means no expression is shown.
 fn failed_expression(reason: &str, room: usize) -> Option<String> {
     let maximum_characters = room.min(60);
     if maximum_characters < 10 {
@@ -191,15 +190,15 @@ fn source_location_from_failure(reason: &str) -> Option<String> {
 }
 
 pub fn concise_function_name(symbol: &str, maximum_characters: usize) -> Option<String> {
-    // AK's callback wrapper often hides the useful function name inside a
-    // template argument. Start at that inner function when present.
+    // AK's callback wrapper often hides the useful function name inside a template argument. Start at that inner
+    // function when present.
     let candidate = symbol
         .split_once("::CallableWrapper<")
         .map(|(_, inner)| inner)
         .unwrap_or(symbol);
 
-    // ABI descriptions can precede the actual qualified function name. Find
-    // the first scope operator, then discard any words before its qualifier.
+    // ABI descriptions can precede the actual qualified function name. Find the first scope operator, then discard any
+    // words before its qualifier.
     let candidate = if let Some(first_scope) = candidate.find("::") {
         &candidate[candidate[..first_scope]
             .rfind(char::is_whitespace)
@@ -252,8 +251,7 @@ pub fn concise_function_name(symbol: &str, maximum_characters: usize) -> Option<
     Some(concise)
 }
 
-/// The name of a signal, without the number some clients put after it, as in
-/// `SIGSEGV (11)`.
+/// The name of a signal, without the number some clients put after it, as in `SIGSEGV (11)`.
 fn signal_name(signal: &str) -> Option<String> {
     let name = signal.trim().split(['(', ' ']).next()?;
 

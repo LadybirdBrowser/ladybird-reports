@@ -42,9 +42,8 @@ text_enum! {
 }
 
 impl FieldKind {
-    /// Whether a field defined with this kind may be submitted as a value of
-    /// `submitted`. Older clients send stack traces as multiline text, and URLs
-    /// and commit IDs as plain text.
+    /// Whether a field defined with this kind may be submitted as a value of `submitted`. Older clients send stack
+    /// traces as multiline text, and URLs and commit IDs as plain text.
     pub fn accepts(self, submitted: FieldKind) -> bool {
         self == submitted
             || matches!(
@@ -55,8 +54,8 @@ impl FieldKind {
     }
 }
 
-/// Whether the text is a plain hexadecimal commit ID, abbreviated or in full.
-/// Nothing else is allowed, so it is safe to place in an address.
+/// Whether the text is a plain hexadecimal commit ID, abbreviated or in full. Nothing else is allowed, so it is safe to
+/// place in an address.
 pub fn is_commit_id(value: &str) -> bool {
     (7..=64).contains(&value.len()) && value.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
@@ -148,9 +147,8 @@ pub fn validate_fields(
     Ok(())
 }
 
-/// The stack trace that signs a submission: `stack`, or else the first by key,
-/// as in the `report_stack_traces` view. A stack trace is one sent as such, or
-/// as multiline text in `stack` or in a field defined as a stack trace.
+/// The stack trace that signs a submission: `stack`, or else the first by key, as in the `report_stack_traces` view. A
+/// stack trace is one sent as such, or as multiline text in `stack` or in a field defined as a stack trace.
 pub fn submitted_stack_trace<'a>(
     fields: &'a [DiagnosticField],
     definitions: &HashMap<String, FieldDefinition>,
@@ -306,8 +304,7 @@ mod tests {
     fn commit_id_definitions_accept_any_short_text() {
         let definitions = definitions_for("git_commit", FieldKind::CommitId);
 
-        // Builds without git information report "unknown"; only a valid commit
-        // ID is ever turned into a link.
+        // Builds without git information report "unknown"; only a valid commit ID is ever turned into a link.
         for value in [
             FieldValue::Text("a71cffae5ad9".into()),
             FieldValue::Text("unknown".into()),

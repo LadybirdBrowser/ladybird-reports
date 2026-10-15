@@ -35,9 +35,8 @@ impl AdminDatabase {
         let expires_at = Utc::now() + session.lifetime;
         let mut transaction = self.pool.begin().await?;
 
-        // Hold a read lock on the policy until the session is committed. A
-        // concurrent team change takes the write lock and revokes sessions,
-        // so a login verified under the old team cannot slip in afterward.
+        // Hold a read lock on the policy until the session is committed. A concurrent team change takes the write lock
+        // and revokes sessions, so a login verified under the old team cannot slip in afterward.
         let active_team: String = sqlx::query_scalar(
             "SELECT value ->> 'github_authorization_team'
              FROM runtime_configuration
@@ -99,11 +98,9 @@ impl AdminDatabase {
 
     /// Records a GitHub account that completed OAuth but is not authorized.
     ///
-    /// The account is not a maintainer, so it cannot be the audit actor and is
-    /// identified in the details instead. Any GitHub account can trigger this,
-    /// so repeats from one account within `window_seconds` are not recorded
-    /// again; otherwise a single account could push real entries out of the
-    /// log. A window of zero records every denial.
+    /// The account is not a maintainer, so it cannot be the audit actor and is identified in the details instead. Any
+    /// GitHub account can trigger this, so repeats from one account within `window_seconds` are not recorded again;
+    /// otherwise a single account could push real entries out of the log. A window of zero records every denial.
     pub async fn record_denied_sign_in(
         &self,
         github_id: i64,

@@ -18,8 +18,8 @@ struct Resolution {
     resolved_at: Instant,
 }
 
-/// Remembers the addresses of the DNS names among the trusted proxies for a
-/// limited time, so that resolving never happens while serving a request.
+/// Remembers the addresses of the DNS names among the trusted proxies for a limited time, so that resolving never
+/// happens while serving a request.
 pub struct ProxyAddresses {
     lifetime: Duration,
     refresh_interval: Duration,
@@ -27,9 +27,8 @@ pub struct ProxyAddresses {
 }
 
 impl ProxyAddresses {
-    /// Addresses are used for at most `lifetime`. `refresh_interval` is how
-    /// often `apply` runs: a resolution that would be too old by the next run
-    /// is refreshed on this one.
+    /// Addresses are used for at most `lifetime`. `refresh_interval` is how often `apply` runs: a resolution that would
+    /// be too old by the next run is refreshed on this one.
     pub fn new(lifetime: Duration, refresh_interval: Duration) -> Self {
         Self {
             lifetime,
@@ -38,9 +37,8 @@ impl ProxyAddresses {
         }
     }
 
-    /// Fills `trusted_networks` of the configuration, resolving names that are
-    /// new or about to expire. A name that cannot be resolved again keeps its
-    /// previous addresses; one that was never resolved is an error.
+    /// Fills `trusted_networks` of the configuration, resolving names that are new or about to expire. A name that
+    /// cannot be resolved again keeps its previous addresses; one that was never resolved is an error.
     pub async fn apply(&self, configuration: &mut RuntimeConfiguration) -> Result<()> {
         let mut resolutions = self.resolutions.lock().await;
 

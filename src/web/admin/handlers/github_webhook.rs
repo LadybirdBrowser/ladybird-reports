@@ -21,8 +21,8 @@ struct Repository {
     full_name: String,
 }
 
-/// The `action` of a GitHub `issues` event that this service reacts to. GitHub
-/// sends many more, all of which are ignored.
+/// The `action` of a GitHub `issues` event that this service reacts to. GitHub sends many more, all of which are
+/// ignored.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
 #[serde(rename_all = "snake_case")]
 enum IssueEventAction {

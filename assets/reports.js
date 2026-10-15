@@ -1,5 +1,5 @@
-// A dialog opens from a `data-dialog-open` button and closes from any
-// `data-dialog-close` element inside it or a click on its backdrop.
+// A dialog opens from a `data-dialog-open` button and closes from any `data-dialog-close` element inside it or a click
+// on its backdrop.
 for (const trigger of document.querySelectorAll("[data-dialog-open]")) {
     trigger.addEventListener("click", () => {
         document.getElementById(trigger.dataset.dialogOpen).showModal();
@@ -81,8 +81,8 @@ async function writeToClipboard(text) {
         return;
     }
 
-    // Without the asynchronous API, which needs a secure context, select the
-    // text of a temporary field and use the older command.
+    // Without the asynchronous API, which needs a secure context, select the text of a temporary field and use the
+    // older command.
     const field = document.createElement("textarea");
     field.value = text;
     field.setAttribute("readonly", "");

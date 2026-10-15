@@ -2,8 +2,8 @@ use sha2::{Digest, Sha256};
 
 use super::ReportKind;
 
-/// Version 2 leaves crash and panic plumbing out of the frames, names frames the
-/// same way whatever the client's symbol format, and includes the failure reason.
+/// Version 2 leaves crash and panic plumbing out of the frames, names frames the same way whatever the client's symbol
+/// format, and includes the failure reason.
 pub const STACK_SIGNATURE_VERSION: i32 = 2;
 
 const MAX_RENDERED_LINES: usize = 256;
@@ -16,11 +16,9 @@ const NATIVE_STACK_HEADER: &str = "Native stack (binary build ID, object address
 pub struct ParsedStackTrace {
     pub rows: Vec<StackTraceRow>,
     pub frame_count: usize,
-    /// The names of the functions in the stack, without the plumbing that ends a
-    /// crash, for the signature.
+    /// The names of the functions in the stack, without the plumbing that ends a crash, for the signature.
     pub frame_keys: Vec<String>,
-    /// Build ID and address of frames that have no symbol, for a signature when
-    /// nothing else identifies the stack.
+    /// Build ID and address of frames that have no symbol, for a signature when nothing else identifies the stack.
     pub address_keys: Vec<String>,
     pub truncated: bool,
 }
@@ -51,8 +49,8 @@ pub fn parse_stack_trace(text: &str) -> ParsedStackTrace {
             break;
         }
 
-        // Ladybird prefixes native stacks with a format label. Keep it in the
-        // original text, but do not render it as an unparsed stack row.
+        // Ladybird prefixes native stacks with a format label. Keep it in the original text, but do not render it as an
+        // unparsed stack row.
         if index == 0 && line.trim() == NATIVE_STACK_HEADER {
             continue;
         }
@@ -93,10 +91,9 @@ pub fn parse_stack_trace(text: &str) -> ParsedStackTrace {
     }
 }
 
-/// Identifies the crash a stack belongs to. A failure reason that says where and
-/// why the process stopped is the best evidence there is, so it is part of the
-/// identity; without frames it can stand alone. Stacks that were not symbolicated
-/// are told apart by the addresses in them.
+/// Identifies the crash a stack belongs to. A failure reason that says where and why the process stopped is the best
+/// evidence there is, so it is part of the identity; without frames it can stand alone. Stacks that were not
+/// symbolicated are told apart by the addresses in them.
 pub fn stack_fingerprint(
     kind: ReportKind,
     process: Option<&str>,
@@ -138,9 +135,8 @@ pub fn stack_fingerprint(
     Some(hex::encode(digest.finalize()))
 }
 
-/// What a failure reason says, without the numbers that change from one build or
-/// run to the next: the message, with its digits blanked, and the source file but
-/// not the line, as in `assertion failed: index < len@src/lib.rs`.
+/// What a failure reason says, without the numbers that change from one build or run to the next: the message, with its
+/// digits blanked, and the source file but not the line, as in `assertion failed: index < len@src/lib.rs`.
 fn failure_key(reason: &str) -> Option<String> {
     let reason = reason.trim();
     let (message, location) = match reason.rsplit_once(" at ") {
@@ -228,8 +224,8 @@ fn unavailable_frame(number: u32, address: String, build_id: String) -> StackTra
     }
 }
 
-/// A symbol as written by the client, without what a build or the symbol format
-/// adds: the offset into the function and the marker of an inlined call.
+/// A symbol as written by the client, without what a build or the symbol format adds: the offset into the function and
+/// the marker of an inlined call.
 fn bare_symbol(symbol: &str) -> &str {
     let symbol = match symbol.rsplit_once(" + ") {
         Some((head, offset))
@@ -250,10 +246,9 @@ fn bare_symbol(symbol: &str) -> &str {
         .trim()
 }
 
-/// The name of the function a frame is in, without its namespace, parameters,
-/// template arguments or return type, so that clients that write symbols
-/// differently, or compilers that inline differently, agree on it. Frames with
-/// nothing to name and lambdas have none.
+/// The name of the function a frame is in, without its namespace, parameters, template arguments or return type, so
+/// that clients that write symbols differently, or compilers that inline differently, agree on it. Frames with nothing
+/// to name and lambdas have none.
 fn function_name(symbol: &str) -> Option<String> {
     let symbol = bare_symbol(symbol);
     if symbol.is_empty() || symbol.starts_with("at ") || symbol == "Unavailable" {
@@ -292,9 +287,8 @@ fn function_name(symbol: &str) -> Option<String> {
     (valid && name.len() <= 128).then(|| name.to_owned())
 }
 
-/// The path of a Rust symbol in v0 mangling, such as `std::process::abort`.
-/// Other symbols are returned as they are. Only the names are recovered, which
-/// is all a signature needs; crate hashes and generic arguments are dropped.
+/// The path of a Rust symbol in v0 mangling, such as `std::process::abort`. Other symbols are returned as they are.
+/// Only the names are recovered, which is all a signature needs; crate hashes and generic arguments are dropped.
 fn demangled(symbol: &str) -> String {
     if !symbol.starts_with("_R") {
         return symbol.to_owned();
@@ -333,8 +327,8 @@ fn demangled(symbol: &str) -> String {
     names.join("::")
 }
 
-/// Frames of the machinery that ends a process, which say how it stopped but not
-/// why: raising the signal, aborting, the panic runtime and thread start-up.
+/// Frames of the machinery that ends a process, which say how it stopped but not why: raising the signal, aborting, the
+/// panic runtime and thread start-up.
 fn is_runtime_frame(symbol: &str) -> bool {
     const FUNCTIONS: &[&str] = &[
         "__pthread_kill",
@@ -369,8 +363,8 @@ fn is_runtime_frame(symbol: &str) -> bool {
     FUNCTIONS.contains(&symbol.as_str()) || RUST_PATHS.iter().any(|path| symbol.contains(path))
 }
 
-/// Frames of the program's event loop and entry points, which every stack of a
-/// thread passes through and so say nothing about the crash.
+/// Frames of the program's event loop and entry points, which every stack of a thread passes through and so say nothing
+/// about the crash.
 fn is_generic_frame(symbol: &str) -> bool {
     const PREFIXES: &[&str] = &[
         "Core::ThreadEventQueue::process",
@@ -441,8 +435,8 @@ mod tests {
         }
     }
 
-    // Real stacks from reports, trimmed to their first lines. They are the
-    // regressions signature version 2 was made to fix.
+    // Real stacks from reports, trimmed to their first lines. They are the regressions signature version 2 was made to
+    // fix.
     #[derive(serde::Deserialize)]
     struct Fixture {
         name: String,
@@ -501,8 +495,8 @@ mod tests {
 
     #[test]
     fn panics_are_told_apart_by_what_they_say() {
-        // All of these stop in the same panic and abort machinery, which was
-        // all the first version of the signature looked at.
+        // All of these stop in the same panic and abort machinery, which was all the first version of the signature
+        // looked at.
         assert_different_crashes(&[
             "panic_tree_builder_2273",
             "panic_computed_3606",

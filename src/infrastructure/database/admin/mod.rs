@@ -57,8 +57,8 @@ impl AdminDatabase {
     }
 }
 
-/// Serializes the operations that change issues and the reports linked to
-/// them, so an assignment cannot race with a merge or hide.
+/// Serializes the operations that change issues and the reports linked to them, so an assignment cannot race with a
+/// merge or hide.
 async fn lock_issue_operations(
     transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
 ) -> Result<()> {
@@ -69,8 +69,8 @@ async fn lock_issue_operations(
     Ok(())
 }
 
-/// Appends one row to the audit log. Pass `serde_json::json!({})` when the
-/// event has no details; that is what the column defaults to.
+/// Appends one row to the audit log. Pass `serde_json::json!({})` when the event has no details; that is what the
+/// column defaults to.
 async fn insert_audit_event<'e>(
     executor: impl sqlx::PgExecutor<'e>,
     actor: Option<i64>,

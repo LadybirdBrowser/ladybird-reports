@@ -1,9 +1,8 @@
 /// Declares an enum that is stored and exchanged as one fixed piece of text.
 ///
-/// Each variant names its text once. From that the macro derives the lookup in
-/// both directions, `Display`, serde, and the PostgreSQL text mapping, so a
-/// value can be bound to a query and read from a row without going through
-/// `String`. An unknown text fails to decode instead of becoming a wrong state.
+/// Each variant names its text once. From that the macro derives the lookup in both directions, `Display`, serde, and
+/// the PostgreSQL text mapping, so a value can be bound to a query and read from a row without going through `String`.
+/// An unknown text fails to decode instead of becoming a wrong state.
 macro_rules! text_enum {
     (
         $(#[$meta:meta])*

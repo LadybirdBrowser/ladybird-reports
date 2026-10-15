@@ -151,9 +151,8 @@ pub async fn github_callback(
         )
         .await
     {
-        // Only a definite denial is recorded. GitHub outages and rate limits say
-        // nothing about the account, and a failed audit write must never change
-        // the outcome of the sign-in.
+        // Only a definite denial is recorded. GitHub outages and rate limits say nothing about the account, and a
+        // failed audit write must never change the outcome of the sign-in.
         if matches!(error, AppError::PermissionDenied(_)) {
             if let Err(audit_error) = state
                 .database

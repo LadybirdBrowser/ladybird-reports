@@ -8,12 +8,11 @@ use crate::error::AppError;
 const MAXIMUM_HOST_NAME_BYTES: usize = 253;
 const MAXIMUM_LABEL_BYTES: usize = 63;
 
-/// A proxy that may identify the original client address through forwarding
-/// headers: either a network, or a DNS name for the proxies behind it.
+/// A proxy that may identify the original client address through forwarding headers: either a network, or a DNS name
+/// for the proxies behind it.
 ///
-/// The configuration keeps the name so that it survives address changes. The
-/// public API resolves names once and only ever matches peers against the
-/// resulting addresses.
+/// The configuration keeps the name so that it survives address changes. The public API resolves names once and only
+/// ever matches peers against the resulting addresses.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum TrustedProxy {
     Network(IpNet),

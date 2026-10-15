@@ -10,10 +10,9 @@ pub struct IssueProposal {
     pub description: String,
 }
 
-/// Prepare a public GitHub draft from a small, deliberate set of report data.
-/// The raw stack trace is included; the URL field, unknown fields, and
-/// attachments stay in Reports unless a maintainer adds them to the draft.
-/// The proposed title uses only the concise function name derived from a stack.
+/// Prepare a public GitHub draft from a small, deliberate set of report data. The raw stack trace is included; the URL
+/// field, unknown fields, and attachments stay in Reports unless a maintainer adds them to the draft. The proposed
+/// title uses only the concise function name derived from a stack.
 pub fn propose_issue(details: &ReportDetails) -> IssueProposal {
     let report_type = match details.report.kind {
         ReportKind::Crash => "Crash",
@@ -55,8 +54,8 @@ pub fn propose_issue(details: &ReportDetails) -> IssueProposal {
 }
 
 fn add_stack_trace(description: &mut String, stack_trace: &str) {
-    // A trace may itself contain Markdown fences. Use a longer fence so the
-    // whole stored value remains inside one code block.
+    // A trace may itself contain Markdown fences. Use a longer fence so the whole stored value remains inside one code
+    // block.
     let longest_run = stack_trace
         .split(|character| character != '`')
         .map(str::len)

@@ -784,8 +784,8 @@ document.addEventListener("click", async (event) => {
     }
 });
 
-// Timestamps from the server are full dates in <time> elements. Recent ones are
-// shown relative to now, with the full date on hover.
+// Timestamps from the server are full dates in <time> elements. Recent ones are shown relative to now, with the full
+// date on hover.
 function relativeTime(milliseconds) {
     const minutes = Math.floor(milliseconds / 60000);
     if (minutes < 1) {
@@ -843,9 +843,8 @@ function initializeTimestamps() {
     }).observe(document.body, { childList: true, subtree: true });
 }
 
-// Forms marked data-live-form post in the background. The server answers with the page
-// the form would have led to, and the part of the page marked data-live-region is
-// replaced by that page's version, so nothing reloads or jumps.
+// Forms marked data-live-form post in the background. The server answers with the page the form would have led to, and
+// the part of the page marked data-live-region is replaced by that page's version, so nothing reloads or jumps.
 function initializeLiveForms() {
     const status = document.createElement("div");
     status.className = "visually-hidden";

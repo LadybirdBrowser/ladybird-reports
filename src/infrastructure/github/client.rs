@@ -187,8 +187,8 @@ impl GithubClient {
             .unwrap_or_else(|_| "https://api.github.com".into());
         let api_base_url = reqwest::Url::parse(&api_base_url).map_err(AppError::internal)?;
 
-        // Browser tests use a local OAuth endpoint. Release builds always use
-        // GitHub's endpoint, regardless of the surrounding environment.
+        // Browser tests use a local OAuth endpoint. Release builds always use GitHub's endpoint, regardless of the
+        // surrounding environment.
         #[cfg(debug_assertions)]
         let oauth_base_url = std::env::var("GITHUB_TEST_OAUTH_BASE_URL")
             .unwrap_or_else(|_| "https://github.com".into());
@@ -336,9 +336,8 @@ impl GithubClient {
             .append_pair("redirect_uri", redirect_uri)
             .append_pair("state", state);
 
-        // GitHub App user access tokens derive their access from the app's
-        // fine-grained permissions. Adding an OAuth scope here would request
-        // the much broader permissions used by legacy OAuth Apps.
+        // GitHub App user access tokens derive their access from the app's fine-grained permissions. Adding an OAuth
+        // scope here would request the much broader permissions used by legacy OAuth Apps.
 
         Ok(url.to_string())
     }

@@ -51,8 +51,7 @@ pub struct ReportStateCounts {
     pub new_triage: i64,
 }
 
-/// The title, platform, architecture and URL are filled in after loading, so they
-/// are not read from the row.
+/// The title, platform, architecture and URL are filled in after loading, so they are not read from the row.
 #[derive(Clone, Debug, sqlx::FromRow)]
 pub struct ReportSummary {
     pub id: ReportId,
@@ -137,8 +136,8 @@ pub struct StoredDiagnosticField {
 }
 
 impl StoredDiagnosticField {
-    /// Whether the field holds a stack trace: it was submitted or is now defined
-    /// as one, or it is the multiline `stack` field of an older client.
+    /// Whether the field holds a stack trace: it was submitted or is now defined as one, or it is the multiline `stack`
+    /// field of an older client.
     pub fn is_stack_trace(&self) -> bool {
         self.kind == FieldKind::StackTrace
             || self.current_kind == Some(FieldKind::StackTrace)

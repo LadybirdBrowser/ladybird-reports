@@ -250,9 +250,8 @@ fn report_message(
 
 /// The commit a build was made from, as a short link to it in the repository.
 ///
-/// The value comes from an anonymous client, so it only becomes a link when it
-/// is a plain hexadecimal commit ID; the address is built from that and the
-/// configured repository, never from anything the client wrote.
+/// The value comes from an anonymous client, so it only becomes a link when it is a plain hexadecimal commit ID; the
+/// address is built from that and the configured repository, never from anything the client wrote.
 fn commit_field(
     fields: &serde_json::Map<String, Value>,
     github_repository: &str,
@@ -282,8 +281,7 @@ fn field_text(value: &Value) -> String {
         .unwrap_or_else(|| value.to_string())
 }
 
-/// The signal that ended the process, by name and number as in `SIGSEGV (11)`.
-/// A report may carry only one of the two.
+/// The signal that ended the process, by name and number as in `SIGSEGV (11)`. A report may carry only one of the two.
 fn signal_field(fields: &serde_json::Map<String, Value>) -> Option<DiscordEmbedField> {
     let text = |key: &str, maximum_characters: usize| {
         let text = field_text(fields.get(key)?);
@@ -304,9 +302,8 @@ fn signal_field(fields: &serde_json::Map<String, Value>) -> Option<DiscordEmbedF
     })
 }
 
-/// The page a report came from, without its query or fragment, which can carry
-/// tokens or personal data. It is shown as code so that Discord does not turn an
-/// address chosen by an anonymous user into a link anyone in the channel can
+/// The page a report came from, without its query or fragment, which can carry tokens or personal data. It is shown as
+/// code so that Discord does not turn an address chosen by an anonymous user into a link anyone in the channel can
 /// click; a maintainer who wants to visit it copies it deliberately.
 fn page_url_field(fields: &serde_json::Map<String, Value>) -> Option<DiscordEmbedField> {
     // Discord limits an embed field to 1024 characters, and the quotes need two.
@@ -334,8 +331,7 @@ fn page_url_field(fields: &serde_json::Map<String, Value>) -> Option<DiscordEmbe
     })
 }
 
-/// One line of the stack preview: a frame, or a run of consecutive frames the
-/// client sent no symbol for.
+/// One line of the stack preview: a frame, or a run of consecutive frames the client sent no symbol for.
 struct PreviewLine {
     first: u32,
     last: u32,

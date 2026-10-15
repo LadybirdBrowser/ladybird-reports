@@ -23,8 +23,8 @@ pub struct RuntimeConfiguration {
     #[serde(default)]
     pub github_reports_issue_field_id: Option<i64>,
     pub trusted_proxies: Vec<TrustedProxy>,
-    /// The addresses `trusted_proxies` stands for. Only the process that
-    /// resolves the configured names fills this in, so it is never stored.
+    /// The addresses `trusted_proxies` stands for. Only the process that resolves the configured names fills this in,
+    /// so it is never stored.
     #[serde(skip)]
     pub trusted_networks: Vec<IpNet>,
     pub limits: IngestionLimits,
@@ -540,9 +540,8 @@ impl RuntimeConfiguration {
         })
     }
 
-    /// Replaces `trusted_networks` with the configured networks plus the
-    /// addresses resolved for each configured name. A name that is not in
-    /// `resolved` contributes nothing.
+    /// Replaces `trusted_networks` with the configured networks plus the addresses resolved for each configured name. A
+    /// name that is not in `resolved` contributes nothing.
     pub fn resolve_trusted_networks(&mut self, resolved: &HashMap<String, Vec<IpAddr>>) {
         self.trusted_networks = self
             .trusted_proxies

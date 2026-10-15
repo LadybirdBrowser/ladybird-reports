@@ -76,8 +76,8 @@ impl AdminDatabase {
             .iter()
             .any(|path| setting_invalidates_sessions(path))
         {
-            // An authorization policy change must apply to sessions that were
-            // verified under the old team, including the current session.
+            // An authorization policy change must apply to sessions that were verified under the old team, including
+            // the current session.
             sqlx::query("DELETE FROM sessions")
                 .execute(&mut *transaction)
                 .await?;
@@ -233,9 +233,8 @@ impl AdminDatabase {
         Ok(())
     }
 
-    /// Returns audit events newest first. `before_id` continues a listing from
-    /// the last event of the previous page; ids only ever increase, so the
-    /// cursor stays stable while new events are written.
+    /// Returns audit events newest first. `before_id` continues a listing from the last event of the previous page; ids
+    /// only ever increase, so the cursor stays stable while new events are written.
     pub async fn operations_page(
         &self,
         before_id: Option<i64>,

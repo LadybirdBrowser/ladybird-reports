@@ -25,8 +25,8 @@ struct Asset {
     etag: HeaderValue,
 }
 
-/// Every embedded asset. Adding one here is all that is needed to serve it and
-/// to include it in the content-derived asset version.
+/// Every embedded asset. Adding one here is all that is needed to serve it and to include it in the content-derived
+/// asset version.
 const ASSET_SOURCES: [AssetSource; 7] = [
     AssetSource {
         name: "application.css",

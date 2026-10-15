@@ -100,8 +100,8 @@ impl IngestDatabase {
 
         configuration.validate()?;
 
-        // Only the running cache resolves DNS names. Without it a name would
-        // silently stop being trusted, so refuse to serve that configuration.
+        // Only the running cache resolves DNS names. Without it a name would silently stop being trusted, so refuse to
+        // serve that configuration.
         if configuration.trusted_proxy_hosts().next().is_some() {
             return Err(AppError::Unavailable);
         }

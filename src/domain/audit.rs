@@ -1,9 +1,8 @@
 text_enum! {
     /// Every kind of event written to the audit log.
     ///
-    /// `ReportSubmitted` is written by the `accept_report` database function,
-    /// which spells out the same text in SQL; an integration test keeps the two
-    /// in step.
+    /// `ReportSubmitted` is written by the `accept_report` database function, which spells out the same text in SQL; an
+    /// integration test keeps the two in step.
     pub enum AuditAction {
         ReportSubmitted => "report.submitted",
         ReportUpdateIssue => "report.update_issue",
@@ -47,8 +46,7 @@ impl AuditAction {
         }
     }
 
-    /// Whether the entity still has a page to open. Hiding an issue, which an
-    /// earlier release did, left it without one.
+    /// Whether the entity still has a page to open. Hiding an issue, which an earlier release did, left it without one.
     pub const fn entity_has_page(self) -> bool {
         !matches!(self, Self::IssueUpdateVisibility)
     }
@@ -57,8 +55,8 @@ impl AuditAction {
 impl AuditEntity {
     /// The entity an event refers to, given the action text stored with it.
     ///
-    /// Rows written before an action was renamed or removed still exist, so
-    /// text that is not a current action is classified by its prefix.
+    /// Rows written before an action was renamed or removed still exist, so text that is not a current action is
+    /// classified by its prefix.
     pub fn of_stored_action(action: &str) -> Self {
         match AuditAction::parse(action) {
             Some(action) => action.entity(),

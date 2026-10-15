@@ -118,8 +118,8 @@ test("sign-in ignores an external return destination", async ({ page }) => {
     .toHaveAttribute("href", "/auth/github");
 });
 
-// Reports that share a stack signature are folded into groups in the report
-// list. Most tests want to see every report, so they open the groups first.
+// Reports that share a stack signature are folded into groups in the report list. Most tests want to see every report,
+// so they open the groups first.
 async function openGroups(page: Page) {
   const closed = page.locator('.report-group-toggle[aria-expanded="false"]');
   while ((await closed.count()) > 0) {
@@ -873,8 +873,8 @@ test.describe("authenticated management UI", () => {
   });
 
   test.describe("grouping reports by stack signature", () => {
-    // 52 reports of two kinds that share one stack: two signatures, 26 reports
-    // each, with the last two of them on the second page.
+    // 52 reports of two kinds that share one stack: two signatures, 26 reports each, with the last two of them on the
+    // second page.
     const fixtureReports = '/?q=version%3A"Pagination fixture"';
     const groups = (page: Page) => page.locator(".report-group-row");
     const toggle = (page: Page, index: number) => groups(page).nth(index).getByRole("button");

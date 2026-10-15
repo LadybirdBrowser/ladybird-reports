@@ -13,8 +13,8 @@ use sqlx::{PgPool, postgres::PgPoolOptions};
 
 use crate::error::Result;
 
-/// Connections kept open while idle, so a request does not have to wait for one
-/// to be opened. One goes to the readiness check, which runs every few seconds.
+/// Connections kept open while idle, so a request does not have to wait for one to be opened. One goes to the readiness
+/// check, which runs every few seconds.
 const MINIMUM_CONNECTIONS: u32 = 2;
 const MAXIMUM_CONNECTIONS: u32 = 16;
 

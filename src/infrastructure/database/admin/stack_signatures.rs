@@ -16,8 +16,8 @@ use super::{PotentialIssueMatch, ReportSummary, insert_audit_event, lock_issue_o
 /// Stack traces indexed per batch.
 const STACK_INDEX_BATCH_SIZE: usize = 50;
 
-/// Notified when stack traces may need indexing: a report became ready (the
-/// payload is its id) or a field definition changed (an empty payload).
+/// Notified when stack traces may need indexing: a report became ready (the payload is its id) or a field definition
+/// changed (an empty payload).
 const STACK_INDEX_CHANNEL: &str = "ladybird_reports_stack_index";
 
 impl AdminDatabase {
@@ -90,8 +90,8 @@ impl AdminDatabase {
         Ok(reports)
     }
 
-    /// Starts listening for indexing work. Subscribe before the first scan: work
-    /// that appears while that scan runs then still has a notification waiting.
+    /// Starts listening for indexing work. Subscribe before the first scan: work that appears while that scan runs then
+    /// still has a notification waiting.
     pub async fn listen_for_stack_index_work(&self) -> Result<PgListener> {
         let mut listener = PgListener::connect_with(&self.pool).await?;
         listener.listen(STACK_INDEX_CHANNEL).await?;
@@ -99,9 +99,8 @@ impl AdminDatabase {
         Ok(listener)
     }
 
-    /// Indexes every pending stack trace, a batch at a time, pausing between full
-    /// batches so a large backlog does not monopolise the database. Returns how
-    /// many traces it indexed.
+    /// Indexes every pending stack trace, a batch at a time, pausing between full batches so a large backlog does not
+    /// monopolise the database. Returns how many traces it indexed.
     pub async fn drain_pending_stack_traces(&self, pause: Duration) -> Result<usize> {
         let mut total = 0;
 
@@ -117,8 +116,8 @@ impl AdminDatabase {
         }
     }
 
-    /// Rebuild a bounded batch. Old signatures are replaced when the algorithm changes.
-    /// A full batch (`STACK_INDEX_BATCH_SIZE`) means more may be waiting.
+    /// Rebuild a bounded batch. Old signatures are replaced when the algorithm changes. A full batch
+    /// (`STACK_INDEX_BATCH_SIZE`) means more may be waiting.
     pub async fn index_pending_stack_traces(&self) -> Result<usize> {
         let pending = self
             .stack_traces_to_index(None, STACK_INDEX_BATCH_SIZE as i64)
@@ -182,9 +181,8 @@ impl AdminDatabase {
 
             let mut transaction = self.pool.begin().await?;
 
-            // Share the issue-operation lock so a merge or hide cannot race with
-            // selecting the issue for an incoming report. It also serializes
-            // matching reports indexed by two admin instances.
+            // Share the issue-operation lock so a merge or hide cannot race with selecting the issue for an incoming
+            // report. It also serializes matching reports indexed by two admin instances.
             lock_issue_operations(&mut transaction).await?;
 
             // A report arrives with its signature; only its matching is left.
@@ -336,8 +334,8 @@ impl AdminDatabase {
             return Ok(());
         }
 
-        // With no linked issue, only suppress the alert when another report
-        // with this signature arrived in the preceding five minutes.
+        // With no linked issue, only suppress the alert when another report with this signature arrived in the
+        // preceding five minutes.
         let recent_duplicate: bool = sqlx::query_scalar(
             "SELECT EXISTS (
                 SELECT 1

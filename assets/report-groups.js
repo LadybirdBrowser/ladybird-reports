@@ -1,6 +1,5 @@
-// Groups the rows of the report list that have the same stack signature. Only
-// the display is grouped. Rows arrive newest first, so the first row of a
-// signature is its most recent report and the group takes its place; rows that
+// Groups the rows of the report list that have the same stack signature. Only the display is grouped. Rows arrive
+// newest first, so the first row of a signature is its most recent report and the group takes its place; rows that
 // "Show more…" loads later join the group that is already there.
 
 const results = document.querySelector("[data-list-results]");
@@ -129,8 +128,8 @@ results?.addEventListener("click", (event) => {
 });
 
 if (results) {
-    // The list is replaced by a search and grows by "Show more…". Reorganizing
-    // moves rows around, which the observer would see too, so it is paused.
+    // The list is replaced by a search and grows by "Show more…". Reorganizing moves rows around, which the observer
+    // would see too, so it is paused.
     const observer = new MutationObserver(() => {
         observer.disconnect();
         organize();

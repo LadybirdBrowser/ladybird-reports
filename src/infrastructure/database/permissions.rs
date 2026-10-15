@@ -104,8 +104,8 @@ async fn load_or_create_reporting_credentials(
 }
 
 async fn create_reporting_role(admin_pool: &PgPool, role: &str, password: &str) -> Result<()> {
-    // PostgreSQL quotes both the identifier and literal. The resulting statement
-    // is executed separately because role names cannot be bind parameters.
+    // PostgreSQL quotes both the identifier and literal. The resulting statement is executed separately because role
+    // names cannot be bind parameters.
     let statement: String = sqlx::query_scalar(
         "SELECT format(
             'CREATE ROLE %I LOGIN PASSWORD %L NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT',
@@ -133,12 +133,11 @@ pub async fn apply_ingest_permissions(admin_pool: &PgPool, ingest_role: &str) ->
         .await?
         .get("role");
 
-    // Every dynamic fragment below is either quoted by PostgreSQL or selected
-    // from the fixed function allowlist in this module.
+    // Every dynamic fragment below is either quoted by PostgreSQL or selected from the fixed function allowlist in this
+    // module.
     let statements = [
-        // Functions are executable by everyone when they are created. Without
-        // this, a function added by a later migration would be open to the role
-        // whether or not the allowlist below names it.
+        // Functions are executable by everyone when they are created. Without this, a function added by a later
+        // migration would be open to the role whether or not the allowlist below names it.
         "REVOKE EXECUTE ON ALL FUNCTIONS IN SCHEMA public FROM PUBLIC".to_owned(),
         format!("REVOKE ALL ON ALL TABLES IN SCHEMA public FROM {quoted_role}"),
         format!("REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM {quoted_role}"),

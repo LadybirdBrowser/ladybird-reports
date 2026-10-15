@@ -29,9 +29,8 @@ pub struct StagingUpload {
 }
 
 const PNG_VALIDATION_MEMORY_UNIT: usize = 1024 * 1024;
-// A weighted semaphore limits the aggregate output reservation across all
-// blocking PNG decoders in this process. With the 64 MiB hard per-image cap,
-// no more than two maximum-sized decodes can run at once.
+// A weighted semaphore limits the aggregate output reservation across all blocking PNG decoders in this process. With
+// the 64 MiB hard per-image cap, no more than two maximum-sized decodes can run at once.
 const PNG_VALIDATION_MEMORY_BUDGET: usize = 128 * 1024 * 1024;
 
 pub struct AttachmentWriter {
@@ -85,8 +84,8 @@ impl FileAttachmentStore {
         let report_path = self.report_path(report_id);
 
         if tokio::fs::try_exists(&report_path).await? {
-            // An interrupted request may retry after the atomic rename. The final
-            // directory is authoritative when the staging directory is absent.
+            // An interrupted request may retry after the atomic rename. The final directory is authoritative when the
+            // staging directory is absent.
             if !tokio::fs::try_exists(&staging_path).await? {
                 return Ok(());
             }
@@ -462,8 +461,8 @@ mod tests {
         }
         file.flush().expect("flush PNG header");
 
-        // The header describes a 32 MiB frame, so validation must reject it
-        // before allocating the output buffer or reading compressed pixels.
+        // The header describes a 32 MiB frame, so validation must reject it before allocating the output buffer or
+        // reading compressed pixels.
         assert!(validate_png(file.path(), 5_000_000, 1024 * 1024).is_err());
     }
 

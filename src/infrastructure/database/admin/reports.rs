@@ -42,12 +42,11 @@ impl TitleFields {
     }
 }
 
-/// Reports per page. `list_reports` loads one extra row so a caller can tell
-/// whether another page exists.
+/// Reports per page. `list_reports` loads one extra row so a caller can tell whether another page exists.
 pub const REPORT_PAGE_SIZE: usize = 50;
 
-/// The most distinct values offered as completions for a search key. One more
-/// is loaded, so a key with too many values to be useful can be recognised.
+/// The most distinct values offered as completions for a search key. One more is loaded, so a key with too many values
+/// to be useful can be recognised.
 pub const SEARCH_VALUE_LIMIT: usize = 25;
 
 const SEARCH_VALUE_QUERY_LIMIT: i64 = SEARCH_VALUE_LIMIT as i64 + 1;
@@ -162,9 +161,8 @@ impl AdminDatabase {
         Ok(reports)
     }
 
-    /// Counts come from two queries, each answered from an index alone: the
-    /// per-state totals from `reports_state_counts`, the recent triage reports
-    /// from the newest end of `reports_triage`.
+    /// Counts come from two queries, each answered from an index alone: the per-state totals from
+    /// `reports_state_counts`, the recent triage reports from the newest end of `reports_triage`.
     pub async fn report_state_counts(&self) -> Result<ReportStateCounts> {
         let totals = sqlx::query_as::<_, (ReportState, i64)>(
             "SELECT state, count(*) FROM reports WHERE storage_state = 'ready' GROUP BY state",
@@ -454,8 +452,8 @@ impl AdminDatabase {
     ) -> Result<()> {
         let mut transaction = self.pool.begin().await?;
 
-        // Human issue operations share one lock. This prevents an assignment from
-        // racing with a merge or hide while keeping ingestion independent.
+        // Human issue operations share one lock. This prevents an assignment from racing with a merge or hide while
+        // keeping ingestion independent.
         lock_issue_operations(&mut transaction).await?;
 
         let assignable: bool = sqlx::query_scalar(
@@ -484,9 +482,8 @@ impl AdminDatabase {
         Ok(())
     }
 
-    /// Links a ready report to an issue, within the caller's transaction, and
-    /// confirms it. An already linked report is only left alone if it is linked
-    /// to this issue.
+    /// Links a ready report to an issue, within the caller's transaction, and confirms it. An already linked report is
+    /// only left alone if it is linked to this issue.
     pub(super) async fn link_report(
         &self,
         transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,

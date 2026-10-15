@@ -27,8 +27,7 @@ pub struct ConfigurationCache {
 }
 
 impl ConfigurationCache {
-    /// A cache that resolves the DNS names among the trusted proxies and uses
-    /// the addresses for at most five minutes.
+    /// A cache that resolves the DNS names among the trusted proxies and uses the addresses for at most five minutes.
     pub fn resolving_proxy_hosts() -> Self {
         Self {
             proxy_addresses: Some(Arc::new(ProxyAddresses::new(
@@ -55,8 +54,8 @@ impl ConfigurationCache {
     }
 
     pub async fn start(&self, pool: &PgPool, query: &'static str) -> Result<JoinHandle<()>> {
-        // Subscribe before loading the initial snapshot. A change committed
-        // during that read will still have a queued notification to process.
+        // Subscribe before loading the initial snapshot. A change committed during that read will still have a queued
+        // notification to process.
         let mut listener = PgListener::connect_with(pool).await?;
         listener.listen(CHANNEL).await?;
         self.reload(pool, query).await?;
@@ -65,8 +64,8 @@ impl ConfigurationCache {
         let pool = pool.clone();
         Ok(tokio::spawn(async move {
             loop {
-                // Notifications are transient. Reload after reconnect and on
-                // a timer so a missed event cannot leave a stale cache forever.
+                // Notifications are transient. Reload after reconnect and on a timer so a missed event cannot leave a
+                // stale cache forever.
                 let notification =
                     tokio::time::timeout(RECHECK_INTERVAL, listener.try_recv()).await;
                 match notification {

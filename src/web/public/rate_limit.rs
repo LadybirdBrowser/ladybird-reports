@@ -184,8 +184,8 @@ fn normalize_address(address: IpAddr) -> String {
                 return mapped.to_string();
             }
 
-            // IPv6 clients are limited by /64. This avoids retaining a second
-            // full-address bucket while still resisting cheap address rotation.
+            // IPv6 clients are limited by /64. This avoids retaining a second full-address bucket while still resisting
+            // cheap address rotation.
             format!("v6-{:016x}", (u128::from(address) >> 64) as u64)
         }
     }

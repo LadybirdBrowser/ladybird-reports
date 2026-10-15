@@ -68,8 +68,8 @@ fn render_issue_description(markdown: &str) -> String {
     options.render.escape = true;
     options.render.hardbreaks = true;
 
-    // GitHub issue bodies can include HTML. Leave it escaped because the
-    // description is supplied by another service and inserted into our UI.
+    // GitHub issue bodies can include HTML. Leave it escaped because the description is supplied by another service and
+    // inserted into our UI.
     markdown_to_html(markdown, &options)
 }
 

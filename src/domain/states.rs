@@ -24,9 +24,8 @@ impl IssueState {
         matches!(self, Self::Unresolved | Self::NeedsAttention)
     }
 
-    /// The state an issue takes from what is known about its GitHub issue: a
-    /// closed one is resolved, one that cannot be read needs a person to look,
-    /// anything else is still open.
+    /// The state an issue takes from what is known about its GitHub issue: a closed one is resolved, one that cannot be
+    /// read needs a person to look, anything else is still open.
     pub const fn tracking(link: GithubLinkState) -> Self {
         match link {
             GithubLinkState::Closed => Self::Resolved,
@@ -39,9 +38,8 @@ impl IssueState {
 }
 
 text_enum! {
-    /// What is known about the GitHub issue an internal issue tracks. Mirrors the
-    /// `issues_github_state_check` constraint. `Open` and `Closed` come from GitHub;
-    /// the rest describe this service losing track of the issue.
+    /// What is known about the GitHub issue an internal issue tracks. Mirrors the `issues_github_state_check`
+    /// constraint. `Open` and `Closed` come from GitHub; the rest describe this service losing track of the issue.
     pub enum GithubLinkState {
         Unknown => "unknown",
         Open => "open",
@@ -81,8 +79,7 @@ text_enum! {
 }
 
 text_enum! {
-    /// Whether a report's attachment files have been stored. Mirrors the
-    /// `reports_storage_state_check` constraint.
+    /// Whether a report's attachment files have been stored. Mirrors the `reports_storage_state_check` constraint.
     pub enum StorageState {
         PendingFiles => "pending_files",
         Ready => "ready",

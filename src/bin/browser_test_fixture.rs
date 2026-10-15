@@ -36,9 +36,8 @@ async fn main() -> Result<()> {
 
     let mut transaction = pool.begin().await?;
 
-    // Browser tests own a deterministic view of the management database. The
-    // PostgreSQL instance is disposable, but Rust integration tests may have
-    // populated it earlier in the same local or CI test job.
+    // Browser tests own a deterministic view of the management database. The PostgreSQL instance is disposable, but
+    // Rust integration tests may have populated it earlier in the same local or CI test job.
     sqlx::query(
         "TRUNCATE
             audit_events,
@@ -53,8 +52,8 @@ async fn main() -> Result<()> {
     .execute(&mut *transaction)
     .await?;
 
-    // The oldest events: enough to push the audit log past one page. They are
-    // inserted first so every event created below stays on the first page.
+    // The oldest events: enough to push the audit log past one page. They are inserted first so every event created
+    // below stays on the first page.
     sqlx::query(
         "INSERT INTO audit_events (action, details, created_at)
          SELECT
@@ -343,8 +342,8 @@ async fn main() -> Result<()> {
     )
     .await?;
 
-    // Keep one older, exact-signature report in triage for the issue view.
-    // Historical reports are reviewed by a maintainer rather than auto-linked.
+    // Keep one older, exact-signature report in triage for the issue view. Historical reports are reviewed by a
+    // maintainer rather than auto-linked.
     sqlx::query(
         "UPDATE reports
          SET auto_match_eligible = false

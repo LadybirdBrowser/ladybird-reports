@@ -203,8 +203,8 @@ code {
     text-transform: uppercase;
 }
 
-/* The main navigation is a row of tabs standing on the bottom edge of the
-   header; the open one is lit and underlined. */
+/* The main navigation is a row of tabs standing on the bottom edge of the header; the open one is lit and
+   underlined. */
 nav[aria-label="Main navigation"] {
     display: flex;
     align-self: flex-end;
@@ -1382,8 +1382,8 @@ button:active,
     white-space: nowrap;
 }
 
-/* One line per event: the details take what is left and are cut off with an
-   ellipsis, with the whole text in the tooltip. */
+/* One line per event: the details take what is left and are cut off with an ellipsis, with the whole text in the
+   tooltip. */
 .audit-table td {
     white-space: nowrap;
 }
@@ -2292,8 +2292,8 @@ tbody tr:hover {
     transition: opacity 140ms ease;
 }
 
-/* The buttons of a value show while the mouse is over its whole area (label and all), while it has focus, or
-   after a tap (reports.js). The stack trace always keeps its copy button. */
+/* The buttons of a value show while the mouse is over its whole area (label and all), while it has focus, or after a
+   tap (reports.js). The stack trace always keeps its copy button. */
 @media (hover: hover) {
     .value-area:hover .button-group {
         opacity: 1;
@@ -2611,8 +2611,8 @@ pre {
     flex: 1 1 10rem;
 }
 
-/* The dot and the line share a vertical axis, 0 from the left edge of the entry, and
-   whole pixels keep both crisp. The dot covers the line. */
+/* The dot and the line share a vertical axis, 0 from the left edge of the entry, and whole pixels keep both crisp.
+   The dot covers the line. */
 .history li::before,
 .history li::after {
     position: absolute;

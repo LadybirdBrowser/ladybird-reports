@@ -99,8 +99,8 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
             .expect("reporting role reads the numeric signal definition");
     assert_eq!(signal_number_kind, "number");
 
-    // Exactly the allowlisted functions, none of them through PUBLIC: functions
-    // that later migrations add are closed until someone opens them on purpose.
+    // Exactly the allowlisted functions, none of them through PUBLIC: functions that later migrations add are closed
+    // until someone opens them on purpose.
     let executable: Vec<String> = sqlx::query_scalar(
         "SELECT p.proname::text
          FROM pg_proc AS p
@@ -383,8 +383,7 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
     assert!(!report.report.submission_source_is_blocked);
     assert!(report.report.expires_at.is_some());
 
-    // The stack trace was signed while the report was accepted; the indexer
-    // only matches it.
+    // The stack trace was signed while the report was accepted; the indexer only matches it.
     let unmatched = || async {
         sqlx::query_scalar::<_, bool>(
             "SELECT fingerprint IS NOT NULL AND matched_at IS NULL
@@ -425,8 +424,8 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
     .expect("count report submission audit events");
     assert_eq!(submitted_events, 1);
 
-    // Becoming ready announces the report to the stack indexer; changing a field
-    // definition announces that any report may need another look.
+    // Becoming ready announces the report to the stack indexer; changing a field definition announces that any report
+    // may need another look.
     wait_for_stack_index_notification(&mut stack_index_listener, &report.report.id.to_string())
         .await;
     sqlx::query("UPDATE field_definitions SET kind = kind WHERE key = 'stack'")
@@ -565,8 +564,8 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
         .await
         .expect("delete verified session");
 
-    // A denied account is not a maintainer, so it is recorded without an actor,
-    // and repeated denials of the same account do not flood the log.
+    // A denied account is not a maintainer, so it is recorded without an actor, and repeated denials of the same
+    // account do not flood the log.
     sqlx::query("DELETE FROM audit_events WHERE action = 'session.denied'")
         .execute(&admin_pool)
         .await
@@ -618,8 +617,7 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
             .expect("count denied sign-in events");
     assert_eq!(denied_count, 3);
 
-    // The window is configurable: a shorter one lets a repeat through sooner,
-    // and zero records every denial.
+    // The window is configurable: a shorter one lets a repeat through sooner, and zero records every denial.
     sqlx::query(
         "UPDATE audit_events
          SET created_at = now() - interval '90 seconds'
@@ -1531,8 +1529,8 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
             .is_none()
     );
 
-    // The backfill interprets old multiline stacks and new stack_trace fields
-    // without changing either submitted value or assigning either report.
+    // The backfill interprets old multiline stacks and new stack_trace fields without changing either submitted value
+    // or assigning either report.
     let original_stacks = [
         "#0 abcdef1234567890 0x100 Web::Window::close() at /old/WebContent\n#1 abcdef1234567890 0x200 Web::Page::destroy() at /old/WebContent",
         "#0 1234567890abcdef 0x999 Web::Window::close() at /new/WebContent\n#1 1234567890abcdef 0xaaa Web::Page::destroy() at /new/WebContent",
@@ -1932,10 +1930,9 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
 
     assert_reports_follow_their_issue(&admin_pool, &admin_database).await;
 
-    // The indexer is event-driven. Reports that became ready before it started
-    // are found by its startup check, spanning more than one batch; a report that
-    // becomes ready afterwards is found because the database announces it, as
-    // the worker has no timer to find it otherwise.
+    // The indexer is event-driven. Reports that became ready before it started are found by its startup check, spanning
+    // more than one batch; a report that becomes ready afterwards is found because the database announces it, as the
+    // worker has no timer to find it otherwise.
     let missed_reports = {
         let mut ids = Vec::new();
         for index in 0..55 {
@@ -1956,8 +1953,8 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
     indexer.abort();
 }
 
-/// The reports of an issue are confirmed while it is open and resolved when it is,
-/// whichever way they are linked or the issue changes.
+/// The reports of an issue are confirmed while it is open and resolved when it is, whichever way they are linked or the
+/// issue changes.
 async fn assert_reports_follow_their_issue(pool: &sqlx::PgPool, database: &AdminDatabase) {
     async fn state_of(pool: &sqlx::PgPool, report_id: ReportId) -> String {
         sqlx::query_scalar("SELECT state FROM reports WHERE id = $1")
@@ -2043,8 +2040,7 @@ async fn assert_reports_follow_their_issue(pool: &sqlx::PgPool, database: &Admin
         .expect("restore the report");
     assert_eq!(state_of(pool, tracked).await, "resolved");
 
-    // A report that was taken out of triage by hand is not touched by an issue
-    // that it is not linked to.
+    // A report that was taken out of triage by hand is not touched by an issue that it is not linked to.
     let unlinked =
         insert_stack_report_for_matching(pool, "#0 in Follow2::crash() at liblagom.so", 0).await;
     issue_state(pool, issue_id, "unresolved", "open").await;
@@ -2160,8 +2156,8 @@ async fn insert_stack_report_for_matching(
     minutes_ago: i32,
 ) -> ReportId {
     let report_id = ReportId::new();
-    // One transaction, so the announcement that a report is ready is delivered
-    // only once its stack is there to be found.
+    // One transaction, so the announcement that a report is ready is delivered only once its stack is there to be
+    // found.
     let mut transaction = pool.begin().await.expect("begin matching test report");
     sqlx::query(
         "INSERT INTO reports (

@@ -253,8 +253,7 @@ fn event_view(event: AuditEvent) -> EventView {
     }
 }
 
-/// A denied sign-in has no maintainer actor, so the account that tried to sign
-/// in is shown instead of "system".
+/// A denied sign-in has no maintainer actor, so the account that tried to sign in is shown instead of "system".
 fn denied_sign_in_login(
     action: Option<AuditAction>,
     details: &serde_json::Value,

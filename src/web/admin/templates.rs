@@ -24,8 +24,8 @@ where
     }
 }
 
-/// A point in time, rendered as a `<time>` element. The text is the full timestamp;
-/// `application.js` swaps it for a relative one while it is recent.
+/// A point in time, rendered as a `<time>` element. The text is the full timestamp; `application.js` swaps it for a
+/// relative one while it is recent.
 #[derive(Clone, Copy)]
 pub struct Timestamp(pub DateTime<Utc>);
 

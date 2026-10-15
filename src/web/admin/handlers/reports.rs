@@ -495,8 +495,7 @@ pub async fn show(
         OverviewField::searchable("Architecture", &architecture, "architecture", &architecture),
     ];
 
-    // Where the report came from belongs with the other facts at the top, but
-    // only when the client sent one.
+    // Where the report came from belongs with the other facts at the top, but only when the client sent one.
     if let Some(page_url) = &page_url {
         let mut field = OverviewField::searchable("Page URL", page_url, "url", page_url);
         field.full_width = true;
@@ -514,9 +513,8 @@ pub async fn show(
         link: FieldLink::Time(details.report.created_at),
     });
 
-    // Older clients only supplied the combined build envelope. Put that long
-    // value on its own row, after the shorter submission details. Newer clients
-    // expose its parts as regular fields below, so avoid repeating them here.
+    // Older clients only supplied the combined build envelope. Put that long value on its own row, after the shorter
+    // submission details. Newer clients expose its parts as regular fields below, so avoid repeating them here.
     if !details
         .fields
         .iter()
