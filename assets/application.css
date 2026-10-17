@@ -419,7 +419,7 @@ nav[aria-label="Main navigation"] a[aria-current="page"]::after {
 
 .page-header {
     display: flex;
-    margin-bottom: 1.7rem;
+    margin-bottom: 2.1rem;
     align-items: flex-end;
     justify-content: space-between;
     gap: 1rem;
@@ -427,6 +427,11 @@ nav[aria-label="Main navigation"] a[aria-current="page"]::after {
 
 .page-header > div {
     min-width: 0;
+}
+
+/* The space under the heading is the header's own, so that a badge beside it lines up with the heading itself. */
+.page-header > div > h1:last-child {
+    margin-bottom: 0;
 }
 
 .page-header h1 {
