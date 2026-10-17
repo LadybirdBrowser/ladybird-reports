@@ -22,7 +22,7 @@ use crate::{
 };
 
 use super::super::{
-    AdminState, TemplateResponse,
+    AdminState, FilterBar, FilterOption, TemplateResponse,
     authentication::Navigation,
     session::{CsrfForm, Session},
     templates::{HistoryEvent, Timestamp, display_timestamp},
@@ -48,15 +48,7 @@ pub struct ReportsTemplate {
     reports: Vec<ReportRow>,
     next_page: Option<String>,
     new_triage: i64,
-    state_filters: Vec<StateFilter>,
-}
-
-pub struct StateFilter {
-    label: &'static str,
-    tone: &'static str,
-    query: String,
-    count: i64,
-    active: bool,
+    filter_bar: FilterBar,
 }
 
 #[derive(Template)]
@@ -222,25 +214,27 @@ pub async fn index(
         load_report_list(&state, &filters),
         state.database.report_state_counts(),
     )?;
-    let state_filters = [
-        (ReportState::Triage, counts.triage),
-        (ReportState::Confirmed, counts.confirmed),
-        (ReportState::Resolved, counts.resolved),
-        (ReportState::Rejected, counts.rejected),
-    ]
-    .into_iter()
-    .map(|(report, count)| {
-        let (label, tone) = report_state(report);
-        let query = format!("state:{}", report.as_str());
-        StateFilter {
-            label,
-            tone,
-            active: filters.q.trim() == query,
-            query,
-            count,
-        }
-    })
-    .collect();
+    let filter_bar = FilterBar::new(
+        "Filter by report status",
+        "/",
+        &default_report_search(),
+        &filters.q,
+        [
+            (ReportState::Triage, counts.triage),
+            (ReportState::Confirmed, counts.confirmed),
+            (ReportState::Resolved, counts.resolved),
+            (ReportState::Rejected, counts.rejected),
+        ]
+        .map(|(report, count)| {
+            let (label, tone) = report_state(report);
+            FilterOption {
+                label,
+                tone,
+                count: Some(count),
+                expression: format!("state:{}", report.as_str()),
+            }
+        }),
+    );
 
     Ok(TemplateResponse(ReportsTemplate {
         navigation: Some(Navigation::for_session(&state, &session)),
@@ -249,7 +243,7 @@ pub async fn index(
         reports: list.reports,
         next_page: list.next_page,
         new_triage: counts.new_triage,
-        state_filters,
+        filter_bar,
     }))
 }
 

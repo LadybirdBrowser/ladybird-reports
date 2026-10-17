@@ -5,23 +5,13 @@
 
 {% block scripts %}
     <script src="/assets/{{ asset_version }}/list-search.js" defer></script>
+    <script src="/assets/{{ asset_version }}/filter-bar.js" defer></script>
     <script src="/assets/{{ asset_version }}/report-groups.js" defer></script>
 {% endblock %}
 
 {% block content %}
-    <div class="state-bar">
-    <nav class="state-filters" aria-label="Filter by report status">
-        {% for filter in state_filters %}
-            <a
-                class="state-filter state-filter-{{ filter.tone }}{% if filter.active %} is-active{% endif %}"
-                href="/?q={{ filter.query }}"
-                {% if filter.active %}aria-current="page"{% endif %}
-            >
-                <span class="state-filter-label">{{ filter.label }}</span>
-                <span class="state-filter-count">{{ filter.count }}</span>
-            </a>
-        {% endfor %}
-    </nav>
+    <div class="list-toolbar">
+        {% include "_filter_bar.html" %}
 
     <p class="new-triage">
         <a href="/?q=state:triage" title="Reports needing triage that arrived in the last 24 hours">

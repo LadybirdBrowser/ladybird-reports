@@ -1,0 +1,16 @@
+{# A bar of quick filters for a list; see src/web/admin/filter_bar.rs. Needs `filter_bar` in the page. #}
+<nav class="filter-bar" aria-label="{{ filter_bar.label }}" data-filter-bar data-filter-default="{{ filter_bar.default_query }}">
+    {% for pill in filter_bar.pills %}
+        <a
+            class="filter-pill filter-pill-{{ pill.tone }}{% if pill.active %} is-active{% endif %}"
+            href="{{ pill.href }}"
+            data-filter-expression="{{ pill.expression }}"
+            {% if pill.active %}aria-current="true"{% endif %}
+        >
+            <span class="filter-pill-label">{{ pill.label }}</span>
+            {% if let Some(count) = pill.count %}
+                <span class="filter-pill-count">{{ count }}</span>
+            {% endif %}
+        </a>
+    {% endfor %}
+</nav>

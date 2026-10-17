@@ -163,6 +163,77 @@ test.describe("authenticated management UI", () => {
     expect(downloaded).toBe(false);
   });
 
+  test.describe("status quick filters", () => {
+    const defaultQuery = "state:triage state:confirmed";
+
+    async function expectFilters(page: Page, query: string, active: string[]) {
+      await expect(page.locator('input[name="q"]')).toHaveValue(query);
+      for (const name of ["Needs triage", "Confirmed", "Resolved", "Rejected"]) {
+        const pill = page.getByRole("navigation", { name: "Filter by report status" }).getByRole("link", { name });
+        if (active.includes(name)) {
+          await expect(pill).toHaveAttribute("aria-current", "true");
+        } else {
+          await expect(pill).not.toHaveAttribute("aria-current", "true");
+        }
+      }
+    }
+
+    const pill = (page: Page, name: string) =>
+      page.getByRole("navigation", { name: "Filter by report status" }).getByRole("link", { name });
+
+    test("show the filters of the query as active", async ({ page }) => {
+      await page.goto("/");
+      await expectFilters(page, defaultQuery, ["Needs triage", "Confirmed"]);
+
+      await page.goto("/?q=kind:crash%20state:Resolved");
+      await expectFilters(page, "kind:crash state:Resolved", ["Resolved"]);
+    });
+
+    test("a click replaces the query, and another click on the only active pill restores the default", async ({ page }) => {
+      await page.goto("/?q=kind:crash%20state:triage");
+
+      await pill(page, "Resolved").click();
+      await expectFilters(page, "state:resolved", ["Resolved"]);
+      await expect(page).toHaveURL(/q=state%3Aresolved$/);
+
+      await pill(page, "Resolved").click();
+      await expectFilters(page, defaultQuery, ["Needs triage", "Confirmed"]);
+    });
+
+    test("a click on one of several active pills keeps only that one and the rest of the query", async ({ page }) => {
+      await page.goto("/");
+      await pill(page, "Confirmed").click();
+      await expectFilters(page, "state:confirmed", ["Confirmed"]);
+
+      await page.goto("/?q=kind:crash%20state:triage%20state:rejected");
+      await expectFilters(page, "kind:crash state:triage state:rejected", ["Needs triage", "Rejected"]);
+      await pill(page, "Rejected").click();
+      await expectFilters(page, "kind:crash state:rejected", ["Rejected"]);
+
+      await pill(page, "Rejected").click();
+      await expectFilters(page, "kind:crash state:triage state:confirmed", ["Needs triage", "Confirmed"]);
+    });
+
+    test("Cmd or Ctrl adds a filter, or removes it when it is active", async ({ page }) => {
+      await page.goto("/?q=kind:crash%20state:resolved");
+
+      await pill(page, "Confirmed").click({ modifiers: ["ControlOrMeta"] });
+      await expectFilters(page, "kind:crash state:resolved state:confirmed", ["Resolved", "Confirmed"]);
+
+      await pill(page, "Resolved").click({ modifiers: ["ControlOrMeta"] });
+      await expectFilters(page, "kind:crash state:confirmed", ["Confirmed"]);
+
+      await pill(page, "Confirmed").click({ modifiers: ["ControlOrMeta"] });
+      await expectFilters(page, "kind:crash", []);
+    });
+
+    test("follow what is typed in the search box", async ({ page }) => {
+      await page.goto("/");
+      await page.locator('input[name="q"]').fill("state:rejected");
+      await expectFilters(page, "state:rejected", ["Rejected"]);
+    });
+  });
+
   test("shows setup credentials and escapes unknown report fields", async ({ page }) => {
     const response = await page.goto("/");
 
@@ -522,7 +593,7 @@ test.describe("authenticated management UI", () => {
     await expect(page.locator(".brand-mark img"))
       .toHaveAttribute("src", `${assetBase}ladybird-mark.png`);
 
-    for (const asset of ["application.css", "application.js", "reports.js", "list-search.js", "github-icon.svg", "ladybird-mark.png"]) {
+    for (const asset of ["application.css", "application.js", "reports.js", "list-search.js", "filter-bar.js", "github-icon.svg", "ladybird-mark.png"]) {
       const response = await request.get(`${assetBase}${asset}`);
 
       expect(response.status()).toBe(200);
@@ -1359,7 +1430,10 @@ test.describe("authenticated management UI", () => {
     await page.mouse.click(versionCell!.x + versionCell!.width / 2, versionCell!.y + versionCell!.height / 2);
     await expect(page).toHaveURL(`/reports/${reportId}`);
     await page.goto(issueUrl);
-    await page.getByRole("button", { name: `Unlink report ${reportId}` }).click();
+    const unlink = page.getByRole("button", { name: `Unlink report ${reportId}` });
+    await unlink.click();
+    // The form posts in the background, so wait for the page to show the result before leaving it.
+    await expect(unlink).toHaveCount(0);
 
     await page.goto(`/reports/${reportId}`);
     await expect(page.locator(".badge-triage")).toHaveText("Needs triage");

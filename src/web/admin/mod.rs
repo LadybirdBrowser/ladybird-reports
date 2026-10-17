@@ -1,4 +1,5 @@
 mod authentication;
+mod filter_bar;
 mod handlers;
 mod session;
 mod templates;
@@ -16,6 +17,7 @@ use crate::infrastructure::{
     SecretCipher, attachments::FileAttachmentStore, database::AdminDatabase, github::GithubClient,
 };
 
+pub use filter_bar::{FilterBar, FilterOption, FilterPill};
 pub use templates::TemplateResponse;
 
 #[derive(Clone)]
