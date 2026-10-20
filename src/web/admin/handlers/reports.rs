@@ -470,7 +470,8 @@ pub async fn show(
         .database
         .configuration()
         .await?
-        .github_repository
+        .github
+        .repository
         .clone();
     let page_url = field_string(&details.fields, "url").filter(|url| !url.trim().is_empty());
 
@@ -720,7 +721,7 @@ pub async fn assign_to_issue(
             .github
             .issue(
                 &access_token,
-                &configuration.github_repository,
+                &configuration.github.repository,
                 github_number,
             )
             .await?;
@@ -729,7 +730,7 @@ pub async fn assign_to_issue(
             .assign_report_to_github_issue(
                 &github_issue,
                 report_id,
-                &configuration.github_repository,
+                &configuration.github.repository,
                 session.github_id,
             )
             .await?

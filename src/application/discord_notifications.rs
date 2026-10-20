@@ -74,7 +74,7 @@ impl DiscordNotificationService {
         let message = report_message(
             &notification,
             &configuration.admin_base_url,
-            &configuration.github_repository,
+            &configuration.github.repository,
             discord,
         );
         let result = self

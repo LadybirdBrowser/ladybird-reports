@@ -481,9 +481,9 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
         .configuration()
         .await
         .expect("load runtime configuration");
-    assert_eq!(configuration.membership_recheck_seconds, 30 * 60);
+    assert_eq!(configuration.github.membership_recheck_seconds, 30 * 60);
     assert_eq!(configuration.session_lifetime_seconds, 24 * 60 * 60);
-    assert_eq!(configuration.token_refresh_before_seconds, 15 * 60);
+    assert_eq!(configuration.github.token_refresh_before_seconds, 15 * 60);
     assert_eq!(configuration.audit.denied_sign_in_window_seconds, 10 * 60);
     let stored_window: Option<i64> = sqlx::query_scalar(
         "SELECT (value->'audit'->>'denied_sign_in_window_seconds')::bigint
@@ -497,7 +497,7 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
         Some(600),
         "the migration backfills the setting"
     );
-    let original_team = configuration.github_authorization_team.clone();
+    let original_team = configuration.github.authorization_team.clone();
 
     let integration_session_hash = "9".repeat(64);
     admin_database
@@ -697,7 +697,7 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
         .start_configuration_cache()
         .await
         .expect("start reporting configuration listener");
-    configuration.github_authorization_team = "ExampleOrg/reports-reviewers".into();
+    configuration.github.authorization_team = "ExampleOrg/reports-reviewers".into();
     admin_database
         .update_configuration(&configuration, 999)
         .await
@@ -715,7 +715,8 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
             .configuration()
             .await
             .expect("load updated configuration")
-            .github_authorization_team,
+            .github
+            .authorization_team,
         "ExampleOrg/reports-reviewers"
     );
     tokio::time::timeout(std::time::Duration::from_secs(3), async {
@@ -724,7 +725,8 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
                 .configuration()
                 .await
                 .expect("read cached reporting configuration")
-                .github_authorization_team
+                .github
+                .authorization_team
                 == "ExampleOrg/reports-reviewers"
             {
                 break;
@@ -741,7 +743,7 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
             .is_err(),
         "a login verified under the old team must be rejected"
     );
-    configuration.github_authorization_team = original_team;
+    configuration.github.authorization_team = original_team;
     admin_database
         .update_configuration(&configuration, 999)
         .await

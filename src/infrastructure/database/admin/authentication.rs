@@ -38,7 +38,7 @@ impl AdminDatabase {
         // Hold a read lock on the policy until the session is committed. A concurrent team change takes the write lock
         // and revokes sessions, so a login verified under the old team cannot slip in afterward.
         let active_team: String = sqlx::query_scalar(
-            "SELECT value ->> 'github_authorization_team'
+            "SELECT value #>> '{github,authorization_team}'
              FROM runtime_configuration
              WHERE singleton = true
              FOR SHARE",

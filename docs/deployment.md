@@ -43,7 +43,7 @@ the issue list automatically.
 
 To show a backlink in the GitHub issue sidebar, create an organization issue field such as `Reports issue`. Use the
 **Text** type and **Organization only** visibility, then pin it to the issue types you use (including issues without a
-type). Put its numeric field ID in the runtime setting `github_reports_issue_field_id`. The admin service checks the
+type). Put its numeric field ID in the runtime setting `github.reports_issue_field_id`. The admin service checks the
 field's type and visibility before writing an issue URL; it retries failed links when the issue is viewed. GitHub's
 organization-only visibility also includes repository collaborators, so it is broader than the Reports maintainer login
 policy.

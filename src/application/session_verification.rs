@@ -45,9 +45,9 @@ async fn sweep(
     failed_at: &mut HashMap<i64, Instant>,
 ) -> Result<Duration> {
     let configuration = database.configuration().await?;
-    let recheck = chrono::Duration::seconds(configuration.membership_recheck_seconds as i64);
+    let recheck = chrono::Duration::seconds(configuration.github.membership_recheck_seconds as i64);
     let refresh_before =
-        chrono::Duration::seconds(configuration.token_refresh_before_seconds as i64);
+        chrono::Duration::seconds(configuration.github.token_refresh_before_seconds as i64);
 
     // Tokens first, so the checks below use fresh ones.
     for token_hash in database
@@ -75,7 +75,7 @@ async fn sweep(
             github
                 .verify_team_member_identity(
                     &access_token,
-                    &configuration.github_authorization_team,
+                    &configuration.github.authorization_team,
                     session.github_id,
                 )
                 .await?;
@@ -92,8 +92,8 @@ async fn sweep(
     }
 
     // Often enough that a token is rotated, and a person checked, in time.
-    let seconds = (configuration.membership_recheck_seconds / 4)
-        .min(configuration.token_refresh_before_seconds / 2)
+    let seconds = (configuration.github.membership_recheck_seconds / 4)
+        .min(configuration.github.token_refresh_before_seconds / 2)
         .clamp(15, 60);
     Ok(Duration::from_secs(seconds))
 }

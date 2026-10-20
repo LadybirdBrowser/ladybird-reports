@@ -24,20 +24,20 @@ recovery behavior live here.
 The admin service authenticates with GitHub App user access tokens. The app requests only read-only organization
 membership and read-write issue permissions. Maintainer actions are limited by both the app's permissions and the
 signed-in user's permissions. Duplicate lookups use a read-only installation token instead. The login flow separately
-verifies active membership in the configured authorization team. The team is stored as `github_authorization_team` in
+verifies active membership in the configured authorization team. The team is stored as `github.authorization_team` in
 the database-backed runtime configuration, using an `organization/team-slug` value. Its initial value is
 `LadybirdBrowser/maintainers`. Updating the team revokes current sessions; users must sign in again and pass the new
 team's membership check.
 
 The app encrypts both the GitHub access token and its rotating refresh token in the session record. A request extends
-the session expiry and cookie to 24 hours from that request, and accepts the session from what is stored with it, without
-calling GitHub. A background task in the admin service keeps that current: it rotates each access token shortly before it
-expires and rechecks team membership once a person's last check is half of `membership_recheck_seconds` old (30 minutes by
-default). One check, made with the person's most recently used session, marks all of their sessions. A session whose last
-successful membership check is older than `membership_recheck_seconds`, or whose access token has expired, is no longer
-accepted and must sign in again, so a failing task or an unreachable GitHub ends access instead of leaving it open. These
-intervals are runtime settings: `token_refresh_before_seconds`, `session_lifetime_seconds`, and
-`membership_recheck_seconds`.
+the session expiry and cookie to 24 hours from that request, and accepts the session from what is stored with it,
+without calling GitHub. A background task in the admin service keeps that current: it rotates each access token shortly
+before it expires and rechecks team membership once a person's last check is half of `github.membership_recheck_seconds`
+old (30 minutes by default). One check, made with the person's most recently used session, marks all of their sessions.
+A session whose last successful membership check is older than `github.membership_recheck_seconds`, or whose access
+token has expired, is no longer accepted and must sign in again, so a failing task or an unreachable GitHub ends access
+instead of leaving it open. These intervals are runtime settings: `github.token_refresh_before_seconds`,
+`session_lifetime_seconds`, and `github.membership_recheck_seconds`.
 
 Each process keeps a validated runtime configuration in memory. The admin process updates the database and emits a
 PostgreSQL notification in the same transaction; both services reload after receiving it. They also reload once a minute

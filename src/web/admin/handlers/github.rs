@@ -32,7 +32,7 @@ pub async fn issue_options(
             std::time::Duration::from_secs(3),
             state
                 .github
-                .search_issues(&token, &configuration.github_repository, query),
+                .search_issues(&token, &configuration.github.repository, query),
         ),
     );
     let tracked_issues = tracked_issues?;
@@ -54,7 +54,7 @@ pub async fn issue_options(
         .collect::<Vec<_>>();
     let linked_issues = state
         .database
-        .issues_linked_to_github_numbers(&configuration.github_repository, &github_numbers)
+        .issues_linked_to_github_numbers(&configuration.github.repository, &github_numbers)
         .await?
         .into_iter()
         .map(|link| (link.github_number, link))
@@ -127,7 +127,7 @@ pub(super) async fn ensure_github_reports_link(
     issue_id: IssueId,
 ) -> Result<()> {
     let configuration = state.database.configuration().await?;
-    let Some(field_id) = configuration.github_reports_issue_field_id else {
+    let Some(field_id) = configuration.github.reports_issue_field_id else {
         return Ok(());
     };
     let issue = state
@@ -148,7 +148,8 @@ pub(super) async fn ensure_github_reports_link(
     }
 
     let organization = configuration
-        .github_repository
+        .github
+        .repository
         .split_once('/')
         .expect("validated GitHub repository")
         .0;

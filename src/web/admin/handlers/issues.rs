@@ -209,7 +209,7 @@ pub async fn create_from_report(
         .github
         .create_issue(
             &access_token,
-            &configuration.github_repository,
+            &configuration.github.repository,
             form.title.trim(),
             &form.description,
         )
@@ -219,7 +219,7 @@ pub async fn create_from_report(
         .assign_report_to_github_issue(
             &github_issue,
             report_id,
-            &configuration.github_repository,
+            &configuration.github.repository,
             session.github_id,
         )
         .await
@@ -369,17 +369,17 @@ pub async fn replace_github_link(
 ) -> Result<Redirect> {
     session.verify_csrf(&form.csrf)?;
     let configuration = state.database.configuration().await?;
-    let number = issue_number_from_url(&form.github_url, &configuration.github_repository)?;
+    let number = issue_number_from_url(&form.github_url, &configuration.github.repository)?;
     let token = session.github_access_token(&state)?;
     let replacement = state
         .github
-        .issue(&token, &configuration.github_repository, number)
+        .issue(&token, &configuration.github.repository, number)
         .await?;
     state
         .database
         .replace_github_issue(
             issue_id,
-            &configuration.github_repository,
+            &configuration.github.repository,
             &replacement,
             session.github_id,
         )
@@ -413,7 +413,7 @@ pub async fn create_replacement(
         .github
         .create_issue(
             &token,
-            &configuration.github_repository,
+            &configuration.github.repository,
             &details.issue.title,
             &details.issue.description,
         )
@@ -422,7 +422,7 @@ pub async fn create_replacement(
         .database
         .replace_github_issue(
             issue_id,
-            &configuration.github_repository,
+            &configuration.github.repository,
             &replacement,
             session.github_id,
         )

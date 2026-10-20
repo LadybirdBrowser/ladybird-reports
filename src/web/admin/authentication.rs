@@ -146,7 +146,7 @@ pub async fn github_callback(
         .github
         .verify_team_membership(
             &token.access_token,
-            &configuration.github_authorization_team,
+            &configuration.github.authorization_team,
             &user.login,
         )
         .await
@@ -200,7 +200,7 @@ pub async fn github_callback(
         .create_session(NewSession {
             github_id: user.id,
             login: &user.login,
-            authorized_team: &configuration.github_authorization_team,
+            authorized_team: &configuration.github.authorization_team,
             token_hash: &session_token_hash,
             encrypted_access_token: &encrypted_access_token,
             encrypted_refresh_token: Some(&encrypted_refresh_token),

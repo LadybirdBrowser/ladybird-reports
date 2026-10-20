@@ -63,7 +63,7 @@ link is flagged for repair, and its previous GitHub identity stays associated wi
 its tracked issue. From the issue view, a maintainer can unlink individual reports. Deleting an issue hides its Reports
 record and unlinks all remaining reports without changing their state. Neither action changes the GitHub issue, and a
 hidden issue cannot receive reports. Merging two tracked issues moves the reports to the destination. Maintainers update
-the source GitHub issue separately. When `github_reports_issue_field_id` is configured, opening a tracked issue also
+the source GitHub issue separately. When `github.reports_issue_field_id` is configured, opening a tracked issue also
 ensures its organization-only GitHub sidebar field links back to Reports. The field is set for newly created and
 existing tracked issues.
 
@@ -73,10 +73,14 @@ Runtime configuration is stored as one active JSON document. Saving replaces tha
 compiled safety limits. The setting details panel describes the setting on the editor line containing the caret.
 
 The `discord` object controls report notifications. Crash reports and web compatibility reports are announced in
-separate channels: set `crash_webhook_url` and `web_compat_webhook_url` to the incoming-webhook URLs of those channels
+separate channels: set `webhook_urls.crash` and `webhook_urls.web_compat` to the incoming-webhook URLs of those channels
 to enable delivery. A kind of report whose webhook is `null` is not announced; its notifications wait in the queue until
 the webhook is set, so delivery can be paused without discarding anything. The remaining values control queue polling,
 request timeouts, retry delays, and the native-stack excerpt included in each message.
+
+The `github` object holds everything about how the service uses GitHub: `repository` (the repository its issues link
+to), `authorization_team` (who may sign in; changing it signs out every session), `reports_issue_field_id`,
+`token_refresh_before_seconds` and `membership_recheck_seconds`.
 
 The `audit` object controls the audit log. `denied_sign_in_window_seconds` (default 600) limits how often one denied
 GitHub account is recorded; 0 records every denial. `retention_days` (default 3650; 30 to 36500) is how long events are

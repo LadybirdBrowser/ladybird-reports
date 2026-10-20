@@ -17,11 +17,7 @@ pub const HARD_MAX_PNG_DECODED_BYTES: usize = 64 * 1024 * 1024;
 pub struct RuntimeConfiguration {
     pub public_base_url: String,
     pub admin_base_url: String,
-    pub github_repository: String,
-    #[serde(default = "default_github_authorization_team")]
-    pub github_authorization_team: String,
-    #[serde(default)]
-    pub github_reports_issue_field_id: Option<i64>,
+    pub github: GithubConfiguration,
     pub trusted_proxies: Vec<TrustedProxy>,
     /// The addresses `trusted_proxies` stands for. Only the process that resolves the configured names fills this in,
     /// so it is never stored.
@@ -34,11 +30,34 @@ pub struct RuntimeConfiguration {
     pub discord: DiscordConfiguration,
     #[serde(default = "default_session_lifetime_seconds")]
     pub session_lifetime_seconds: u64,
+    #[serde(default)]
+    pub audit: AuditConfiguration,
+}
+
+/// How the service uses GitHub: the repository its issues are linked to, and who may sign in.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct GithubConfiguration {
+    pub repository: String,
+    #[serde(default = "default_github_authorization_team")]
+    pub authorization_team: String,
+    #[serde(default)]
+    pub reports_issue_field_id: Option<i64>,
     #[serde(default = "default_token_refresh_before_seconds")]
     pub token_refresh_before_seconds: u64,
     pub membership_recheck_seconds: u64,
-    #[serde(default)]
-    pub audit: AuditConfiguration,
+}
+
+impl Default for GithubConfiguration {
+    fn default() -> Self {
+        Self {
+            repository: "LadybirdBrowser/ladybird".into(),
+            authorization_team: default_github_authorization_team(),
+            reports_issue_field_id: None,
+            token_refresh_before_seconds: default_token_refresh_before_seconds(),
+            membership_recheck_seconds: 1800,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -99,13 +118,19 @@ pub struct MaintenanceConfiguration {
     pub submission_source_retention_hours: u32,
 }
 
+/// The webhook of the channel each kind of report is announced in. Reports of a kind without a webhook wait until it
+/// has one.
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct DiscordWebhookUrls {
+    pub crash: Option<String>,
+    pub web_compat: Option<String>,
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct DiscordConfiguration {
-    /// Where crash reports are announced. Reports of a kind without a webhook wait until it has one.
-    pub crash_webhook_url: Option<String>,
-    /// Where web compatibility reports are announced.
-    pub web_compat_webhook_url: Option<String>,
+    pub webhook_urls: DiscordWebhookUrls,
     pub poll_interval_seconds: u64,
     pub request_timeout_seconds: u64,
     pub initial_retry_seconds: u64,
@@ -119,9 +144,7 @@ impl Default for RuntimeConfiguration {
         Self {
             public_base_url: "https://reports.app.ladybird.org".into(),
             admin_base_url: "http://localhost:3000".into(),
-            github_repository: "LadybirdBrowser/ladybird".into(),
-            github_authorization_team: default_github_authorization_team(),
-            github_reports_issue_field_id: None,
+            github: GithubConfiguration::default(),
             trusted_proxies: Vec::new(),
             trusted_networks: Vec::new(),
             limits: IngestionLimits::default(),
@@ -137,8 +160,6 @@ impl Default for RuntimeConfiguration {
             },
             discord: DiscordConfiguration::default(),
             session_lifetime_seconds: default_session_lifetime_seconds(),
-            token_refresh_before_seconds: default_token_refresh_before_seconds(),
-            membership_recheck_seconds: 1800,
             audit: AuditConfiguration::default(),
         }
     }
@@ -169,22 +190,22 @@ pub const SETTING_DEFINITIONS: &[SettingDefinition] = &[
         "An HTTPS origin without a path, query, or fragment.",
     ),
     setting(
-        "github_repository",
-        "github_repository",
+        "repository",
+        "github.repository",
         "GitHub repository",
         "The repository searched and updated when an internal issue is linked to GitHub.",
         "An owner and repository name, such as LadybirdBrowser/ladybird.",
     ),
     setting(
-        "github_authorization_team",
-        "github_authorization_team",
+        "authorization_team",
+        "github.authorization_team",
         "GitHub access team",
         "Only active members of this GitHub organization team can sign in. Changing it signs out existing sessions.",
         "Organization and team slug, such as LadybirdBrowser/maintainers.",
     ),
     setting(
-        "github_reports_issue_field_id",
-        "github_reports_issue_field_id",
+        "reports_issue_field_id",
+        "github.reports_issue_field_id",
         "GitHub Reports field",
         "The organization-only GitHub issue text field that links back to a tracked issue.",
         "A positive issue field ID, or null to disable the backlink.",
@@ -386,15 +407,15 @@ pub const SETTING_DEFINITIONS: &[SettingDefinition] = &[
         "Hours from submission or from when a block ended, 1 to 8760; the default is 48.",
     ),
     setting(
-        "crash_webhook_url",
-        "discord.crash_webhook_url",
+        "crash",
+        "discord.webhook_urls.crash",
         "Discord crash reports webhook",
         "Receives a summary when a crash report becomes ready for triage.",
         "A Discord incoming-webhook HTTPS URL, or null to pause delivery of crash reports.",
     ),
     setting(
-        "web_compat_webhook_url",
-        "discord.web_compat_webhook_url",
+        "web_compat",
+        "discord.webhook_urls.web_compat",
         "Discord web compatibility webhook",
         "Receives a summary when a web compatibility report becomes ready for triage.",
         "A Discord incoming-webhook HTTPS URL, or null to pause delivery of web compatibility reports.",
@@ -450,14 +471,14 @@ pub const SETTING_DEFINITIONS: &[SettingDefinition] = &[
     ),
     setting(
         "token_refresh_before_seconds",
-        "token_refresh_before_seconds",
+        "github.token_refresh_before_seconds",
         "GitHub token refresh window",
         "Rotates a GitHub user token before it expires, using its stored refresh token.",
         "Seconds before access-token expiry at which to refresh it.",
     ),
     setting(
         "membership_recheck_seconds",
-        "membership_recheck_seconds",
+        "github.membership_recheck_seconds",
         "Membership recheck",
         "Controls how often an active session revalidates GitHub team membership.",
         "Seconds between membership checks for one session.",
@@ -480,7 +501,7 @@ pub const SETTING_DEFINITIONS: &[SettingDefinition] = &[
 
 /// Whether changing the setting at `path` must sign out every existing session.
 pub fn setting_invalidates_sessions(path: &str) -> bool {
-    path == "github_authorization_team"
+    path == "github.authorization_team"
 }
 
 const fn setting(
@@ -531,8 +552,8 @@ impl DiscordConfiguration {
     /// The webhook that announces reports of `kind`, if one is set.
     pub fn webhook_url(&self, kind: ReportKind) -> Option<&str> {
         match kind {
-            ReportKind::Crash => self.crash_webhook_url.as_deref(),
-            ReportKind::WebCompat => self.web_compat_webhook_url.as_deref(),
+            ReportKind::Crash => self.webhook_urls.crash.as_deref(),
+            ReportKind::WebCompat => self.webhook_urls.web_compat.as_deref(),
         }
     }
 
@@ -548,8 +569,7 @@ impl DiscordConfiguration {
 impl Default for DiscordConfiguration {
     fn default() -> Self {
         Self {
-            crash_webhook_url: None,
-            web_compat_webhook_url: None,
+            webhook_urls: DiscordWebhookUrls::default(),
             poll_interval_seconds: 2,
             request_timeout_seconds: 10,
             initial_retry_seconds: 30,
@@ -592,7 +612,7 @@ impl RuntimeConfiguration {
         validate_origin(&self.admin_base_url, "Invalid admin URL")?;
         self.validate_github_repository()?;
         self.validate_github_authorization_team()?;
-        if self.github_reports_issue_field_id.is_some_and(|id| id < 1) {
+        if self.github.reports_issue_field_id.is_some_and(|id| id < 1) {
             return Err(AppError::InvalidRequest("Invalid GitHub Reports field ID"));
         }
         self.validate_rate_limits()?;
@@ -608,7 +628,7 @@ impl RuntimeConfiguration {
     }
 
     fn validate_github_repository(&self) -> Result<()> {
-        let mut components = self.github_repository.split('/');
+        let mut components = self.github.repository.split('/');
         let owner = components.next().unwrap_or_default();
         let repository = components.next().unwrap_or_default();
 
@@ -627,7 +647,7 @@ impl RuntimeConfiguration {
     }
 
     fn validate_github_authorization_team(&self) -> Result<()> {
-        let mut components = self.github_authorization_team.split('/');
+        let mut components = self.github.authorization_team.split('/');
         let organization = components.next().unwrap_or_default();
         let team = components.next().unwrap_or_default();
         let valid_component = |component: &str| {
@@ -705,8 +725,8 @@ impl RuntimeConfiguration {
             || !(1..=1_000_000_000).contains(&proof.expected_work)
             || !(30..=3600).contains(&proof.challenge_lifetime_seconds)
             || !(3600..=2_592_000).contains(&self.session_lifetime_seconds)
-            || !(60..=3600).contains(&self.token_refresh_before_seconds)
-            || !(30..=3600).contains(&self.membership_recheck_seconds)
+            || !(60..=3600).contains(&self.github.token_refresh_before_seconds)
+            || !(30..=3600).contains(&self.github.membership_recheck_seconds)
             || self.audit.denied_sign_in_window_seconds > 86_400
             || !(30..=36_500).contains(&self.audit.retention_days);
 
@@ -740,9 +760,12 @@ impl RuntimeConfiguration {
             ));
         }
 
-        for webhook_url in [&discord.crash_webhook_url, &discord.web_compat_webhook_url]
-            .into_iter()
-            .flatten()
+        for webhook_url in [
+            &discord.webhook_urls.crash,
+            &discord.webhook_urls.web_compat,
+        ]
+        .into_iter()
+        .flatten()
         {
             validate_discord_webhook_url(webhook_url)?;
         }
@@ -953,18 +976,18 @@ mod tests {
             "https://discord.com/api/webhooks/123/token?wait=true",
         ] {
             let mut configuration = RuntimeConfiguration::default();
-            configuration.discord.crash_webhook_url = Some(invalid_url.into());
+            configuration.discord.webhook_urls.crash = Some(invalid_url.into());
             assert!(configuration.validate().is_err(), "accepted {invalid_url}");
 
             let mut configuration = RuntimeConfiguration::default();
-            configuration.discord.web_compat_webhook_url = Some(invalid_url.into());
+            configuration.discord.webhook_urls.web_compat = Some(invalid_url.into());
             assert!(configuration.validate().is_err(), "accepted {invalid_url}");
         }
 
         let mut configuration = RuntimeConfiguration::default();
-        configuration.discord.crash_webhook_url =
+        configuration.discord.webhook_urls.crash =
             Some("https://discord.com/api/webhooks/123/token".into());
-        configuration.discord.web_compat_webhook_url =
+        configuration.discord.webhook_urls.web_compat =
             Some("https://discord.com/api/webhooks/456/other".into());
         assert!(configuration.validate().is_ok());
     }
@@ -974,11 +997,11 @@ mod tests {
         let mut discord = DiscordConfiguration::default();
         assert!(discord.announced_kinds().is_empty());
 
-        discord.web_compat_webhook_url = Some("https://discord.com/api/webhooks/1/a".into());
+        discord.webhook_urls.web_compat = Some("https://discord.com/api/webhooks/1/a".into());
         assert_eq!(discord.announced_kinds(), [ReportKind::WebCompat]);
         assert_eq!(discord.webhook_url(ReportKind::Crash), None);
 
-        discord.crash_webhook_url = Some("https://discord.com/api/webhooks/2/b".into());
+        discord.webhook_urls.crash = Some("https://discord.com/api/webhooks/2/b".into());
         assert_eq!(
             discord.announced_kinds(),
             [ReportKind::Crash, ReportKind::WebCompat]
@@ -992,7 +1015,10 @@ mod tests {
     #[test]
     fn github_access_team_must_be_an_organization_and_slug() {
         let mut configuration = RuntimeConfiguration {
-            github_authorization_team: "ExampleOrg/reports-reviewers".into(),
+            github: GithubConfiguration {
+                authorization_team: "ExampleOrg/reports-reviewers".into(),
+                ..GithubConfiguration::default()
+            },
             ..RuntimeConfiguration::default()
         };
         assert!(configuration.validate().is_ok());
@@ -1006,7 +1032,7 @@ mod tests {
             "ExampleOrg/../team",
             "ExampleOrg/team?extra=1",
         ] {
-            configuration.github_authorization_team = invalid_team.into();
+            configuration.github.authorization_team = invalid_team.into();
             assert!(configuration.validate().is_err(), "accepted {invalid_team}");
         }
     }

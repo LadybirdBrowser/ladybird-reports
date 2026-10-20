@@ -89,7 +89,7 @@ pub async fn receive(
         && !event
             .repository
             .full_name
-            .eq_ignore_ascii_case(&configuration.github_repository)
+            .eq_ignore_ascii_case(&configuration.github.repository)
     {
         return Ok(StatusCode::NO_CONTENT);
     }

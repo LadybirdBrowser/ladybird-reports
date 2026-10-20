@@ -71,7 +71,7 @@ pub async fn require_session(
     let configuration = state.database.configuration().await?;
     let now = Utc::now();
     let membership_expired = now - record.membership_verified_at
-        >= Duration::seconds(configuration.membership_recheck_seconds as i64);
+        >= Duration::seconds(configuration.github.membership_recheck_seconds as i64);
     let token_expired = record
         .access_token_expires_at
         .is_some_and(|expiry| expiry <= now);

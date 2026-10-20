@@ -67,9 +67,10 @@ async fn main() -> Result<()> {
 
     sqlx::query(
         "UPDATE runtime_configuration
-         SET value = value || jsonb_build_object(
-             'admin_base_url', 'http://127.0.0.1:3100',
-             'github_reports_issue_field_id', 98500
+         SET value = jsonb_set(
+             value || jsonb_build_object('admin_base_url', 'http://127.0.0.1:3100'),
+             '{github,reports_issue_field_id}',
+             '98500'
          )
          WHERE singleton = true",
     )
