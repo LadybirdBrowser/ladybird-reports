@@ -1519,6 +1519,32 @@ test.describe("authenticated management UI", () => {
     expect((await githubIssue.json()).state).toBe("open");
   });
 
+  // Late, as it adds a second resolved report.
+  test("adds a report to a resolved issue and resolves it", async ({ page }) => {
+    await page.goto("/?q=state%3Atriage+platform%3APaginationOS");
+    await openGroups(page);
+    const reportPath = await page.locator(".report-title-link").first().getAttribute("href");
+    await page.goto(reportPath!);
+    await page.getByRole("button", { name: "Add report to issue" }).click();
+
+    const issueSearch = page.getByRole("combobox", { name: "Search issues" });
+    await issueSearch.fill("Fixed in a nightly");
+    const issuePopover = page
+      .locator('[data-search-url="/api/issue-options"]')
+      .locator("[data-entity-popover]");
+    await expect(issuePopover.getByText("Resolved issues", { exact: true })).toBeVisible();
+    const option = page.getByRole("option", { name: /Fixed in a nightly/ });
+    await expect(option).toContainText("GitHub issue #5000");
+    await option.click();
+    await page.getByRole("dialog", { name: "Add report to an issue" })
+      .getByRole("button", { name: "Add report", exact: true })
+      .click();
+    await expect(page).toHaveURL(/\/issues\/[0-9a-f-]+$/);
+    await expect(page.getByRole("heading", { name: "Fixed in a nightly" })).toBeVisible();
+
+    await page.goto(reportPath!);
+    await expect(page.locator(".badge-resolved")).toHaveText("Resolved");
+  });
 
 
 });

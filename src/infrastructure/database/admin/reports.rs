@@ -472,8 +472,7 @@ impl AdminDatabase {
                 FROM issues
                 WHERE id = $1
                     AND merged_into IS NULL
-                    AND state IN ('unresolved', 'needs_attention')
-                    AND resolved_at IS NULL
+                    AND state <> 'rejected'
             )",
         )
         .bind(issue_id)
@@ -492,8 +491,8 @@ impl AdminDatabase {
         Ok(())
     }
 
-    /// Links a ready report to an issue, within the caller's transaction, and confirms it. An already linked report is
-    /// only left alone if it is linked to this issue.
+    /// Links a ready report to an issue, within the caller's transaction, and confirms it, or resolves it if the issue
+    /// is resolved. An already linked report is only left alone if it is linked to this issue.
     pub(super) async fn link_report(
         &self,
         transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
@@ -513,7 +512,17 @@ impl AdminDatabase {
         .await?
         .ok_or(AppError::NotFound("Report not found"))?;
 
-        if previous.0 == Some(issue_id) && previous.1 == ReportState::Confirmed {
+        let issue_state: IssueState = sqlx::query_scalar("SELECT state FROM issues WHERE id = $1")
+            .bind(issue_id)
+            .fetch_one(&mut **transaction)
+            .await?;
+        let target = if issue_state == IssueState::Resolved {
+            ReportState::Resolved
+        } else {
+            ReportState::Confirmed
+        };
+
+        if previous.0 == Some(issue_id) && previous.1 == target {
             return Ok(());
         }
         if previous.0.is_some() && previous.0 != Some(issue_id) {
@@ -524,11 +533,12 @@ impl AdminDatabase {
 
         sqlx::query(
             "UPDATE reports
-             SET issue_id = $2, state = 'confirmed', updated_at = now()
+             SET issue_id = $2, state = $3, updated_at = now()
              WHERE id = $1",
         )
         .bind(report_id)
         .bind(issue_id)
+        .bind(target)
         .execute(&mut **transaction)
         .await?;
 
@@ -546,15 +556,9 @@ impl AdminDatabase {
             .await?;
         }
 
-        if previous.1 != ReportState::Confirmed {
-            self.audit_report_state_change(
-                transaction,
-                report_id,
-                actor,
-                previous.1,
-                ReportState::Confirmed,
-            )
-            .await?;
+        if previous.1 != target {
+            self.audit_report_state_change(transaction, report_id, actor, previous.1, target)
+                .await?;
         }
 
         Ok(())

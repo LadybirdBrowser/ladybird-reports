@@ -6,13 +6,17 @@ use axum::{
 };
 
 use crate::{
-    domain::{GithubLinkState, IssueId},
+    domain::{GithubLinkState, IssueId, IssueState},
     error::{AppError, Result},
     infrastructure::github::GithubIssueState,
 };
 
 use super::super::{AdminState, session::Session};
 use super::reports::{EntitySearchOption, EntitySearchResponse, ReportSearchQuery};
+
+const TRACKED_ISSUES: &str = "Tracked issues";
+const GITHUB_ISSUES: &str = "GitHub issues";
+const RESOLVED_ISSUES: &str = "Resolved issues";
 
 pub async fn issue_options(
     State(state): State<AdminState>,
@@ -65,30 +69,29 @@ pub async fn issue_options(
 
     for issue in tracked_issues {
         included_issue_ids.insert(issue.id);
+        let resolved = issue.state == IssueState::Resolved;
         results.push(EntitySearchOption {
             value: format!("issue:{}", issue.id),
             label: issue.title,
             description: format!("GitHub issue #{}", issue.github_number),
             identifier: format!("#{}", issue.github_number),
             badge: format!("{} reports", issue.report_count),
-            badge_tone: "assigned",
+            badge_tone: if resolved { "resolved" } else { "assigned" },
             footnote: format!("Tracked since {}", issue.created_at.format("%d %b %Y")),
-            group: Some("Tracked issues"),
+            group: Some(if resolved {
+                RESOLVED_ISSUES
+            } else {
+                TRACKED_ISSUES
+            }),
         });
     }
 
     for github_issue in github_issues {
-        if github_issue.state != GithubIssueState::Open {
-            continue;
-        }
-
         if let Some(linked_issue) = linked_issues.get(&github_issue.number) {
-            if !matches!(
-                linked_issue.github_state,
-                GithubLinkState::Open | GithubLinkState::Unknown
-            ) {
+            if linked_issue.github_state.is_unreachable() {
                 continue;
             }
+            let resolved = linked_issue.github_state == GithubLinkState::Closed;
             if included_issue_ids.insert(linked_issue.issue_id) {
                 results.push(EntitySearchOption {
                     value: format!("issue:{}", linked_issue.issue_id),
@@ -96,11 +99,20 @@ pub async fn issue_options(
                     description: github_issue.title,
                     identifier: format!("#{}", github_issue.number),
                     badge: "Tracked".into(),
-                    badge_tone: "assigned",
+                    badge_tone: if resolved { "resolved" } else { "assigned" },
                     footnote: "Already tracked in Reports".into(),
-                    group: Some("Tracked issues"),
+                    group: Some(if resolved {
+                        RESOLVED_ISSUES
+                    } else {
+                        TRACKED_ISSUES
+                    }),
                 });
             }
+            continue;
+        }
+
+        // Only an open GitHub issue can start being tracked.
+        if github_issue.state != GithubIssueState::Open {
             continue;
         }
 
@@ -112,11 +124,16 @@ pub async fn issue_options(
             badge: "GitHub".into(),
             badge_tone: "neutral",
             footnote: "Not yet tracked in Reports".into(),
-            group: Some("GitHub issues"),
+            group: Some(GITHUB_ISSUES),
         });
     }
 
-    results.sort_by_key(|option| option.group != Some("Tracked issues"));
+    // Open tracked issues come first, and resolved ones last, as a report is rarely added to an issue that is fixed.
+    results.sort_by_key(|option| match option.group {
+        Some(TRACKED_ISSUES) => 0,
+        Some(GITHUB_ISSUES) => 1,
+        _ => 2,
+    });
 
     Ok(Json(EntitySearchResponse { results }))
 }

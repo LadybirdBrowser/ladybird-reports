@@ -1064,10 +1064,12 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
     let first_github_report = ReportId::new();
     let second_github_report = ReportId::new();
     let third_github_report = ReportId::new();
+    let late_github_report = ReportId::new();
     for github_report in [
         first_github_report,
         second_github_report,
         third_github_report,
+        late_github_report,
     ] {
         sqlx::query(
             "INSERT INTO reports (
@@ -1230,13 +1232,36 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
         .await
         .expect("check issue state after GitHub closure");
     assert_eq!(resolved_state, "resolved");
+    // A resolved issue can still be found and given reports, which are resolved along with it.
+    let found_issues = admin_database
+        .search_issues("New linked issue")
+        .await
+        .expect("search for the resolved issue");
     assert!(
-        admin_database
-            .assign_report_to_issue(first_github_report, created_issue.issue_id, 999)
-            .await
-            .is_err(),
-        "reports cannot be added to a closed GitHub issue"
+        found_issues
+            .iter()
+            .any(|issue| issue.id == created_issue.issue_id)
     );
+    admin_database
+        .assign_report_to_issue(late_github_report, created_issue.issue_id, 999)
+        .await
+        .expect("add a report to a resolved issue");
+    let late_state: String = sqlx::query_scalar("SELECT state FROM reports WHERE id = $1")
+        .bind(late_github_report)
+        .fetch_one(&admin_pool)
+        .await
+        .expect("read state of report added to a resolved issue");
+    assert_eq!(late_state, "resolved");
+    let late_state_audit: serde_json::Value = sqlx::query_scalar(
+        "SELECT details FROM audit_events
+         WHERE entity_id = $1 AND action = 'report.update_state'",
+    )
+    .bind(late_github_report.0)
+    .fetch_one(&admin_pool)
+    .await
+    .expect("read state audit of report added to a resolved issue");
+    assert_eq!(late_state_audit["from"], "triage");
+    assert_eq!(late_state_audit["to"], "resolved");
 
     let mut transferred_issue = github_issue(8888, "Transferred GitHub issue");
     transferred_issue.id = 94813;
@@ -1319,7 +1344,7 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
             .fetch_one(&admin_pool)
             .await
             .expect("count reports linked to issue before rejection");
-    assert_eq!(linked_before_rejection, 2);
+    assert_eq!(linked_before_rejection, 3);
 
     admin_database
         .unlink_report_from_issue(created_issue.issue_id, second_github_report, 999)

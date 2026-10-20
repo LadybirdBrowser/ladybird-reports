@@ -95,8 +95,7 @@ impl AdminDatabase {
                 ON reports.issue_id = issues.id
                 AND reports.storage_state = 'ready'
              WHERE issues.merged_into IS NULL
-                AND issues.state IN ('unresolved', 'needs_attention')
-                AND issues.resolved_at IS NULL
+                AND issues.state IN ('unresolved', 'needs_attention', 'resolved')
                 AND (
                     $1 = ''
                     OR position(lower($1) in lower(issues.title)) > 0
@@ -105,6 +104,7 @@ impl AdminDatabase {
                 )
              GROUP BY issues.id
              ORDER BY
+                issues.state = 'resolved',
                 CASE
                     WHEN $1 <> '' AND lower(issues.title) LIKE lower($1) || '%' THEN 0
                     ELSE 1
