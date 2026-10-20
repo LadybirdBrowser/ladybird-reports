@@ -3,7 +3,9 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use flate2::{Compression, read::GzDecoder, write::GzEncoder};
 use sha2::{Digest, Sha256};
+use std::io::{Read, Write};
 use tokio::io::AsyncWriteExt;
 use tokio::sync::Semaphore;
 
@@ -32,6 +34,12 @@ const PNG_VALIDATION_MEMORY_UNIT: usize = 1024 * 1024;
 // A weighted semaphore limits the aggregate output reservation across all blocking PNG decoders in this process. With
 // the 64 MiB hard per-image cap, no more than two maximum-sized decodes can run at once.
 const PNG_VALIDATION_MEMORY_BUDGET: usize = 128 * 1024 * 1024;
+
+/// Text attachments are stored gzip-compressed and read back uncompressed. Stored files that predate this are plain
+/// text, which can be told apart: valid UTF-8 never starts with these bytes.
+const GZIP_MAGIC: [u8; 2] = [0x1f, 0x8b];
+/// The most an attachment may hold uncompressed, as the database allows.
+const MAXIMUM_ATTACHMENT_BYTES: u64 = 64 * 1024 * 1024;
 
 pub struct AttachmentWriter {
     file: tokio::fs::File,
@@ -99,9 +107,26 @@ impl FileAttachmentStore {
         sync_directory(self.root.join("reports")).await
     }
 
+    /// The contents of an attachment, uncompressed whether or not it is stored compressed.
     pub async fn read(&self, storage_key: &str) -> Result<Vec<u8>> {
         let path = self.path_for_storage_key(storage_key)?;
-        Ok(tokio::fs::read(path).await?)
+        tokio::task::spawn_blocking(move || read_uncompressed(&path))
+            .await
+            .map_err(AppError::internal)?
+    }
+
+    /// Compresses an attachment that is stored as plain text, for those stored before text was compressed. Returns
+    /// whether it did; an attachment that is compressed already, or gone, is left alone.
+    pub async fn compress_stored_text(&self, storage_key: &str) -> Result<bool> {
+        let path = self.path_for_storage_key(storage_key)?;
+        let result = tokio::task::spawn_blocking(move || compress_in_place(&path))
+            .await
+            .map_err(AppError::internal)?;
+
+        match result {
+            Err(AppError::Io(error)) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+            result => result,
+        }
     }
 
     pub async fn remove_staging(&self, upload_id: UploadId) -> Result<()> {
@@ -347,13 +372,73 @@ async fn validate_attachment_file(
     };
 
     tokio::task::spawn_blocking(move || match attachment.media_type {
-        AttachmentMediaType::PlainText => validate_utf8_text(&path, limits.attachment_bytes),
+        // Text is stored compressed once it is known to be valid.
+        AttachmentMediaType::PlainText => {
+            validate_utf8_text(&path, limits.attachment_bytes)?;
+            compress_in_place(&path).map(drop)
+        }
         AttachmentMediaType::Png => {
             validate_png(&path, limits.png_pixels, limits.png_decoded_bytes)
         }
     })
     .await
     .map_err(AppError::internal)?
+}
+
+fn read_uncompressed(path: &Path) -> Result<Vec<u8>> {
+    let bytes = std::fs::read(path)?;
+    if !bytes.starts_with(&GZIP_MAGIC) {
+        return Ok(bytes);
+    }
+
+    // The limit is for the sake of a damaged file, which could otherwise claim to hold far more than it was given.
+    let mut uncompressed = Vec::new();
+    GzDecoder::new(bytes.as_slice())
+        .take(MAXIMUM_ATTACHMENT_BYTES + 1)
+        .read_to_end(&mut uncompressed)?;
+    if uncompressed.len() as u64 > MAXIMUM_ATTACHMENT_BYTES {
+        return Err(AppError::Internal(anyhow::anyhow!(
+            "stored attachment is larger than an attachment may be"
+        )));
+    }
+
+    Ok(uncompressed)
+}
+
+/// Replaces a plain text file with its gzip-compressed contents, through a file beside it that is renamed over it so
+/// a reader sees one or the other. Returns whether the file was plain text.
+fn compress_in_place(path: &Path) -> Result<bool> {
+    let bytes = std::fs::read(path)?;
+    if bytes.starts_with(&GZIP_MAGIC) {
+        return Ok(false);
+    }
+
+    let mut temporary_name = path.as_os_str().to_owned();
+    temporary_name.push(".compressing");
+    let temporary = PathBuf::from(temporary_name);
+
+    let compressed = (|| -> std::io::Result<()> {
+        let file = std::fs::OpenOptions::new()
+            .create(true)
+            .truncate(true)
+            .write(true)
+            .open(&temporary)?;
+        let mut encoder = GzEncoder::new(std::io::BufWriter::new(file), Compression::default());
+        encoder.write_all(&bytes)?;
+        let file = encoder
+            .finish()?
+            .into_inner()
+            .map_err(|error| error.into_error())?;
+        file.sync_all()?;
+        std::fs::rename(&temporary, path)
+    })();
+
+    if let Err(error) = compressed {
+        let _ = std::fs::remove_file(&temporary);
+        return Err(error.into());
+    }
+
+    Ok(true)
 }
 
 fn validate_utf8_text(path: &Path, maximum_bytes: usize) -> Result<()> {
@@ -464,6 +549,153 @@ mod tests {
         // The header describes a 32 MiB frame, so validation must reject it before allocating the output buffer or
         // reading compressed pixels.
         assert!(validate_png(file.path(), 5_000_000, 1024 * 1024).is_err());
+    }
+
+    /// An attachment file in a store, where the store looks for it: `reports/<report>/<attachment>`.
+    async fn stored_file(
+        directory: &Path,
+        contents: &[u8],
+    ) -> (FileAttachmentStore, String, PathBuf) {
+        let store = FileAttachmentStore::open(directory)
+            .await
+            .expect("open attachment store");
+        let report_id = ReportId::new();
+        let attachment_id = AttachmentId::new();
+        let key = format!("reports/{report_id}/{attachment_id}");
+        let path = directory.join(&key);
+        tokio::fs::create_dir_all(path.parent().unwrap())
+            .await
+            .expect("create report directory");
+        tokio::fs::write(&path, contents)
+            .await
+            .expect("write attachment");
+
+        (store, key, path)
+    }
+
+    fn diagnostics() -> Vec<u8> {
+        "Layout tree:\n  BlockContainer <body> at [0,0] [0+0+0 1104 0+0+0]\n"
+            .repeat(2_000)
+            .into_bytes()
+    }
+
+    #[tokio::test]
+    async fn text_that_is_stored_plain_is_read_back_and_compressed_once() {
+        let directory = tempfile::tempdir().expect("create attachment root");
+        let text = diagnostics();
+        let (store, key, path) = stored_file(directory.path(), &text).await;
+
+        // Stored before text was compressed: it reads as it is.
+        assert_eq!(store.read(&key).await.expect("read plain text"), text);
+
+        assert!(store.compress_stored_text(&key).await.expect("compress"));
+        let stored = tokio::fs::read(&path).await.expect("read stored file");
+        assert!(stored.starts_with(&GZIP_MAGIC));
+        assert!(
+            stored.len() < text.len() / 10,
+            "{} of {}",
+            stored.len(),
+            text.len()
+        );
+        assert_eq!(store.read(&key).await.expect("read compressed text"), text);
+
+        // Nothing left to do, and nothing left behind.
+        assert!(
+            !store
+                .compress_stored_text(&key)
+                .await
+                .expect("compress again")
+        );
+        assert_eq!(tokio::fs::read(&path).await.expect("read again"), stored);
+        let mut siblings = tokio::fs::read_dir(path.parent().unwrap()).await.unwrap();
+        assert!(siblings.next_entry().await.unwrap().is_some());
+        assert!(siblings.next_entry().await.unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn an_attachment_that_is_gone_is_not_compressed() {
+        let directory = tempfile::tempdir().expect("create attachment root");
+        let (store, key, path) = stored_file(directory.path(), b"text").await;
+        tokio::fs::remove_file(&path)
+            .await
+            .expect("remove attachment");
+
+        assert!(
+            !store
+                .compress_stored_text(&key)
+                .await
+                .expect("compress missing")
+        );
+    }
+
+    #[tokio::test]
+    async fn validated_text_is_stored_compressed_and_images_are_left_alone() {
+        let directory = tempfile::tempdir().expect("create attachment root");
+        let text = diagnostics();
+        let (store, key, path) = stored_file(directory.path(), &text).await;
+        let manifest = |media_type: &str, size: usize| -> AttachmentManifest {
+            serde_json::from_value(serde_json::json!({
+                "id": "diagnostics",
+                "name": "diagnostics.txt",
+                "media_type": media_type,
+                "size": size,
+                "sha256": "0".repeat(64),
+            }))
+            .expect("attachment manifest")
+        };
+        let limits = IngestionLimits::default();
+        let memory = std::sync::Arc::new(Semaphore::new(1_024));
+
+        validate_attachment_file(
+            &path,
+            &manifest("text/plain", text.len()),
+            &limits,
+            memory.clone(),
+        )
+        .await
+        .expect("validate text");
+        let stored = tokio::fs::read(&path).await.expect("read stored file");
+        assert!(stored.starts_with(&GZIP_MAGIC));
+        assert_eq!(store.read(&key).await.expect("read text"), text);
+
+        // Text that is not valid is rejected before anything is changed.
+        tokio::fs::write(&path, [0xff, 0xfe])
+            .await
+            .expect("write invalid text");
+        assert!(
+            validate_attachment_file(&path, &manifest("text/plain", 2), &limits, memory.clone())
+                .await
+                .is_err()
+        );
+        assert_eq!(
+            tokio::fs::read(&path).await.expect("read invalid text"),
+            [0xff, 0xfe]
+        );
+
+        // An image is not text, so it stays as it was uploaded.
+        let image = b"\x89PNG not really".to_vec();
+        tokio::fs::write(&path, &image).await.expect("write image");
+        let _ =
+            validate_attachment_file(&path, &manifest("image/png", image.len()), &limits, memory)
+                .await;
+        assert_eq!(tokio::fs::read(&path).await.expect("read image"), image);
+    }
+
+    #[tokio::test]
+    async fn a_stored_file_that_claims_too_much_is_not_read() {
+        let directory = tempfile::tempdir().expect("create attachment root");
+        let (store, key, path) = stored_file(directory.path(), b"x").await;
+        let bomb = {
+            let mut encoder = GzEncoder::new(Vec::new(), Compression::fast());
+            let chunk = vec![b'a'; 1024 * 1024];
+            for _ in 0..=64 {
+                encoder.write_all(&chunk).expect("compress chunk");
+            }
+            encoder.finish().expect("finish compression")
+        };
+        tokio::fs::write(&path, bomb).await.expect("write bomb");
+
+        assert!(store.read(&key).await.is_err());
     }
 
     #[tokio::test]

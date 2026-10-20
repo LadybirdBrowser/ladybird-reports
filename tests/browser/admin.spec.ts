@@ -234,6 +234,29 @@ test.describe("authenticated management UI", () => {
     });
   });
 
+  test("serves text attachments uncompressed, and compressed in transit when asked", async ({ page }) => {
+    await page.goto(`/reports/${reportId}`);
+    const diagnostics = page.getByRole("link", { name: "Download crash-diagnostics.txt" });
+    const href = (await diagnostics.getAttribute("href"))!;
+    const screenshotHref = (await page.locator(".overview-screenshot a").getAttribute("href"))!;
+
+    // Stored compressed or not, the contents are what was uploaded, whatever the transport does with them.
+    for (const encoding of ["identity", "gzip"]) {
+      const response = await page.request.get(href, { headers: { "accept-encoding": encoding } });
+      expect(response.headers()["content-type"]).toBe("text/plain; charset=utf-8");
+      expect(response.headers()["content-encoding"]).toBe(encoding === "gzip" ? "gzip" : undefined);
+      const text = await response.text();
+      expect(text).toContain("Ladybird crash report, format 1");
+      expect(text).toContain("Verification failed: false at Libraries/LibMedia/FFmpeg/FFmpegVideoDecoder.cpp:235");
+      expect(Buffer.byteLength(text)).toBe(3756);
+    }
+
+    // An image is already compressed, so it is left as it is.
+    const image = await page.request.get(screenshotHref, { headers: { "accept-encoding": "gzip" } });
+    expect(image.headers()["content-type"]).toBe("image/png");
+    expect(image.headers()["content-encoding"]).toBeUndefined();
+  });
+
   test("shows the screenshot of a report with the overview, within a bounded size", async ({ page }) => {
     await page.goto(`/reports/${reportId}`);
 

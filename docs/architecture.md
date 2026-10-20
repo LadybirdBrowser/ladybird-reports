@@ -128,6 +128,13 @@ Attachments are written beneath `staging/<upload-id>` and validated before datab
 creates a report in `pending_files` and consumes the challenge. The application then atomically renames the staging
 directory to `reports/<report-id>` and marks the report `ready`.
 
+Text attachments are stored gzip-compressed: the public API compresses each one in place once it has validated it as
+UTF-8, so the size and SHA-256 on record are those of the uploaded text and the files can be read with `zcat`. Images
+are stored as uploaded. The admin service decompresses on every read, and recognizes a file stored before this by its
+lack of the gzip magic number, which valid UTF-8 never starts with. At startup it compresses those files once, through
+a file beside the original that is renamed over it. Attachment downloads are compressed in transit when the browser
+accepts it; the HTML pages are not, as they carry tokens beside content that a visitor can choose.
+
 The public API can recover an interrupted finalization. Admin pages only expose ready reports. Dropping an interrupted
 request schedules immediate staging cleanup. A periodic public API sweep is the durable fallback: it removes expired
 challenges, rate buckets, upload leases, and staging directories that are both old enough and unreferenced by a report.

@@ -14,6 +14,7 @@ chacha20poly1305 = "0.11"
 chrono = { version = "0.4", features = ["serde"] }
 comrak = { version = "0.56", default-features = false }
 cookie = "0.18"
+flate2 = "1.1"
 fs2 = "0.4"
 hex = "0.4"
 hmac = "0.13"
@@ -30,7 +31,7 @@ subtle = "2.6"
 thiserror = "2.0"
 tokio = { version = "1.47", features = ["fs", "macros", "net", "rt-multi-thread", "signal", "time"] }
 tower = "0.5"
-tower-http = { version = "0.7", features = ["request-id", "trace"] }
+tower-http = { version = "0.7", features = ["compression-gzip", "request-id", "trace"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 uuid = { version = "1.18", features = ["serde", "v7"] }

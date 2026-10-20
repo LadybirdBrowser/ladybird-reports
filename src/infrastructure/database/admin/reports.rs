@@ -70,6 +70,16 @@ impl AdminDatabase {
         }
     }
 
+    /// The storage keys of every attachment that holds text.
+    pub async fn text_attachment_storage_keys(&self) -> Result<Vec<String>> {
+        sqlx::query_scalar(
+            "SELECT storage_key FROM attachments WHERE media_type = 'text/plain' ORDER BY created_at, id",
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(Into::into)
+    }
+
     pub async fn attachment(
         &self,
         attachment_id: AttachmentId,

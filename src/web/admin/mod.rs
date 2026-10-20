@@ -12,6 +12,7 @@ use axum::{
     middleware,
     routing::{get, post},
 };
+use tower_http::compression::CompressionLayer;
 
 use crate::infrastructure::{
     SecretCipher, attachments::FileAttachmentStore, database::AdminDatabase, github::GithubClient,
@@ -65,7 +66,12 @@ pub fn router(state: AdminState) -> Router {
             "/reports/{report_id}/reject",
             post(handlers::reports::reject),
         )
-        .route("/attachments/{id}", get(handlers::reports::attachment))
+        // Compressed in transit like any text, which the pages of the admin are not: they carry tokens next to
+        // content that a visitor can choose.
+        .route(
+            "/attachments/{id}",
+            get(handlers::reports::attachment).layer(CompressionLayer::new()),
+        )
         .route("/issues", get(handlers::issues::index))
         .route("/api/issue-list", get(handlers::issues::list))
         .route(

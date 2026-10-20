@@ -366,6 +366,19 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
             .expect("read stored attachment"),
         attachment_bytes
     );
+    // Text is stored compressed, while the size and digest on record are those of what was uploaded.
+    let on_disk = std::fs::read(attachments.root().join(&stored_attachment.storage_key))
+        .expect("read stored attachment file");
+    assert!(on_disk.starts_with(&[0x1f, 0x8b]), "stored as gzip");
+    assert_ne!(on_disk, attachment_bytes);
+    assert_eq!(stored_attachment.size, attachment_bytes.len() as i64);
+    let recorded_digest: String =
+        sqlx::query_scalar("SELECT sha256 FROM attachments WHERE id = $1")
+            .bind(stored_attachment.id)
+            .fetch_one(&admin_pool)
+            .await
+            .expect("read attachment digest");
+    assert_eq!(recorded_digest, sha256_hex(attachment_bytes));
     let client_reference: String =
         sqlx::query_scalar("SELECT client_reference FROM attachments WHERE id = $1")
             .bind(stored_attachment.id)

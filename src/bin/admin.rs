@@ -4,8 +4,8 @@ use tokio::task::JoinSet;
 
 use ladybird_reports::{
     application::{
-        DiscordNotificationService, backfill_failure_reasons, run_session_verification,
-        run_stack_indexer,
+        DiscordNotificationService, backfill_failure_reasons, compress_stored_text_attachments,
+        run_session_verification, run_stack_indexer,
     },
     error::{AppError, Result},
     infrastructure::{
@@ -107,6 +107,15 @@ async fn run() -> Result<()> {
         async move {
             run_failure_reason_backfill(state).await;
             "failure_reason_backfill"
+        }
+    });
+    background_tasks.spawn({
+        let state = state.clone();
+        async move {
+            compress_stored_text_attachments(&state.database, &state.attachments).await;
+            // Done once, but a task that finished would end the process.
+            std::future::pending::<()>().await;
+            "attachment_compression"
         }
     });
     background_tasks.spawn({
