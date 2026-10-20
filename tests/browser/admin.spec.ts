@@ -418,6 +418,15 @@ test.describe("authenticated management UI", () => {
     await expect(overview.locator(".definition-list > div").filter({ hasText: "Page URL" }))
       .toContainText(pageUrl);
 
+    // Every field is separated from its neighbours by a line, whatever the row above it looks like.
+    const box = async (label: string) => (await overview.locator(".definition-list > div")
+      .filter({ hasText: label }).first().boundingBox())!;
+    const [platform, submitted, screenshot] =
+      [await box("Platform & Architecture"), await box("Submitted"), await box("Screenshot")];
+    expect(submitted.x - (platform.x + platform.width)).toBeCloseTo(1, 0);
+    expect(screenshot.y - (submitted.y + submitted.height)).toBeCloseTo(1, 0);
+    expect(screenshot.y - (platform.y + platform.height)).toBeCloseTo(1, 0);
+
     // It is never a plain link to a page an anonymous user chose, and it appears once.
     await expect(overview.getByRole("link", { name: /example\.test/ })).toHaveCount(0);
     await expect(page.locator(".report-layout").getByText(pageUrl)).toHaveCount(1);
@@ -618,9 +627,8 @@ test.describe("authenticated management UI", () => {
     expect(submitted).not.toBeNull();
     expect(build).not.toBeNull();
     expect(build!.width).toBeGreaterThanOrEqual(submitted!.width - 2);
-    expect(await fields.nth(3).evaluate((field) =>
-      getComputedStyle(field).borderBottomWidth,
-    )).toBe("1px");
+    // A line, the grid's gap, separates the two rows.
+    expect(build!.y - (submitted!.y + submitted!.height)).toBeCloseTo(1, 0);
 
     await page.setViewportSize({ width: 390, height: 800 });
     expect(await page.evaluate(() => document.documentElement.scrollWidth))

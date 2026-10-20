@@ -1607,43 +1607,25 @@ tbody tr:hover {
     color: var(--ink-soft);
 }
 
+/* The lines between fields are the gaps of a grid that shows its border-coloured background, so they stay complete
+   wherever a full-width field splits the others into rows. */
 .definition-list {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1px;
     margin: 0;
+    background: var(--border);
 }
 
 .definition-list > div {
     min-width: 0;
     padding: 1rem 1.2rem;
-    border-bottom: 1px solid var(--border);
+    background: var(--surface);
 }
 
-.definition-list > div:nth-child(odd) {
-    border-right: 1px solid var(--border);
-}
-
-.definition-list > div:nth-last-child(-n + 2) {
-    border-bottom: 0;
-}
-
-.definition-list > div:nth-last-child(2):nth-child(even) {
-    border-bottom: 1px solid var(--border);
-}
-
+.definition-list > div.overview-wide,
 .definition-list > div:last-child:nth-child(odd) {
     grid-column: 1 / -1;
-    border-right: 0;
-}
-
-.definition-list > div.overview-wide {
-    grid-column: 1 / -1;
-    border-right: 0;
-    border-bottom: 1px solid var(--border);
-}
-
-.definition-list > div.overview-wide:last-child {
-    border-bottom: 0;
 }
 
 /* A screenshot shows as large as fits in a bounded box; a tall page shrinks to fit rather than taking over the page. */
@@ -3116,17 +3098,6 @@ pre {
 
     .definition-list {
         grid-template-columns: 1fr;
-    }
-
-    .definition-list > div,
-    .definition-list > div:nth-child(odd),
-    .definition-list > div:nth-last-child(-n + 2) {
-        border-right: 0;
-        border-bottom: 1px solid var(--border);
-    }
-
-    .definition-list > div:last-child {
-        border-bottom: 0;
     }
 
     .report-field-table tr {
