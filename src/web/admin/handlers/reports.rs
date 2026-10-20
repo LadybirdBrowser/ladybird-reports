@@ -930,6 +930,7 @@ pub async fn attachment(
         [
             ("content-type", content_type),
             ("content-disposition", disposition.as_str()),
+            ("cache-control", "private, max-age=31536000, immutable"),
         ],
         bytes,
     )

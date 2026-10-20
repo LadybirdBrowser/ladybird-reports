@@ -20,7 +20,7 @@ Configure the container platform to use `/health/ready` for both services.
 
 ## Response security and caching
 
-Dynamic management pages use `Cache-Control: private, no-store`. Public API responses use `Cache-Control: no-store`.
+Dynamic management pages use `Cache-Control: private, no-store`. Public API responses use `Cache-Control: no-store`. Attachments are immutable and use `Cache-Control: private, max-age=31536000, immutable`.
 Both services add a restrictive content security policy and browser security headers to every response.
 
 Management pages reference embedded assets through a content-versioned URL. These assets use
