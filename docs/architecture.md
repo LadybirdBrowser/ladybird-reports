@@ -96,12 +96,13 @@ request finishes without waiting for signature indexing or Discord. The admin pr
 an outbox entry if an exact signature links the report to an issue, or if an unlinked report with the same signature
 arrived in the preceding five minutes. Reports with conflicting issue matches still notify maintainers. The admin
 process only claims stack reports after indexing, then claims the oldest eligible notification and sends a bounded
-report summary through the configured Discord webhook. The summary includes an excerpt of the native stack when one is
-available, with each run of consecutive frames that have no symbol shown as one line with its frame range, and links to
-the full report in the management interface. The build's commit, when it is a plain commit ID, is shown shortened and
-linked to that commit in the configured GitHub repository. The page URL a report came from, when it has one, is included
-without its query and fragment, as plain text in a code quote, so Discord does not make an address chosen by an
-anonymous user clickable. Source addresses and other report fields are not copied into the message.
+report summary through the Discord webhook configured for the kind of report, crash or web compatibility. The summary
+includes an excerpt of the native stack when one is available, with each run of consecutive frames that have no symbol
+shown as one line with its frame range, and links to the full report in the management interface. The build's commit,
+when it is a plain commit ID, is shown shortened and linked to that commit in the configured GitHub repository. The page
+URL a report came from, when it has one, is included without its query and fragment, as plain text in a code quote, so
+Discord does not make an address chosen by an anonymous user clickable. Source addresses and other report fields are not
+copied into the message.
 
 Only one delivery may be in progress across all admin replicas. An unsuccessful request pauses the complete queue and
 retries its oldest entry with exponential backoff. Discord rate-limit delays are honored. A notification is marked

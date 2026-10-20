@@ -3,7 +3,7 @@ use std::{collections::HashMap, net::IpAddr};
 use ipnet::IpNet;
 use serde::{Deserialize, Serialize};
 
-use super::TrustedProxy;
+use super::{ReportKind, TrustedProxy};
 use crate::error::{AppError, Result};
 
 pub const HARD_MAX_BODY_BYTES: usize = 66 * 1024 * 1024;
@@ -102,7 +102,10 @@ pub struct MaintenanceConfiguration {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct DiscordConfiguration {
-    pub webhook_url: Option<String>,
+    /// Where crash reports are announced. Reports of a kind without a webhook wait until it has one.
+    pub crash_webhook_url: Option<String>,
+    /// Where web compatibility reports are announced.
+    pub web_compat_webhook_url: Option<String>,
     pub poll_interval_seconds: u64,
     pub request_timeout_seconds: u64,
     pub initial_retry_seconds: u64,
@@ -383,11 +386,18 @@ pub const SETTING_DEFINITIONS: &[SettingDefinition] = &[
         "Hours from submission or from when a block ended, 1 to 8760; the default is 48.",
     ),
     setting(
-        "webhook_url",
-        "discord.webhook_url",
-        "Discord webhook",
-        "Receives a summary when a report becomes ready for triage.",
-        "A Discord incoming-webhook HTTPS URL, or null to pause delivery.",
+        "crash_webhook_url",
+        "discord.crash_webhook_url",
+        "Discord crash reports webhook",
+        "Receives a summary when a crash report becomes ready for triage.",
+        "A Discord incoming-webhook HTTPS URL, or null to pause delivery of crash reports.",
+    ),
+    setting(
+        "web_compat_webhook_url",
+        "discord.web_compat_webhook_url",
+        "Discord web compatibility webhook",
+        "Receives a summary when a web compatibility report becomes ready for triage.",
+        "A Discord incoming-webhook HTTPS URL, or null to pause delivery of web compatibility reports.",
     ),
     setting(
         "poll_interval_seconds",
@@ -517,10 +527,29 @@ impl Default for IngestionLimits {
     }
 }
 
+impl DiscordConfiguration {
+    /// The webhook that announces reports of `kind`, if one is set.
+    pub fn webhook_url(&self, kind: ReportKind) -> Option<&str> {
+        match kind {
+            ReportKind::Crash => self.crash_webhook_url.as_deref(),
+            ReportKind::WebCompat => self.web_compat_webhook_url.as_deref(),
+        }
+    }
+
+    /// The kinds of report that have a webhook.
+    pub fn announced_kinds(&self) -> Vec<ReportKind> {
+        [ReportKind::Crash, ReportKind::WebCompat]
+            .into_iter()
+            .filter(|kind| self.webhook_url(*kind).is_some())
+            .collect()
+    }
+}
+
 impl Default for DiscordConfiguration {
     fn default() -> Self {
         Self {
-            webhook_url: None,
+            crash_webhook_url: None,
+            web_compat_webhook_url: None,
             poll_interval_seconds: 2,
             request_timeout_seconds: 10,
             initial_retry_seconds: 30,
@@ -711,32 +740,40 @@ impl RuntimeConfiguration {
             ));
         }
 
-        let Some(webhook_url) = discord.webhook_url.as_deref() else {
-            return Ok(());
-        };
-        let url = reqwest::Url::parse(webhook_url)
-            .map_err(|_| AppError::InvalidRequest("Invalid Discord webhook URL"))?;
-        let valid_host = matches!(url.host_str(), Some("discord.com" | "discordapp.com"));
-        let path_segments = url.path_segments().map(Iterator::collect::<Vec<_>>);
-        let valid_path = matches!(
-            path_segments.as_deref(),
-            Some(["api", "webhooks", webhook_id, webhook_token])
-                if !webhook_id.is_empty() && !webhook_token.is_empty()
-        );
-
-        if url.scheme() != "https"
-            || !valid_host
-            || !valid_path
-            || url.query().is_some()
-            || url.fragment().is_some()
-            || !url.username().is_empty()
-            || url.password().is_some()
+        for webhook_url in [&discord.crash_webhook_url, &discord.web_compat_webhook_url]
+            .into_iter()
+            .flatten()
         {
-            return Err(AppError::InvalidRequest("Invalid Discord webhook URL"));
+            validate_discord_webhook_url(webhook_url)?;
         }
 
         Ok(())
     }
+}
+
+fn validate_discord_webhook_url(webhook_url: &str) -> Result<()> {
+    let url = reqwest::Url::parse(webhook_url)
+        .map_err(|_| AppError::InvalidRequest("Invalid Discord webhook URL"))?;
+    let valid_host = matches!(url.host_str(), Some("discord.com" | "discordapp.com"));
+    let path_segments = url.path_segments().map(Iterator::collect::<Vec<_>>);
+    let valid_path = matches!(
+        path_segments.as_deref(),
+        Some(["api", "webhooks", webhook_id, webhook_token])
+            if !webhook_id.is_empty() && !webhook_token.is_empty()
+    );
+
+    if url.scheme() != "https"
+        || !valid_host
+        || !valid_path
+        || url.query().is_some()
+        || url.fragment().is_some()
+        || !url.username().is_empty()
+        || url.password().is_some()
+    {
+        return Err(AppError::InvalidRequest("Invalid Discord webhook URL"));
+    }
+
+    Ok(())
 }
 
 const fn default_session_lifetime_seconds() -> u64 {
@@ -907,7 +944,7 @@ mod tests {
     }
 
     #[test]
-    fn discord_webhook_must_be_a_complete_discord_url() {
+    fn discord_webhooks_must_be_complete_discord_urls() {
         for invalid_url in [
             "https://example.com/api/webhooks/123/token",
             "http://discord.com/api/webhooks/123/token",
@@ -916,15 +953,40 @@ mod tests {
             "https://discord.com/api/webhooks/123/token?wait=true",
         ] {
             let mut configuration = RuntimeConfiguration::default();
-            configuration.discord.webhook_url = Some(invalid_url.into());
+            configuration.discord.crash_webhook_url = Some(invalid_url.into());
+            assert!(configuration.validate().is_err(), "accepted {invalid_url}");
 
+            let mut configuration = RuntimeConfiguration::default();
+            configuration.discord.web_compat_webhook_url = Some(invalid_url.into());
             assert!(configuration.validate().is_err(), "accepted {invalid_url}");
         }
 
         let mut configuration = RuntimeConfiguration::default();
-        configuration.discord.webhook_url =
+        configuration.discord.crash_webhook_url =
             Some("https://discord.com/api/webhooks/123/token".into());
+        configuration.discord.web_compat_webhook_url =
+            Some("https://discord.com/api/webhooks/456/other".into());
         assert!(configuration.validate().is_ok());
+    }
+
+    #[test]
+    fn each_kind_of_report_has_its_own_webhook() {
+        let mut discord = DiscordConfiguration::default();
+        assert!(discord.announced_kinds().is_empty());
+
+        discord.web_compat_webhook_url = Some("https://discord.com/api/webhooks/1/a".into());
+        assert_eq!(discord.announced_kinds(), [ReportKind::WebCompat]);
+        assert_eq!(discord.webhook_url(ReportKind::Crash), None);
+
+        discord.crash_webhook_url = Some("https://discord.com/api/webhooks/2/b".into());
+        assert_eq!(
+            discord.announced_kinds(),
+            [ReportKind::Crash, ReportKind::WebCompat]
+        );
+        assert_eq!(
+            discord.webhook_url(ReportKind::Crash),
+            Some("https://discord.com/api/webhooks/2/b")
+        );
     }
 
     #[test]

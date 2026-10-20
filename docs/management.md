@@ -72,8 +72,10 @@ existing tracked issues.
 Runtime configuration is stored as one active JSON document. Saving replaces that document after validating it against
 compiled safety limits. The setting details panel describes the setting on the editor line containing the caret.
 
-The `discord` object controls report notifications. Set `webhook_url` to a Discord incoming-webhook URL to enable
-delivery, or to `null` to pause it without discarding queued notifications. The remaining values control queue polling,
+The `discord` object controls report notifications. Crash reports and web compatibility reports are announced in
+separate channels: set `crash_webhook_url` and `web_compat_webhook_url` to the incoming-webhook URLs of those channels
+to enable delivery. A kind of report whose webhook is `null` is not announced; its notifications wait in the queue until
+the webhook is set, so delivery can be paused without discarding anything. The remaining values control queue polling,
 request timeouts, retry delays, and the native-stack excerpt included in each message.
 
 The `audit` object controls the audit log. `denied_sign_in_window_seconds` (default 600) limits how often one denied

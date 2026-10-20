@@ -1450,8 +1450,24 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
     .await
     .expect("add fields used to generate the Discord report title");
 
+    // Each kind of report is announced through its own webhook, so a kind without one is not claimed.
+    assert!(
+        admin_database
+            .claim_discord_notification(40, &[ReportKind::WebCompat])
+            .await
+            .expect("claim Discord notification of another kind")
+            .is_none()
+    );
+    assert!(
+        admin_database
+            .claim_discord_notification(40, &[])
+            .await
+            .expect("claim Discord notification without a webhook")
+            .is_none()
+    );
+
     let first_notification = admin_database
-        .claim_discord_notification(40)
+        .claim_discord_notification(40, &[ReportKind::Crash, ReportKind::WebCompat])
         .await
         .expect("claim first Discord notification")
         .expect("first Discord notification exists");
@@ -1476,7 +1492,7 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
     );
     assert!(
         admin_database
-            .claim_discord_notification(40)
+            .claim_discord_notification(40, &[ReportKind::Crash, ReportKind::WebCompat])
             .await
             .expect("check globally paused Discord queue")
             .is_none()
@@ -1487,7 +1503,7 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
         .await
         .expect("resume Discord queue for integration test");
     let retried_notification = admin_database
-        .claim_discord_notification(40)
+        .claim_discord_notification(40, &[ReportKind::Crash, ReportKind::WebCompat])
         .await
         .expect("reclaim deferred Discord notification")
         .expect("deferred Discord notification remains queued");
@@ -1505,7 +1521,7 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
     );
 
     let second_notification = admin_database
-        .claim_discord_notification(40)
+        .claim_discord_notification(40, &[ReportKind::Crash, ReportKind::WebCompat])
         .await
         .expect("claim second Discord notification")
         .expect("second Discord notification exists");
@@ -1523,7 +1539,7 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
 
     assert!(
         admin_database
-            .claim_discord_notification(40)
+            .claim_discord_notification(40, &[ReportKind::Crash, ReportKind::WebCompat])
             .await
             .expect("check drained Discord queue")
             .is_none()

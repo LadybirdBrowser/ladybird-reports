@@ -9,9 +9,11 @@ use crate::{
 use super::PendingDiscordNotification;
 
 impl AdminDatabase {
+    /// Claims the oldest notification of one of `kinds`, the kinds of report that have a webhook to be announced in.
     pub async fn claim_discord_notification(
         &self,
         lease_seconds: u64,
+        kinds: &[ReportKind],
     ) -> Result<Option<PendingDiscordNotification>> {
         let mut transaction = self.pool.begin().await?;
         let dispatcher_is_available: bool = sqlx::query_scalar(
@@ -49,6 +51,7 @@ impl AdminDatabase {
              FROM discord_report_notifications AS notifications
              JOIN reports ON reports.id = notifications.report_id
              WHERE notifications.delivered_at IS NULL
+                AND reports.kind = ANY($2)
                 AND reports.storage_state = 'ready'
                 AND reports.state <> 'rejected'
                 AND NOT EXISTS (
@@ -65,6 +68,7 @@ impl AdminDatabase {
              LIMIT 1",
         )
         .bind(crate::domain::STACK_SIGNATURE_VERSION)
+        .bind(kinds.iter().map(|kind| kind.as_str()).collect::<Vec<_>>())
         .fetch_optional(&mut *transaction)
         .await?;
 

@@ -48,14 +48,16 @@ impl DiscordNotificationService {
         };
         let discord = &configuration.discord;
         let poll_delay = Duration::from_secs(discord.poll_interval_seconds);
-        let Some(webhook_url) = discord.webhook_url.as_deref() else {
+        // Reports of a kind without a webhook wait in the queue until it has one.
+        let announced_kinds = discord.announced_kinds();
+        if announced_kinds.is_empty() {
             return poll_delay;
-        };
+        }
 
         let lease_seconds = discord.request_timeout_seconds.saturating_add(30);
         let notification = match self
             .database
-            .claim_discord_notification(lease_seconds)
+            .claim_discord_notification(lease_seconds, &announced_kinds)
             .await
         {
             Ok(Some(notification)) => notification,
@@ -66,6 +68,9 @@ impl DiscordNotificationService {
             }
         };
 
+        let Some(webhook_url) = discord.webhook_url(notification.kind) else {
+            return poll_delay;
+        };
         let message = report_message(
             &notification,
             &configuration.admin_base_url,
