@@ -1206,8 +1206,11 @@ test.describe("authenticated management UI", () => {
     await page.getByLabel("Search reports").press("Enter");
     await expect.poll(() => new URL(page.url()).searchParams.get("q"))
       .toBe("state:confirmed");
-    await openGroups(page);
-    await expect(page.locator(`a[href="/reports/${reportId}"]`)).toBeVisible();
+    // A list that updates again collapses its groups, so keep opening them until the report shows.
+    await expect(async () => {
+      await openGroups(page);
+      await expect(page.locator(`a[href="/reports/${reportId}"]`)).toBeVisible({ timeout: 1000 });
+    }).toPass();
   });
 
   test("shows the audit log", async ({ page }) => {
