@@ -50,7 +50,6 @@ The initial client uses these conventional diagnostic fields:
 | `build_configuration` | `text` | Build configuration, such as `release`. |
 | `cpp_compiler` | `text` | C++ compiler name. |
 | `description` | `multiline` | User-provided problem description. |
-| `hostname` | `text` | Optional website hostname. |
 | `url` | `url` | Optional complete page URL. |
 
 The registry can grow independently of the protocol. A newer client may submit other valid keys, which remain visible as
