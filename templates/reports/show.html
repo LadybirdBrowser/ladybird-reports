@@ -39,6 +39,26 @@
                             </dd>
                         </div>
                     {% endfor %}
+                    {% if let Some(screenshot) = screenshot %}
+                        <div class="overview-wide">
+                            <dt>Screenshot</dt>
+                            <dd class="overview-screenshot">
+                                <a
+                                    href="/attachments/{{ screenshot.id }}?inline=true"
+                                    target="_blank"
+                                    rel="noopener"
+                                    title="Open the screenshot at its full size"
+                                >
+                                    <img
+                                        src="/attachments/{{ screenshot.id }}?inline=true"
+                                        alt="Screenshot of the page in the report"
+                                        loading="lazy"
+                                        decoding="async"
+                                    >
+                                </a>
+                            </dd>
+                        </div>
+                    {% endif %}
                 </dl>
             </section>
 

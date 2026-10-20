@@ -234,6 +234,24 @@ test.describe("authenticated management UI", () => {
     });
   });
 
+  test("shows the screenshot of a report with the overview, within a bounded size", async ({ page }) => {
+    await page.goto(`/reports/${reportId}`);
+
+    const screenshot = page.locator(".overview-screenshot img");
+    await expect(screenshot).toBeVisible();
+    await expect.poll(() => screenshot.evaluate((image: HTMLImageElement) => image.naturalWidth)).toBe(1200);
+
+    // The fixture's screenshot is 1200 by 3000 pixels; it shrinks to fit in 24rem and keeps its proportions.
+    const shown = (await screenshot.boundingBox())!;
+    expect(shown.height).toBeLessThanOrEqual(24 * 16 + 4);
+    expect(shown.width / shown.height).toBeCloseTo(1200 / 3000, 1);
+
+    const link = page.locator(".overview-screenshot a");
+    await expect(link).toHaveAttribute("href", /^\/attachments\/[0-9a-f-]+\?inline=true$/);
+    const full = await page.request.get((await link.getAttribute("href"))!);
+    expect(full.headers()["content-type"]).toBe("image/png");
+  });
+
   test("shows setup credentials and escapes unknown report fields", async ({ page }) => {
     const response = await page.goto("/");
 
@@ -300,13 +318,13 @@ test.describe("authenticated management UI", () => {
     await expect(page.locator(".stack-frame-table")).toBeVisible();
     await expect(page.getByText("macOS", { exact: true }).first()).toBeVisible();
     await expect(page.getByText("arm64", { exact: true }).first()).toBeVisible();
-    // Type, version, platform, architecture, page URL and submission time.
-    await expect(page.locator(".definition-list > div")).toHaveCount(6);
+    // Type, version, platform, architecture, page URL and submission time, and the screenshot.
+    await expect(page.locator(".definition-list > div")).toHaveCount(7);
     await expect(page.getByRole("heading", { name: "Additional fields" })).toBeVisible();
     await expect(page.locator(".report-field-value").filter({ hasText: "<script>" })).toBeVisible();
     await expect(page.getByRole("link", { name: "Filter reports by Stack trace" })).toHaveCount(0);
     await expect(page.getByRole("heading", { name: "Attachments" }).locator(".."))
-      .toContainText("1 file");
+      .toContainText("2 files");
     const attachmentRow = page.locator(".attachment-table tbody tr").first();
     await expect(attachmentRow).toContainText("crash-diagnostics.txt");
     await expect(attachmentRow).toContainText("text/plain");
@@ -359,6 +377,7 @@ test.describe("authenticated management UI", () => {
       "Architecture",
       "Page URL",
       "Submitted",
+      "Screenshot",
     ]);
     await expect(overview.locator(".definition-list > div").filter({ hasText: "Page URL" }))
       .toContainText(pageUrl);
@@ -492,7 +511,7 @@ test.describe("authenticated management UI", () => {
   test("joins the attachment buttons", async ({ page }) => {
     await page.goto(`/reports/${reportId}`);
 
-    const buttons = page.locator(".attachment-actions.button-group > .icon-button");
+    const buttons = page.locator(".attachment-actions.button-group").first().locator("> .icon-button");
     await expect(buttons).toHaveCount(2);
     const [first, second] = await buttons.evaluateAll((elements) =>
       elements.map((element) => {

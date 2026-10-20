@@ -213,6 +213,28 @@ async fn main() -> Result<()> {
     .execute(&mut *transaction)
     .await?;
 
+    // A tall screenshot, to show that it is shrunk to fit instead of taking over the page.
+    let screenshot_id = AttachmentId::new();
+    let screenshot_bytes = tall_screenshot_png()?;
+    tokio::fs::write(
+        attachment_directory.join(screenshot_id.to_string()),
+        &screenshot_bytes,
+    )
+    .await?;
+    sqlx::query(
+        "INSERT INTO attachments
+            (id, report_id, client_reference, name, media_type, size, sha256, storage_key)
+         VALUES ($1, $2, $3, 'screenshot.png', 'image/png', $4, $5, $6)",
+    )
+    .bind(screenshot_id)
+    .bind(REPORT_ID.parse::<ReportId>().expect("valid fixture UUIDv7"))
+    .bind("screenshot")
+    .bind(screenshot_bytes.len() as i64)
+    .bind(sha256_hex(&screenshot_bytes))
+    .bind(format!("reports/{REPORT_ID}/{screenshot_id}"))
+    .execute(&mut *transaction)
+    .await?;
+
     sqlx::query(
         "INSERT INTO audit_events (actor, action)
          VALUES (12345, $1)",
@@ -508,4 +530,27 @@ async fn insert_example_report(
     .await?;
 
     Ok(())
+}
+
+/// A PNG of 1200 by 3000 pixels, as a page that scrolls a long way would give.
+fn tall_screenshot_png() -> Result<Vec<u8>> {
+    const WIDTH: u32 = 1200;
+    const HEIGHT: u32 = 3000;
+
+    let mut pixels = Vec::with_capacity((WIDTH * HEIGHT * 3) as usize);
+    for y in 0..HEIGHT {
+        for x in 0..WIDTH {
+            pixels.extend([(x * 255 / WIDTH) as u8, (y * 255 / HEIGHT) as u8, 128]);
+        }
+    }
+
+    let mut bytes = Vec::new();
+    let mut encoder = png::Encoder::new(&mut bytes, WIDTH, HEIGHT);
+    encoder.set_color(png::ColorType::Rgb);
+    encoder.set_depth(png::BitDepth::Eight);
+    encoder
+        .write_header()
+        .and_then(|mut writer| writer.write_image_data(&pixels))
+        .map_err(ladybird_reports::error::AppError::internal)?;
+    Ok(bytes)
 }

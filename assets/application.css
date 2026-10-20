@@ -1646,6 +1646,27 @@ tbody tr:hover {
     border-bottom: 0;
 }
 
+/* A screenshot shows as large as fits in a bounded box; a tall page shrinks to fit rather than taking over the page. */
+.overview-screenshot {
+    margin: 0;
+}
+
+.overview-screenshot a {
+    display: inline-block;
+    line-height: 0;
+}
+
+.overview-screenshot img {
+    display: block;
+    width: auto;
+    max-width: 100%;
+    height: auto;
+    max-height: 24rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--surface-subtle);
+}
+
 .definition-list dt {
     margin-bottom: 0.2rem;
     color: var(--ink-faint);

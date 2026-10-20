@@ -136,6 +136,7 @@ pub struct ReportTemplate {
     issue_proposal: IssueProposal,
     known_groups: Vec<FieldGroup>,
     unknown_groups: Vec<FieldGroup>,
+    screenshot: Option<AttachmentView>,
     attachments: Vec<AttachmentView>,
     events: Vec<HistoryEvent>,
     url_dialog_field: CopyTarget,
@@ -198,6 +199,7 @@ pub struct StackSignatureView {
     full: String,
 }
 
+#[derive(Clone)]
 pub struct AttachmentView {
     id: AttachmentId,
     name: String,
@@ -611,7 +613,7 @@ pub async fn show(
         }
     }
 
-    let attachments = details
+    let attachments: Vec<AttachmentView> = details
         .attachments
         .into_iter()
         .map(|attachment| AttachmentView {
@@ -621,6 +623,11 @@ pub async fn show(
             size: format_attachment_size(attachment.size),
         })
         .collect();
+    // A web compatibility report comes with a screenshot of the page, which is shown with the overview.
+    let screenshot = attachments
+        .iter()
+        .find(|attachment| attachment.media_type == "image/png")
+        .cloned();
 
     let events = details.events.into_iter().map(HistoryEvent::from).collect();
 
@@ -633,6 +640,7 @@ pub async fn show(
         issue_proposal,
         known_groups: group_fields(known_fields),
         unknown_groups: group_fields(unknown_fields),
+        screenshot,
         attachments,
         events,
         url_dialog_field: CopyTarget { label: "URL" },
