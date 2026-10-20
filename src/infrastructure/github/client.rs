@@ -509,7 +509,10 @@ impl GithubClient {
                 token,
                 Option::<&()>::None,
             )
-            .await?;
+            .await
+            .inspect_err(|error| {
+                tracing::warn!(event = "github.attachment_repository_lookup_failed", ?error);
+            })?;
 
         let mut url = self
             .uploads_base_url
@@ -530,7 +533,22 @@ impl GithubClient {
             .send()
             .await
             .map_err(AppError::internal)?;
-        let upload: GithubUpload = decode_github_response(response).await?;
+
+        // This endpoint is undocumented, so a rejection is only understandable from what GitHub says.
+        if !response.status().is_success() {
+            let status = response.status().as_u16();
+            let body = response.text().await.unwrap_or_default();
+            tracing::warn!(
+                event = "github.attachment_upload_rejected",
+                status,
+                body = body.chars().take(300).collect::<String>(),
+            );
+            return Err(match status {
+                401 | 403 => AppError::PermissionDenied("GitHub denied the upload"),
+                _ => AppError::Unavailable,
+            });
+        }
+        let upload: GithubUpload = response.json().await.map_err(AppError::internal)?;
 
         // The address goes straight into the issue's Markdown, so accept nothing but a GitHub attachment.
         if !is_attachment_url(&upload.url) {
