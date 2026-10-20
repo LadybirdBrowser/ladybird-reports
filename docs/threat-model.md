@@ -21,8 +21,10 @@ execute narrowly scoped functions for challenges, rate limits, upload leases, id
 Management access requires GitHub authentication and an authorized account. The GitHub App uses a user access token with
 read-only organization membership and read-write issue permissions; it has no source-code write permission.
 State-changing forms require a CSRF token. GitHub issue creation publishes the entered title and description. The
-initial proposal includes selected report context and the raw stack trace, while omitting URL fields, attachments, and
-unknown fields. Maintainers review the public draft before creating the issue.
+initial proposal includes selected report context, the raw stack trace, and the page URL, while omitting unknown fields
+and attachments. A report's screenshot is the exception: the draft holds a placeholder that is uploaded to GitHub, as
+the maintainer's own user, when the issue is created, and a maintainer can remove it. Maintainers review the public
+draft before creating the issue.
 
 Reports, attachments, and audit events expire after the configured retention period; short-lived unauthenticated and
 authentication records expire individually. Maintenance deletes them along with attachment files.

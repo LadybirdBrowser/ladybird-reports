@@ -420,7 +420,7 @@ test.describe("authenticated management UI", () => {
 
     // It is never a plain link to a page an anonymous user chose, and it appears once.
     await expect(overview.getByRole("link", { name: /example\.test/ })).toHaveCount(0);
-    await expect(page.getByText(pageUrl)).toHaveCount(1);
+    await expect(page.locator(".report-layout").getByText(pageUrl)).toHaveCount(1);
 
     const urlFilter = overview.getByRole("link", { name: "Filter reports by Page URL" });
     await hoverValueOf(urlFilter);
@@ -1140,7 +1140,11 @@ test.describe("authenticated management UI", () => {
       .evaluate((button) => button.getBoundingClientRect().height);
     expect(createHeight).toBe(cancelHeight);
     await page.getByLabel("Title", { exact: true }).fill("Renderer overlap on test page");
-    await page.getByLabel("Description", { exact: true }).fill("Created by the browser test.");
+    // The draft refers to the report's screenshot with a placeholder.
+    await expect(page.getByLabel("Description", { exact: true }))
+      .toHaveValue(/\n## Screenshot\n\n\{screenshot\}\n/);
+    await page.getByLabel("Description", { exact: true })
+      .fill("Created by the browser test.\n\n{screenshot}");
     await page.getByRole("button", { name: "Create GitHub issue" }).click();
 
     await expect(page).toHaveURL(/\/issues\/[0-9a-f-]+$/);
@@ -1171,7 +1175,19 @@ test.describe("authenticated management UI", () => {
     const createdIssue = await page.request.get(
       `${fakeGithub}/test/latest-created-issue`,
     );
-    expect((await createdIssue.json()).body).toBe("Created by the browser test.");
+    expect((await createdIssue.json()).body).toBe(
+      // Browsers submit line breaks in a textarea as CRLF.
+      "Created by the browser test.\r\n\r\n" +
+      "![Screenshot of the page in the report]" +
+      "(https://github.com/user-attachments/assets/00000000-0000-4000-8000-000000000001)",
+    );
+    const upload = await (await page.request.get(`${fakeGithub}/test/latest-upload`)).json();
+    expect(upload).toMatchObject({
+      content_type: "image/png",
+      repository_id: "4242",
+      authorized: true,
+    });
+    expect(upload.size).toBeGreaterThan(0);
 
     await page.getByRole("link", { name: "Reports", exact: true }).click();
     await page.getByLabel("Search reports").fill("state:triage");

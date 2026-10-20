@@ -3,6 +3,7 @@ import { createServer } from "node:http";
 const port = 3101;
 const issueStates = new Map();
 let latestCreatedIssue;
+let latestUpload;
 const issueFieldValues = new Map();
 let issueFieldVisibility = "organization_members_only";
 let issueResponseDelayMs = 0;
@@ -194,6 +195,34 @@ const server = createServer((request, response) => {
         },
       ],
     });
+    return;
+  }
+
+  if (request.method === "GET" && /^\/repos\/[^/]+\/[^/]+$/.test(url.pathname)) {
+    sendJson(response, 200, { id: 4242 });
+    return;
+  }
+
+  if (request.method === "POST" && url.pathname === "/user-attachments/assets") {
+    const chunks = [];
+    request.on("data", (chunk) => chunks.push(chunk));
+    request.on("end", () => {
+      latestUpload = {
+        name: url.searchParams.get("name"),
+        content_type: url.searchParams.get("content_type"),
+        repository_id: url.searchParams.get("repository_id"),
+        authorized: Boolean(request.headers.authorization),
+        size: Buffer.concat(chunks).length,
+      };
+      sendJson(response, 201, {
+        url: "https://github.com/user-attachments/assets/00000000-0000-4000-8000-000000000001",
+      });
+    });
+    return;
+  }
+
+  if (request.method === "GET" && url.pathname === "/test/latest-upload") {
+    sendJson(response, 200, latestUpload ?? null);
     return;
   }
 

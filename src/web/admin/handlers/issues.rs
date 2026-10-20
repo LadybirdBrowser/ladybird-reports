@@ -8,6 +8,7 @@ use comrak::{Options, markdown_to_html};
 use serde::Deserialize;
 
 use crate::{
+    application::{SCREENSHOT_PLACEHOLDER, embed_screenshot, screenshot_attachment},
     domain::{GithubLinkState, IssueId, IssueReportAction, IssueSearch, IssueState, ReportId},
     error::{AppError, Result},
     infrastructure::database::{IssueRecord, IssueSummary},
@@ -205,13 +206,26 @@ pub async fn create_from_report(
 
     let configuration = state.database.configuration().await?;
     let access_token = session.github_access_token(&state)?;
+    let description = if form.description.contains(SCREENSHOT_PLACEHOLDER) {
+        // Upload before creating the issue, so that a failure leaves nothing half done.
+        let screenshot_url = upload_screenshot(
+            &state,
+            &access_token,
+            &configuration.github.repository,
+            report_id,
+        )
+        .await?;
+        embed_screenshot(&form.description, &screenshot_url)
+    } else {
+        form.description
+    };
     let github_issue = state
         .github
         .create_issue(
             &access_token,
             &configuration.github.repository,
             form.title.trim(),
-            &form.description,
+            &description,
         )
         .await?;
     let assignment = state
@@ -241,6 +255,41 @@ pub async fn create_from_report(
     );
 
     Ok(Redirect::to(&format!("/issues/{}", assignment.issue_id)))
+}
+
+async fn upload_screenshot(
+    state: &AdminState,
+    access_token: &str,
+    repository: &str,
+    report_id: ReportId,
+) -> Result<String> {
+    let details = state
+        .database
+        .report_details(report_id)
+        .await?
+        .ok_or(AppError::NotFound("Report not found"))?;
+    let screenshot =
+        screenshot_attachment(&details.attachments).ok_or(AppError::InvalidRequest(
+            "This report has no screenshot. Remove {screenshot} from the description.",
+        ))?;
+    let bytes = state.attachments.read(&screenshot.storage_key).await?;
+
+    state
+        .github
+        .upload_attachment(
+            access_token,
+            repository,
+            &screenshot.name,
+            &screenshot.media_type,
+            bytes,
+        )
+        .await
+        .map_err(|error| {
+            tracing::warn!(event = "issue.screenshot_upload_failed", %report_id, ?error);
+            AppError::InvalidRequest(
+                "The screenshot could not be uploaded to GitHub. Try again, or remove {screenshot} from the description.",
+            )
+        })
 }
 
 pub async fn show(

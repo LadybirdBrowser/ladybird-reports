@@ -17,6 +17,7 @@ pub struct GithubClient {
     client_id: String,
     client_secret: String,
     api_base_url: reqwest::Url,
+    uploads_base_url: reqwest::Url,
     oauth_base_url: reqwest::Url,
     app_private_key: Option<Arc<EncodingKey>>,
 }
@@ -168,6 +169,16 @@ struct TeamMembership {
     state: String,
 }
 
+#[derive(Deserialize)]
+struct GithubRepository {
+    id: i64,
+}
+
+#[derive(Deserialize)]
+struct GithubUpload {
+    url: String,
+}
+
 #[derive(Serialize)]
 struct NewIssue<'a> {
     title: &'a str,
@@ -186,6 +197,11 @@ impl GithubClient {
         let api_base_url = std::env::var("GITHUB_API_BASE_URL")
             .unwrap_or_else(|_| "https://api.github.com".into());
         let api_base_url = reqwest::Url::parse(&api_base_url).map_err(AppError::internal)?;
+
+        let uploads_base_url = std::env::var("GITHUB_UPLOADS_BASE_URL")
+            .unwrap_or_else(|_| "https://uploads.github.com".into());
+        let uploads_base_url =
+            reqwest::Url::parse(&uploads_base_url).map_err(AppError::internal)?;
 
         // Browser tests use a local OAuth endpoint. Release builds always use GitHub's endpoint, regardless of the
         // surrounding environment.
@@ -223,6 +239,7 @@ impl GithubClient {
             client_id,
             client_secret,
             api_base_url,
+            uploads_base_url,
             oauth_base_url,
             app_private_key,
         })
@@ -475,6 +492,56 @@ impl GithubClient {
             .await
     }
 
+    /// Upload an image the way dragging it into an issue on github.com does, and return the address to embed in
+    /// Markdown. This endpoint is not documented, so callers must be prepared for it to fail.
+    pub async fn upload_attachment(
+        &self,
+        token: &str,
+        repository: &str,
+        name: &str,
+        content_type: &str,
+        bytes: Vec<u8>,
+    ) -> Result<String> {
+        let repository: GithubRepository = self
+            .request_json(
+                Method::GET,
+                &format!("/repos/{repository}"),
+                token,
+                Option::<&()>::None,
+            )
+            .await?;
+
+        let mut url = self
+            .uploads_base_url
+            .join("/user-attachments/assets")
+            .map_err(AppError::internal)?;
+        url.query_pairs_mut()
+            .append_pair("name", name)
+            .append_pair("content_type", content_type)
+            .append_pair("repository_id", &repository.id.to_string());
+
+        let response = self
+            .http
+            .post(url)
+            .bearer_auth(token)
+            .header("accept", "application/json")
+            .header("content-type", content_type)
+            .body(bytes)
+            .send()
+            .await
+            .map_err(AppError::internal)?;
+        let upload: GithubUpload = decode_github_response(response).await?;
+
+        // The address goes straight into the issue's Markdown, so accept nothing but a GitHub attachment.
+        if !is_attachment_url(&upload.url) {
+            return Err(AppError::internal(anyhow::anyhow!(
+                "GitHub returned an unexpected attachment address"
+            )));
+        }
+
+        Ok(upload.url)
+    }
+
     pub async fn verify_private_text_issue_field(
         &self,
         token: &str,
@@ -589,6 +656,16 @@ impl GithubClient {
     }
 }
 
+fn is_attachment_url(url: &str) -> bool {
+    url.strip_prefix("https://github.com/user-attachments/assets/")
+        .is_some_and(|id| {
+            !id.is_empty()
+                && id
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+        })
+}
+
 fn team_membership_path(authorization_team: &str, login: &str) -> String {
     let (organization, team_slug) = authorization_team
         .split_once('/')
@@ -616,7 +693,26 @@ async fn decode_github_response<T: DeserializeOwned>(response: reqwest::Response
 mod tests {
     use std::collections::HashMap;
 
-    use super::{DuplicateLookup, GithubClient, GraphqlResponse, team_membership_path};
+    use super::{
+        DuplicateLookup, GithubClient, GraphqlResponse, is_attachment_url, team_membership_path,
+    };
+
+    #[test]
+    fn only_github_attachment_addresses_are_accepted() {
+        assert!(is_attachment_url(
+            "https://github.com/user-attachments/assets/9e556ce5-f2f6-4e1a-bbfd-1f4a53fd53eb"
+        ));
+        for url in [
+            "",
+            "https://github.com/user-attachments/assets/",
+            "http://github.com/user-attachments/assets/9e556ce5",
+            "https://example.test/user-attachments/assets/9e556ce5",
+            "https://github.com/user-attachments/assets/9e556ce5)![x](https://example.test/a",
+            "https://github.com/user-attachments/assets/9e556ce5 ",
+        ] {
+            assert!(!is_attachment_url(url), "{url}");
+        }
+    }
 
     #[test]
     fn github_duplicate_lookup_includes_the_canonical_issue() {
