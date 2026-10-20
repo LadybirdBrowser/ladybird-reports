@@ -1402,7 +1402,8 @@ test.describe("authenticated management UI", () => {
 
     await page.goto(`/issues/${trackedIssueId}`);
     await matches.getByRole("button", { name: /Link report/ }).first().click();
-    await expect(page).toHaveURL(`/issues/${trackedIssueId}`);
+    // The form posts in the background, so wait for the report to leave the matches before leaving the page.
+    await expect(matches.locator(`a[href="${candidateUrl}"]`)).toHaveCount(0);
     await page.goto(candidateUrl!);
     await expect(page.locator(".report-linked-issue")).toBeVisible();
     await page.getByRole("button", { name: "Unlink report", exact: true }).click();
