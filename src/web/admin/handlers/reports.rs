@@ -488,8 +488,6 @@ pub async fn show(
             "version",
             &details.report.client_version,
         ),
-        OverviewField::searchable("Platform", &platform, "platform", &platform),
-        OverviewField::searchable("Architecture", &architecture, "architecture", &architecture),
     ];
 
     // Where the report came from belongs with the other facts at the top, but only when the client sent one.
@@ -500,13 +498,25 @@ pub async fn show(
         overview.push(field);
     }
 
+    // Pair the platform with the submission time, so the two share a row.
+    overview.push(OverviewField {
+        label: "Platform & Architecture",
+        value: format!("{platform} · {architecture}"),
+        filter_url: Some(fields_filter_url(&[
+            ("platform", &platform),
+            ("architecture", &architecture),
+        ])),
+        full_width: false,
+        link: FieldLink::None,
+    });
+
     overview.push(OverviewField {
         label: "Submitted",
         value: display_timestamp(details.report.created_at).text(),
         filter_url: Some(submitted_date_filter_url(
             details.report.created_at.date_naive(),
         )),
-        full_width: true,
+        full_width: false,
         link: FieldLink::Time(details.report.created_at),
     });
 
@@ -1052,9 +1062,17 @@ fn field_string(
 }
 
 fn field_filter_url(key: &str, value: &str) -> String {
+    fields_filter_url(&[(key, value)])
+}
+
+fn fields_filter_url(filters: &[(&str, &str)]) -> String {
+    let expression = filters
+        .iter()
+        .map(|(key, value)| filter_expression(key, value))
+        .collect::<Vec<_>>()
+        .join(" ");
     let mut url = reqwest::Url::parse("http://localhost/").expect("static URL is valid");
-    url.query_pairs_mut()
-        .append_pair("q", &filter_expression(key, value));
+    url.query_pairs_mut().append_pair("q", &expression);
 
     format!("/?{}", url.query().unwrap_or_default())
 }

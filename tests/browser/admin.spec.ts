@@ -343,10 +343,9 @@ test.describe("authenticated management UI", () => {
     await expect(page.locator(".stack-frame-table")).toBeHidden();
     await page.getByLabel("Show raw").uncheck();
     await expect(page.locator(".stack-frame-table")).toBeVisible();
-    await expect(page.getByText("macOS", { exact: true }).first()).toBeVisible();
-    await expect(page.getByText("arm64", { exact: true }).first()).toBeVisible();
-    // Type, version, platform, architecture, page URL and submission time, and the screenshot.
-    await expect(page.locator(".definition-list > div")).toHaveCount(7);
+    await expect(page.getByText("macOS · arm64", { exact: true }).first()).toBeVisible();
+    // Type, version, page URL, platform and architecture, submission time, and the screenshot.
+    await expect(page.locator(".definition-list > div")).toHaveCount(6);
     await expect(page.getByRole("heading", { name: "Additional fields" })).toBeVisible();
     await expect(page.locator(".report-field-value").filter({ hasText: "<script>" })).toBeVisible();
     await expect(page.getByRole("link", { name: "Filter reports by Stack trace" })).toHaveCount(0);
@@ -394,10 +393,10 @@ test.describe("authenticated management UI", () => {
     ).toBe(true);
 
     const platformFilter = page.getByRole("region", { name: "Overview" })
-      .getByRole("link", { name: "Filter reports by Platform" });
+      .getByRole("link", { name: "Filter reports by Platform & Architecture" });
     await hoverValueOf(platformFilter);
     await platformFilter.click();
-    expect(new URL(page.url()).searchParams.get("q")).toBe("platform:macos");
+    expect(new URL(page.url()).searchParams.get("q")).toBe("platform:macos architecture:arm64");
     await expect(page.locator(`a[href="/reports/${reportId}"]`)).toBeVisible();
 
     expect(await page.evaluate(() => (window as any).fixtureWasExecuted)).toBeUndefined();
@@ -411,9 +410,8 @@ test.describe("authenticated management UI", () => {
     await expect(overview.locator("dt")).toHaveText([
       "Report type",
       "Browser version",
-      "Platform",
-      "Architecture",
       "Page URL",
+      "Platform & Architecture",
       "Submitted",
       "Screenshot",
     ]);
@@ -481,8 +479,8 @@ test.describe("authenticated management UI", () => {
     const platform = overview.locator(".definition-list > div").filter({ hasText: "Platform" });
     const platformButtons = platform.locator(".button-group > .icon-button");
     await expect(platformButtons).toHaveCount(2);
-    await expect(platformButtons.nth(0)).toHaveAccessibleName("Copy Platform");
-    await expect(platformButtons.nth(1)).toHaveAccessibleName("Filter reports by Platform");
+    await expect(platformButtons.nth(0)).toHaveAccessibleName("Copy Platform & Architecture");
+    await expect(platformButtons.nth(1)).toHaveAccessibleName("Filter reports by Platform & Architecture");
     const sizes = await platformButtons.evaluateAll((elements) =>
       elements.map((element) => {
         const box = element.getBoundingClientRect();
@@ -492,7 +490,7 @@ test.describe("authenticated management UI", () => {
     await hoverValueOf(platformButtons.nth(0));
     await platformButtons.nth(0).click();
     await expect(platformButtons.nth(0)).toHaveAttribute("data-copy-state", "copied");
-    expect(await clipboard()).toBe("macOS");
+    expect(await clipboard()).toBe("macOS · arm64");
     await expect(platformButtons.nth(0)).not.toHaveAttribute("data-copy-state");
 
     // A diagnostic field copies exactly the value it shows.
@@ -611,16 +609,16 @@ test.describe("authenticated management UI", () => {
     }).click();
 
     const fields = page.locator(".definition-list > div");
-    await expect(fields).toHaveCount(6);
-    await expect(fields.nth(4).locator("dt")).toHaveText("Submitted");
-    await expect(fields.nth(5).locator("dt")).toHaveText("Build");
+    await expect(fields).toHaveCount(5);
+    await expect(fields.nth(3).locator("dt")).toHaveText("Submitted");
+    await expect(fields.nth(4).locator("dt")).toHaveText("Build");
 
-    const submitted = await fields.nth(4).boundingBox();
-    const build = await fields.nth(5).boundingBox();
+    const submitted = await fields.nth(3).boundingBox();
+    const build = await fields.nth(4).boundingBox();
     expect(submitted).not.toBeNull();
     expect(build).not.toBeNull();
     expect(build!.width).toBeGreaterThanOrEqual(submitted!.width - 2);
-    expect(await fields.nth(4).evaluate((field) =>
+    expect(await fields.nth(3).evaluate((field) =>
       getComputedStyle(field).borderBottomWidth,
     )).toBe("1px");
 
