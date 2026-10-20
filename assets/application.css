@@ -1649,6 +1649,7 @@ tbody tr:hover {
 /* A screenshot shows as large as fits in a bounded box; a tall page shrinks to fit rather than taking over the page. */
 .overview-screenshot {
     margin: 0;
+    text-align: center;
 }
 
 .overview-screenshot a {
@@ -2589,6 +2590,11 @@ pre {
 
 .attachment-table th:last-child,
 .attachment-table td:last-child {
+    text-align: right;
+}
+
+.attachment-table .attachment-size {
+    font-variant-numeric: tabular-nums;
     text-align: right;
 }
 

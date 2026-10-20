@@ -94,7 +94,7 @@
                                 <tr>
                                     <th scope="col">File</th>
                                     <th scope="col">Type</th>
-                                    <th scope="col">Size</th>
+                                    <th scope="col" class="attachment-size">Size</th>
                                     <th scope="col">Actions</th>
                                 </tr>
                             </thead>
@@ -103,7 +103,7 @@
                                     <tr>
                                         <td class="attachment-name">{{ attachment.name }}</td>
                                         <td>{{ attachment.media_type }}</td>
-                                        <td>{{ attachment.size }}</td>
+                                        <td class="attachment-size">{{ attachment.size }}</td>
                                         <td>
                                             <div class="attachment-actions button-group">
                                                 <a class="icon-button" href="/attachments/{{ attachment.id }}?inline=true" aria-label="View {{ attachment.name }}" title="View">

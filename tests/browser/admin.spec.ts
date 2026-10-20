@@ -269,6 +269,10 @@ test.describe("authenticated management UI", () => {
     expect(shown.height).toBeLessThanOrEqual(24 * 16 + 4);
     expect(shown.width / shown.height).toBeCloseTo(1200 / 3000, 1);
 
+    // Centered in the width of the overview.
+    const card = (await page.locator(".overview-screenshot").boundingBox())!;
+    expect(Math.abs(shown.x + shown.width / 2 - (card.x + card.width / 2))).toBeLessThan(2);
+
     const link = page.locator(".overview-screenshot a");
     await expect(link).toHaveAttribute("href", /^\/attachments\/[0-9a-f-]+\?inline=true$/);
     const full = await page.request.get((await link.getAttribute("href"))!);
@@ -348,6 +352,17 @@ test.describe("authenticated management UI", () => {
     await expect(page.getByRole("link", { name: "Filter reports by Stack trace" })).toHaveCount(0);
     await expect(page.getByRole("heading", { name: "Attachments" }).locator(".."))
       .toContainText("2 files");
+    // In alphabetical order, with the sizes lined up on their right edges.
+    await expect(page.locator(".attachment-table .attachment-name")).toHaveText([
+      "crash-diagnostics.txt",
+      "screenshot.png",
+    ]);
+    const sizeEdges = await page.locator(".attachment-table td.attachment-size").evaluateAll(
+      (cells) => cells.map((cell) => Math.round(cell.getBoundingClientRect().right)),
+    );
+    expect(sizeEdges).toHaveLength(2);
+    expect(sizeEdges[0]).toBe(sizeEdges[1]);
+    await expect(page.locator(".attachment-table td.attachment-size").first()).toHaveCSS("text-align", "right");
     const attachmentRow = page.locator(".attachment-table tbody tr").first();
     await expect(attachmentRow).toContainText("crash-diagnostics.txt");
     await expect(attachmentRow).toContainText("text/plain");

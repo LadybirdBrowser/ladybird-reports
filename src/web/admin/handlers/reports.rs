@@ -613,7 +613,7 @@ pub async fn show(
         }
     }
 
-    let attachments: Vec<AttachmentView> = details
+    let mut attachments: Vec<AttachmentView> = details
         .attachments
         .into_iter()
         .map(|attachment| AttachmentView {
@@ -623,6 +623,7 @@ pub async fn show(
             size: format_attachment_size(attachment.size),
         })
         .collect();
+    attachments.sort_by_cached_key(|attachment| attachment.name.to_lowercase());
     // A web compatibility report comes with a screenshot of the page, which is shown with the overview.
     let screenshot = attachments
         .iter()
