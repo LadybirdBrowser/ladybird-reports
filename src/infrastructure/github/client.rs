@@ -537,10 +537,27 @@ impl GithubClient {
         // This endpoint is undocumented, so a rejection is only understandable from what GitHub says.
         if !response.status().is_success() {
             let status = response.status().as_u16();
+            // GitHub names the permissions or scopes a request would have needed in these headers.
+            let header = |name: &str| {
+                response
+                    .headers()
+                    .get(name)
+                    .and_then(|value| value.to_str().ok())
+                    .unwrap_or_default()
+                    .chars()
+                    .take(300)
+                    .collect::<String>()
+            };
+            let accepted_permissions = header("x-accepted-github-permissions");
+            let accepted_scopes = header("x-accepted-oauth-scopes");
+            let granted_scopes = header("x-oauth-scopes");
             let body = response.text().await.unwrap_or_default();
             tracing::warn!(
                 event = "github.attachment_upload_rejected",
                 status,
+                accepted_permissions,
+                accepted_scopes,
+                granted_scopes,
                 body = body.chars().take(300).collect::<String>(),
             );
             return Err(match status {
