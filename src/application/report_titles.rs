@@ -1,14 +1,26 @@
 use crate::{
-    domain::{ReportTitleInput, generate_report_title},
+    domain::{ReportTitleInput, TitleStyle, generate_report_title},
     infrastructure::database::{ReportDetails, StoredDiagnosticField},
 };
 
+/// The title of a report, as it is shown in this service.
 pub fn title_for_report(details: &ReportDetails) -> String {
+    title_in_style(details, TitleStyle::Report)
+}
+
+/// The title proposed for a GitHub issue about a report.
+pub fn issue_title_for_report(details: &ReportDetails) -> String {
+    title_in_style(details, TitleStyle::Issue)
+}
+
+fn title_in_style(details: &ReportDetails, style: TitleStyle) -> String {
     let text_field = |key| field_text(&details.fields, key);
     let stack_trace = stack_trace_for_report(details);
 
     generate_report_title(ReportTitleInput {
+        style,
         kind: details.report.kind,
+        url: text_field("url"),
         client_version: &details.report.client_version,
         failure_reason: text_field("failure_reason"),
         stack_trace,

@@ -8,7 +8,7 @@ use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    application::{IssueProposal, propose_issue},
+    application::{IssueProposal, propose_issue, title_for_report},
     domain::{
         AttachmentId, FieldKind, GithubLinkState, IssueId, ParsedStackTrace, ReportId, ReportKind,
         ReportSearch, ReportState, filter_expression, is_commit_id, parse_stack_trace,
@@ -539,7 +539,7 @@ pub async fn show(
 
     let report_view = ReportView {
         id: details.report.id,
-        title: issue_proposal.title.clone(),
+        title: title_for_report(&details),
         state: details.report.state,
         overview,
         is_assigned: details.report.issue_id.is_some(),

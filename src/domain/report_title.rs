@@ -3,8 +3,18 @@ use super::{ReportKind, parse_stack_trace};
 const MAX_TITLE_CHARACTERS: usize = 120;
 pub const REPORT_TITLE_STACK_CHARACTERS: usize = 8192;
 
+/// Where a title is shown. A report is titled in the lists of this service and above its page; an issue proposed for
+/// GitHub gets the shorter name of its kind, so that every title starts with `Crash:` or `Web compat:`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TitleStyle {
+    Report,
+    Issue,
+}
+
 pub struct ReportTitleInput<'a> {
+    pub style: TitleStyle,
     pub kind: ReportKind,
+    pub url: Option<&'a str>,
     pub client_version: &'a str,
     pub failure_reason: Option<&'a str>,
     pub stack_trace: Option<&'a str>,
@@ -14,9 +24,10 @@ pub struct ReportTitleInput<'a> {
 }
 
 pub fn generate_report_title(input: ReportTitleInput<'_>) -> String {
-    let kind = match input.kind {
-        ReportKind::Crash => "Crash",
-        ReportKind::WebCompat => "Web compat",
+    let kind = match (input.kind, input.style) {
+        (ReportKind::Crash, _) => "Crash",
+        (ReportKind::WebCompat, TitleStyle::Report) => "Web compatibility",
+        (ReportKind::WebCompat, TitleStyle::Issue) => "Web compat",
     };
 
     if input.kind == ReportKind::Crash
@@ -32,6 +43,15 @@ pub fn generate_report_title(input: ReportTitleInput<'_>) -> String {
             Some(expression) => format!("{title} · {expression}"),
             None => title,
         };
+    }
+
+    // A web compatibility report is about a page, which says more than anything else it holds.
+    if input.kind == ReportKind::WebCompat
+        && let Some(url) = input
+            .url
+            .and_then(|url| page_url(url, MAX_TITLE_CHARACTERS - kind.chars().count() - 2))
+    {
+        return format!("{kind}: {url}");
     }
 
     if let Some(stack) = input.stack_trace {
@@ -59,14 +79,44 @@ pub fn generate_report_title(input: ReportTitleInput<'_>) -> String {
         .take(2)
         .chain(input.signal.and_then(signal_name))
         .collect::<Vec<_>>();
-
     let context = if context.is_empty() {
         vec![safe_context(input.client_version, 60).unwrap_or_else(|| "Unknown build".into())]
     } else {
         context
     };
 
-    format!("{kind}: {}", context.join(" · "))
+    match input.style {
+        TitleStyle::Report => format!("{kind} report · {}", context.join(" · ")),
+        TitleStyle::Issue => format!("{kind}: {}", context.join(" · ")),
+    }
+}
+
+/// The address of the page a report came from, without its query or fragment, which can carry tokens or personal data.
+/// Only a web address is used, and one that does not fit is shortened.
+fn page_url(url: &str, maximum_characters: usize) -> Option<String> {
+    let url = url.split(['?', '#']).next().unwrap_or_default().trim();
+    if !(url.starts_with("https://") || url.starts_with("http://")) {
+        return None;
+    }
+
+    let url = url
+        .chars()
+        .map(|character| match character {
+            '`' => '′',
+            character if character.is_control() => ' ',
+            character => character,
+        })
+        .collect::<String>();
+    if url.chars().count() <= maximum_characters {
+        return Some(url);
+    }
+
+    let mut shortened = url
+        .chars()
+        .take(maximum_characters.saturating_sub(1))
+        .collect::<String>();
+    shortened.push('…');
+    Some(shortened)
 }
 
 /// The condition of a failed verification, such as `a <= b`, or the message of a Rust panic, when it says more than the
@@ -272,6 +322,8 @@ mod tests {
     fn source_location_takes_priority_over_a_generic_verification_expression() {
         let title = generate_report_title(ReportTitleInput {
             kind: ReportKind::Crash,
+            style: TitleStyle::Report,
+            url: None,
             client_version: "1.0",
             failure_reason: Some(
                 "Verification failed: false at Libraries/LibMedia/FFmpeg/FFmpegVideoDecoder.cpp:235",
@@ -285,6 +337,8 @@ mod tests {
 
         let fallback = generate_report_title(ReportTitleInput {
             kind: ReportKind::Crash,
+            style: TitleStyle::Report,
+            url: None,
             client_version: "1.0",
             failure_reason: Some("Verification failed: false"),
             stack_trace: Some("#0 0x123 Media::FFmpeg::FFmpegVideoDecoder::take_next_output()"),
@@ -301,6 +355,8 @@ mod tests {
     fn title_for_failure(reason: &str) -> String {
         generate_report_title(ReportTitleInput {
             kind: ReportKind::Crash,
+            style: TitleStyle::Report,
+            url: None,
             client_version: "1.0",
             failure_reason: Some(reason),
             stack_trace: None,
@@ -348,7 +404,7 @@ mod tests {
         );
         assert_eq!(
             title_for_failure("Rust panic: boom at Libraries/Rust/src/lib.rs:7:x"),
-            "Crash: 1.0"
+            "Crash report · 1.0"
         );
     }
 
@@ -388,6 +444,8 @@ mod tests {
         let stack = format!("#0 abcdef1234567890 0x123 {symbol} at /bin/WebContent");
         let title = generate_report_title(ReportTitleInput {
             kind: ReportKind::Crash,
+            style: TitleStyle::Report,
+            url: None,
             client_version: "1.0",
             failure_reason: None,
             stack_trace: Some(&stack),
@@ -410,6 +468,8 @@ mod tests {
             #1 4402e9f4aa8030998b5a8e8bab39a036 0x10002b943 CompositorControlServerStub::handle_crash() at /bin/Compositor";
         let title = generate_report_title(ReportTitleInput {
             kind: ReportKind::Crash,
+            style: TitleStyle::Report,
+            url: None,
             client_version: "1.0",
             failure_reason: None,
             stack_trace: Some(stack),
@@ -425,6 +485,8 @@ mod tests {
     fn title_falls_back_to_type_and_context() {
         let title = generate_report_title(ReportTitleInput {
             kind: ReportKind::Crash,
+            style: TitleStyle::Report,
+            url: None,
             client_version: "1.0",
             failure_reason: None,
             stack_trace: Some("Native stack (binary build ID, object address):"),
@@ -432,10 +494,12 @@ mod tests {
             platform: Some("macOS"),
             signal: None,
         });
-        assert_eq!(title, "Crash: WebContent · macOS");
+        assert_eq!(title, "Crash report · WebContent · macOS");
 
         let title = generate_report_title(ReportTitleInput {
             kind: ReportKind::WebCompat,
+            style: TitleStyle::Report,
+            url: None,
             client_version: "Ladybird Nightly 2026.09.17",
             failure_reason: None,
             stack_trace: None,
@@ -443,7 +507,10 @@ mod tests {
             platform: None,
             signal: None,
         });
-        assert_eq!(title, "Web compat: Ladybird Nightly 2026.09.17");
+        assert_eq!(
+            title,
+            "Web compatibility report · Ladybird Nightly 2026.09.17"
+        );
     }
 
     #[test]
@@ -451,6 +518,8 @@ mod tests {
         let stack = "#0 0x123 https://private.example/path at WebContent";
         let title = generate_report_title(ReportTitleInput {
             kind: ReportKind::Crash,
+            style: TitleStyle::Report,
+            url: None,
             client_version: "1.0",
             failure_reason: None,
             stack_trace: Some(stack),
@@ -458,7 +527,7 @@ mod tests {
             platform: Some("macOS"),
             signal: None,
         });
-        assert_eq!(title, "Crash: macOS");
+        assert_eq!(title, "Crash report · macOS");
     }
 
     #[test]
@@ -467,6 +536,8 @@ mod tests {
         let stack = format!("#0 0x123 WebContent::{function}(int) at WebContent");
         let title = generate_report_title(ReportTitleInput {
             kind: ReportKind::Crash,
+            style: TitleStyle::Report,
+            url: None,
             client_version: "1.0",
             failure_reason: None,
             stack_trace: Some(&stack),
@@ -483,6 +554,8 @@ mod tests {
     fn title_with_signal(signal: Option<&str>, stack_trace: Option<&str>) -> String {
         generate_report_title(ReportTitleInput {
             kind: ReportKind::Crash,
+            style: TitleStyle::Report,
+            url: None,
             client_version: "1.0",
             failure_reason: None,
             stack_trace,
@@ -496,16 +569,19 @@ mod tests {
     fn title_names_the_signal_when_nothing_better_is_known() {
         assert_eq!(
             title_with_signal(Some("SIGTRAP"), None),
-            "Crash: WebContent · macOS · SIGTRAP"
+            "Crash report · WebContent · macOS · SIGTRAP"
         );
         assert_eq!(
             title_with_signal(
                 Some("SIGTRAP"),
                 Some("Native stack (binary build ID, object address):\n#0 abcdef1234567890 0x1")
             ),
-            "Crash: WebContent · macOS · SIGTRAP"
+            "Crash report · WebContent · macOS · SIGTRAP"
         );
-        assert_eq!(title_with_signal(None, None), "Crash: WebContent · macOS");
+        assert_eq!(
+            title_with_signal(None, None),
+            "Crash report · WebContent · macOS"
+        );
     }
 
     #[test]
@@ -513,7 +589,7 @@ mod tests {
         for signal in ["SIGSEGV (11)", "SIGSEGV(11)", "  SIGSEGV  ", "SIGSEGV"] {
             assert_eq!(
                 title_with_signal(Some(signal), None),
-                "Crash: WebContent · macOS · SIGSEGV",
+                "Crash report · WebContent · macOS · SIGSEGV",
                 "{signal:?}"
             );
         }
@@ -531,7 +607,7 @@ mod tests {
         ] {
             assert_eq!(
                 title_with_signal(Some(signal), None),
-                "Crash: WebContent · macOS",
+                "Crash report · WebContent · macOS",
                 "{signal:?}"
             );
         }
@@ -541,6 +617,8 @@ mod tests {
     fn title_prefers_the_failure_or_a_named_function_over_the_signal() {
         let with_failure = generate_report_title(ReportTitleInput {
             kind: ReportKind::Crash,
+            style: TitleStyle::Report,
+            url: None,
             client_version: "1.0",
             failure_reason: Some("Verification failed: false at Libraries/LibMedia/Foo.cpp:235"),
             stack_trace: None,
@@ -563,6 +641,8 @@ mod tests {
     fn title_shows_the_signal_without_process_or_platform() {
         let title = generate_report_title(ReportTitleInput {
             kind: ReportKind::Crash,
+            style: TitleStyle::Report,
+            url: None,
             client_version: "1.0",
             failure_reason: None,
             stack_trace: None,
@@ -571,6 +651,94 @@ mod tests {
             signal: Some("SIGABRT"),
         });
 
-        assert_eq!(title, "Crash: SIGABRT");
+        assert_eq!(title, "Crash report · SIGABRT");
+    }
+
+    fn web_compat_title(style: TitleStyle, url: Option<&str>) -> String {
+        generate_report_title(ReportTitleInput {
+            style,
+            kind: ReportKind::WebCompat,
+            url,
+            client_version: "Ladybird Nightly",
+            failure_reason: None,
+            stack_trace: None,
+            process: None,
+            platform: Some("macOS"),
+            signal: None,
+        })
+    }
+
+    #[test]
+    fn web_compatibility_title_holds_the_page_without_query_and_fragment() {
+        let url = Some("https://example.test/checkout?step=payment&token=secret#top");
+
+        assert_eq!(
+            web_compat_title(TitleStyle::Report, url),
+            "Web compatibility: https://example.test/checkout"
+        );
+        assert_eq!(
+            web_compat_title(TitleStyle::Issue, url),
+            "Web compat: https://example.test/checkout"
+        );
+    }
+
+    #[test]
+    fn a_title_without_a_usable_page_falls_back_to_what_else_is_known() {
+        for url in [
+            None,
+            Some(""),
+            Some("?token=secret"),
+            Some("javascript:alert(1)"),
+            Some("ftp://example.test/"),
+        ] {
+            assert_eq!(
+                web_compat_title(TitleStyle::Report, url),
+                "Web compatibility report · macOS",
+                "{url:?}"
+            );
+            assert_eq!(
+                web_compat_title(TitleStyle::Issue, url),
+                "Web compat: macOS",
+                "{url:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_page_in_a_title_is_plain_text_and_fits() {
+        let title = web_compat_title(TitleStyle::Issue, Some("https://example.test/`a`\nb"));
+        assert_eq!(title, "Web compat: https://example.test/′a′ b");
+
+        let long = format!("https://example.test/{}", "a".repeat(300));
+        let title = web_compat_title(TitleStyle::Report, Some(&long));
+        assert_eq!(title.chars().count(), MAX_TITLE_CHARACTERS);
+        assert!(title.starts_with("Web compatibility: https://example.test/aaa"));
+        assert!(title.ends_with('…'));
+    }
+
+    #[test]
+    fn issue_titles_start_with_the_short_name_of_their_kind() {
+        let title = |kind, style| {
+            generate_report_title(ReportTitleInput {
+                style,
+                kind,
+                url: None,
+                client_version: "1.0",
+                failure_reason: None,
+                stack_trace: None,
+                process: Some("WebContent"),
+                platform: Some("macOS"),
+                signal: Some("SIGSEGV"),
+            })
+        };
+
+        assert_eq!(
+            title(ReportKind::Crash, TitleStyle::Issue),
+            "Crash: WebContent · macOS · SIGSEGV"
+        );
+        assert_eq!(
+            title(ReportKind::Crash, TitleStyle::Report),
+            "Crash report · WebContent · macOS · SIGSEGV"
+        );
     }
 }

@@ -5,7 +5,8 @@ use sqlx::{Postgres, QueryBuilder, Row};
 use crate::{
     domain::{
         AttachmentId, AuditAction, IssueId, IssueState, REPORT_TITLE_STACK_CHARACTERS, ReportId,
-        ReportKind, ReportState, ReportTitleInput, STACK_SIGNATURE_VERSION, generate_report_title,
+        ReportKind, ReportState, ReportTitleInput, STACK_SIGNATURE_VERSION, TitleStyle,
+        generate_report_title,
     },
     error::{AppError, Result},
     infrastructure::database::AdminDatabase,
@@ -31,7 +32,9 @@ struct TitleFields {
 impl TitleFields {
     fn title(&self, kind: ReportKind, client_version: &str) -> String {
         generate_report_title(ReportTitleInput {
+            style: TitleStyle::Report,
             kind,
+            url: self.url.as_deref(),
             client_version,
             failure_reason: self.failure_reason.as_deref(),
             stack_trace: self.stack_trace.as_deref(),

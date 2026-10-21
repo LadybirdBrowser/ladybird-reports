@@ -1515,7 +1515,7 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
     assert_eq!(first_notification.client_version, "notification-test");
     assert_eq!(
         first_notification.title,
-        "Crash: WebContent · macOS · SIGSEGV"
+        "Crash report · WebContent · macOS · SIGSEGV"
     );
 
     assert!(

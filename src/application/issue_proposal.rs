@@ -3,7 +3,7 @@ use crate::{
     infrastructure::database::{ReportDetails, StoredAttachment},
 };
 
-use super::{stack_trace_for_report, title_for_report};
+use super::{issue_title_for_report, stack_trace_for_report};
 
 /// Stands for the report's screenshot in an issue description. When the issue is created, the screenshot is uploaded
 /// to GitHub and this is replaced by the image, so a maintainer can remove it to leave the screenshot out.
@@ -23,7 +23,7 @@ pub fn propose_issue(details: &ReportDetails) -> IssueProposal {
         ReportKind::WebCompat => "Web compatibility issue",
     };
     let platform = field_value(details, "platform", 40);
-    let title = title_for_report(details);
+    let title = issue_title_for_report(details);
 
     let mut description = format!("## Summary\n\n{report_type} reported by a Ladybird user.\n");
 
