@@ -204,7 +204,7 @@ mod tests {
         };
 
         let proposal = propose_issue(&details);
-        assert_eq!(proposal.title, "Crash report · macOS · SIGABRT");
+        assert_eq!(proposal.title, "Crash: macOS · SIGABRT");
         assert!(
             proposal
                 .description

@@ -289,7 +289,7 @@ test.describe("authenticated management UI", () => {
     await openGroups(page);
     const reportLink = page.locator(`a[href="/reports/${reportId}"]`);
     await expect(reportLink).toHaveText(
-      "Web compatibility: WebContent::ConnectionFromClient::debug_request",
+      "Web compat: WebContent::ConnectionFromClient::debug_request",
     );
     await expect(page.locator("tbody")).not.toContainText(reportId);
     const received = reportLink.locator("xpath=ancestor::tr").locator("time");
@@ -301,7 +301,7 @@ test.describe("authenticated management UI", () => {
 
     await reportLink.click();
     await expect(page.getByRole("heading", {
-      name: "Web compatibility: WebContent::ConnectionFromClient::debug_request",
+      name: "Web compat: WebContent::ConnectionFromClient::debug_request",
     })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Stack trace" })).toBeVisible();
     await expect(page.getByRole("rowheader", { name: /Git commit/ })).toBeVisible();
@@ -750,7 +750,7 @@ test.describe("authenticated management UI", () => {
 
     await page.getByRole("button", { name: "Create new" }).click();
     await expect(page.getByLabel("Title", { exact: true }))
-      .toHaveValue("Web compatibility: WebContent::ConnectionFromClient::debug_request");
+      .toHaveValue("Web compat: WebContent::ConnectionFromClient::debug_request");
     await expect(page.getByLabel("Description", { exact: true }))
       .toHaveValue(/- Platform: macOS/);
     await expect(page.getByLabel("Description", { exact: true }))
@@ -1025,7 +1025,7 @@ test.describe("authenticated management UI", () => {
       await expect(page.locator("tbody tr:visible")).toHaveCount(2);
       await expect(page.locator(".report-group-member")).toHaveCount(50);
       await expect(groups(page).nth(0)).toContainText("Crash");
-      await expect(groups(page).nth(1)).toContainText("Web compatibility");
+      await expect(groups(page).nth(1)).toContainText("Web compat");
     });
 
     test("opens a group to its reports, which open as usual", async ({ page }) => {

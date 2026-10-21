@@ -16,7 +16,7 @@ pub struct ReportTitleInput<'a> {
 pub fn generate_report_title(input: ReportTitleInput<'_>) -> String {
     let kind = match input.kind {
         ReportKind::Crash => "Crash",
-        ReportKind::WebCompat => "Web compatibility",
+        ReportKind::WebCompat => "Web compat",
     };
 
     if input.kind == ReportKind::Crash
@@ -52,7 +52,6 @@ pub fn generate_report_title(input: ReportTitleInput<'_>) -> String {
         }
     }
 
-    let mut title = format!("{kind} report");
     let context = [input.process, input.platform]
         .into_iter()
         .flatten()
@@ -61,19 +60,13 @@ pub fn generate_report_title(input: ReportTitleInput<'_>) -> String {
         .chain(input.signal.and_then(signal_name))
         .collect::<Vec<_>>();
 
-    if context.is_empty() {
-        title.push_str(" · ");
-        title.push_str(
-            &safe_context(input.client_version, 60).unwrap_or_else(|| "Unknown build".into()),
-        );
+    let context = if context.is_empty() {
+        vec![safe_context(input.client_version, 60).unwrap_or_else(|| "Unknown build".into())]
     } else {
-        for value in context {
-            title.push_str(" · ");
-            title.push_str(&value);
-        }
-    }
+        context
+    };
 
-    title
+    format!("{kind}: {}", context.join(" · "))
 }
 
 /// The condition of a failed verification, such as `a <= b`, or the message of a Rust panic, when it says more than the
@@ -355,7 +348,7 @@ mod tests {
         );
         assert_eq!(
             title_for_failure("Rust panic: boom at Libraries/Rust/src/lib.rs:7:x"),
-            "Crash report · 1.0"
+            "Crash: 1.0"
         );
     }
 
@@ -439,7 +432,7 @@ mod tests {
             platform: Some("macOS"),
             signal: None,
         });
-        assert_eq!(title, "Crash report · WebContent · macOS");
+        assert_eq!(title, "Crash: WebContent · macOS");
 
         let title = generate_report_title(ReportTitleInput {
             kind: ReportKind::WebCompat,
@@ -450,10 +443,7 @@ mod tests {
             platform: None,
             signal: None,
         });
-        assert_eq!(
-            title,
-            "Web compatibility report · Ladybird Nightly 2026.09.17"
-        );
+        assert_eq!(title, "Web compat: Ladybird Nightly 2026.09.17");
     }
 
     #[test]
@@ -468,7 +458,7 @@ mod tests {
             platform: Some("macOS"),
             signal: None,
         });
-        assert_eq!(title, "Crash report · macOS");
+        assert_eq!(title, "Crash: macOS");
     }
 
     #[test]
@@ -506,19 +496,16 @@ mod tests {
     fn title_names_the_signal_when_nothing_better_is_known() {
         assert_eq!(
             title_with_signal(Some("SIGTRAP"), None),
-            "Crash report · WebContent · macOS · SIGTRAP"
+            "Crash: WebContent · macOS · SIGTRAP"
         );
         assert_eq!(
             title_with_signal(
                 Some("SIGTRAP"),
                 Some("Native stack (binary build ID, object address):\n#0 abcdef1234567890 0x1")
             ),
-            "Crash report · WebContent · macOS · SIGTRAP"
+            "Crash: WebContent · macOS · SIGTRAP"
         );
-        assert_eq!(
-            title_with_signal(None, None),
-            "Crash report · WebContent · macOS"
-        );
+        assert_eq!(title_with_signal(None, None), "Crash: WebContent · macOS");
     }
 
     #[test]
@@ -526,7 +513,7 @@ mod tests {
         for signal in ["SIGSEGV (11)", "SIGSEGV(11)", "  SIGSEGV  ", "SIGSEGV"] {
             assert_eq!(
                 title_with_signal(Some(signal), None),
-                "Crash report · WebContent · macOS · SIGSEGV",
+                "Crash: WebContent · macOS · SIGSEGV",
                 "{signal:?}"
             );
         }
@@ -544,7 +531,7 @@ mod tests {
         ] {
             assert_eq!(
                 title_with_signal(Some(signal), None),
-                "Crash report · WebContent · macOS",
+                "Crash: WebContent · macOS",
                 "{signal:?}"
             );
         }
@@ -584,6 +571,6 @@ mod tests {
             signal: Some("SIGABRT"),
         });
 
-        assert_eq!(title, "Crash report · SIGABRT");
+        assert_eq!(title, "Crash: SIGABRT");
     }
 }
