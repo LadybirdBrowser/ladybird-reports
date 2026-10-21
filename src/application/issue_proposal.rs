@@ -25,7 +25,7 @@ pub fn propose_issue(details: &ReportDetails) -> IssueProposal {
     let platform = field_value(details, "platform", 40);
     let title = title_for_report(details);
 
-    let mut description = format!("## Summary\n\n{report_type} reported by Ladybird.\n");
+    let mut description = format!("## Summary\n\n{report_type} reported by a Ladybird user.\n");
 
     if screenshot_attachment(&details.attachments).is_some() {
         description.push_str(&format!("\n## Screenshot\n\n{SCREENSHOT_PLACEHOLDER}\n"));
@@ -205,6 +205,11 @@ mod tests {
 
         let proposal = propose_issue(&details);
         assert_eq!(proposal.title, "Crash report · macOS · SIGABRT");
+        assert!(
+            proposal
+                .description
+                .starts_with("## Summary\n\nCrash reported by a Ladybird user.\n")
+        );
         assert!(proposal.description.contains("- Platform: macOS"));
         assert!(proposal.description.contains("- Signal: SIGABRT"));
         assert!(
