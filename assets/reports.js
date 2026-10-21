@@ -13,6 +13,50 @@ for (const dialog of document.querySelectorAll("dialog.modal-overlay")) {
     });
 }
 
+// "Share YAML" creates a link to the report and shows it in a dialog, which is the only time it is shown.
+function initializeShare() {
+    const button = document.querySelector("[data-share-url]");
+    const dialog = document.getElementById("share-dialog");
+    if (!button || !dialog) {
+        return;
+    }
+
+    const link = dialog.querySelector("[data-share-link]");
+    const error = dialog.querySelector("[data-share-error]");
+
+    button.addEventListener("click", async () => {
+        button.disabled = true;
+        link.value = "";
+        error.hidden = true;
+        let created = null;
+        try {
+            const response = await fetch(button.dataset.shareUrl, {
+                method: "POST",
+                headers: {
+                    Accept: "application/json",
+                    "Content-Type": "application/x-www-form-urlencoded",
+                },
+                body: new URLSearchParams({ csrf: button.dataset.shareCsrf }),
+            });
+            if (response.ok) {
+                created = await response.json();
+            }
+        } catch {
+            // Reported below, like any other failure.
+        }
+
+        link.value = created?.url ?? "";
+        error.hidden = created !== null;
+        dialog.showModal();
+        if (created) {
+            link.select();
+        }
+        button.disabled = false;
+    });
+}
+
+initializeShare();
+
 function initializeIssueDialog() {
     const dialog = document.getElementById("issue-dialog");
     if (!dialog) {

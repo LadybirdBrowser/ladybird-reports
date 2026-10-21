@@ -30,6 +30,15 @@ address, by identifier, and shown only when GitHub answers with a raster image o
 credentials, and the identifier is validated, so a description cannot make the service fetch an arbitrary address. GitHub's
 redirect is followed only to a named `amazonaws.com` host over HTTPS, never to an IP address or another site.
 
+A maintainer can share a report as YAML through a link that works for 24 hours without signing in, for agents that
+work on it. The link carries what the public GitHub draft leaves out, such as the whole page address and unknown fields,
+and the attachments, so creating one is a deliberate act that is audited. The token is 256 bits of randomness and only
+its hash is stored, so a link is shown once and cannot be listed or revoked; it ends after 24 hours or with its report.
+The token is masked in request logs, and an unknown or expired link looks the same as any other. The route is the only
+one of the admin service that needs no session. It answers with `text/plain` or the attachment, and sets no cookie. The
+document marks everything from the reporter as untrusted, since an agent reading it could otherwise be steered by what
+an anonymous client wrote.
+
 Reports, attachments, and audit events expire after the configured retention period; short-lived unauthenticated and
 authentication records expire individually. Maintenance deletes them along with attachment files.
 

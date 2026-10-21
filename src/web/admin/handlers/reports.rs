@@ -17,7 +17,7 @@ use crate::{
     error::{AppError, Result},
     infrastructure::database::{
         IssueRecord, PotentialIssueMatch, REPORT_PAGE_SIZE, ReportQuery, ReportSummary,
-        SEARCH_VALUE_LIMIT,
+        SEARCH_VALUE_LIMIT, StoredAttachment,
     },
 };
 
@@ -140,6 +140,7 @@ pub struct ReportTemplate {
     attachments: Vec<AttachmentView>,
     events: Vec<HistoryEvent>,
     url_dialog_field: CopyTarget,
+    share_dialog_field: CopyTarget,
 }
 
 /// What the copy button in the untrusted URL dialog says it copies.
@@ -656,6 +657,9 @@ pub async fn show(
         attachments,
         events,
         url_dialog_field: CopyTarget { label: "URL" },
+        share_dialog_field: CopyTarget {
+            label: "share link",
+        },
     }))
 }
 
@@ -928,23 +932,41 @@ pub async fn attachment(
         .await?
         .ok_or(AppError::NotFound("Attachment not found"))?;
 
+    attachment_response(&state, &attachment, display.inline, true).await
+}
+
+/// An attachment as a response. A signed-in maintainer's browser may keep it, as attachments never change; one opened
+/// through a link that expires is not kept.
+pub(super) async fn attachment_response(
+    state: &AdminState,
+    attachment: &StoredAttachment,
+    inline: bool,
+    cacheable: bool,
+) -> Result<Response> {
     let bytes = state.attachments.read(&attachment.storage_key).await?;
     let content_type = if attachment.media_type == "image/png" {
         "image/png"
     } else {
         "text/plain; charset=utf-8"
     };
-    let disposition = attachment_disposition(&attachment.name, display.inline);
+    let disposition = attachment_disposition(&attachment.name, inline);
 
-    Ok((
+    let mut response = (
         [
             ("content-type", content_type),
             ("content-disposition", disposition.as_str()),
-            ("cache-control", "private, max-age=31536000, immutable"),
         ],
         bytes,
     )
-        .into_response())
+        .into_response();
+    if cacheable {
+        response.headers_mut().insert(
+            "cache-control",
+            axum::http::HeaderValue::from_static("private, max-age=31536000, immutable"),
+        );
+    }
+
+    Ok(response)
 }
 
 #[derive(Deserialize)]

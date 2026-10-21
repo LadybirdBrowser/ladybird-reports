@@ -9,6 +9,7 @@ pub struct AdminSweepResult {
     pub submission_sources_deleted: u64,
     pub inactive_source_blocks_deleted: u64,
     pub audit_events_deleted: u64,
+    pub report_shares_deleted: u64,
     pub reports_ready_for_purge: Vec<ReportId>,
 }
 
@@ -63,6 +64,12 @@ impl AdminDatabase {
         .await?
         .rows_affected();
 
+        let report_shares_deleted =
+            sqlx::query("DELETE FROM report_shares WHERE expires_at <= now()")
+                .execute(&mut *transaction)
+                .await?
+                .rows_affected();
+
         sqlx::query(
             "UPDATE reports
              SET expires_at = created_at + make_interval(days => $1)
@@ -100,6 +107,7 @@ impl AdminDatabase {
             submission_sources_deleted,
             inactive_source_blocks_deleted,
             audit_events_deleted,
+            report_shares_deleted,
             reports_ready_for_purge: rows.into_iter().map(|row| row.get("id")).collect(),
         })
     }

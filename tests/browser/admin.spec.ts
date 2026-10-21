@@ -1064,6 +1064,59 @@ test.describe("authenticated management UI", () => {
     await expect(entries.locator(".eyebrow")).toHaveText("github.labels.web_compat");
   });
 
+  test("shares a report as YAML through a link that works without signing in", async ({ page, playwright }) => {
+    await page.goto(`/reports/${reportId}`);
+
+    // One click: no confirmation, and the link is in a dialog with its copy button.
+    await page.getByRole("button", { name: "Share YAML" }).click();
+    const dialog = page.getByRole("dialog", { name: "Share YAML" });
+    await expect(dialog).toBeVisible();
+    const link = dialog.getByRole("textbox", { name: "Share link" });
+    await expect(link).toHaveValue(new RegExp(`^${adminUrl}/share/[A-Za-z0-9_-]{43}$`));
+    await expect(dialog.getByRole("button", { name: "Copy share link" })).toBeVisible();
+    const url = await link.inputValue();
+
+    // The link is not shown again, and a link is not listed or revoked anywhere on the page.
+    await dialog.getByRole("button", { name: "Close dialog" }).click();
+    await page.reload();
+    await expect(page.getByRole("button", { name: "Revoke" })).toHaveCount(0);
+    await expect(page.getByText(url)).toHaveCount(0);
+
+    // Opened by someone who is not signed in.
+    const anonymous = await playwright.request.newContext();
+    const shared = await anonymous.get(url);
+    expect(shared.status()).toBe(200);
+    expect(shared.headers()["content-type"]).toBe("text/plain; charset=utf-8");
+    expect(shared.headers()["cache-control"]).toBe("private, no-store");
+    expect(shared.headers()["content-encoding"]).toBeUndefined();
+    const document = await shared.text();
+    expect(document).toContain("untrusted");
+    expect(document).toContain(`id: ${reportId}`);
+    // Fields are keys of their own, with the whole page address, which the public GitHub draft leaves the query out of.
+    expect(document).toMatch(/^fields:\n(?:  .*\n|\n)*  url: https:\/\/example\.test\/checkout\?step=payment$/m);
+    expect(document).toContain("name: crash-diagnostics.txt");
+
+    const attachmentUrl = (name: string) =>
+      document.match(new RegExp(`name: ${name}\\n[\\s\\S]*?url: (\\S+)`))![1];
+    const screenshot = await anonymous.get(attachmentUrl("screenshot.png"));
+    expect(screenshot.status()).toBe(200);
+    expect(screenshot.headers()["content-type"]).toBe("image/png");
+    const diagnostics = await anonymous.get(attachmentUrl("crash-diagnostics.txt"));
+    expect(diagnostics.status()).toBe(200);
+    expect(await diagnostics.text()).toContain("Ladybird crash report, format 1");
+
+    // Nothing else opens: unknown, malformed and misplaced tokens all look the same.
+    for (const path of [`/share/${"a".repeat(43)}`, "/share/short", `/share/${"a".repeat(43)}/attachments/${reportId}`]) {
+      const response = await anonymous.get(`${adminUrl}${path}`);
+      expect(response.status(), path).toBe(404);
+    }
+    expect((await anonymous.get(`${url}/attachments/${reportId}`)).status()).toBe(404);
+
+    // Creating a link is in the activity of the report.
+    await expect(page.getByText("report.share_create")).toBeVisible();
+    await anonymous.dispose();
+  });
+
   test("opens account actions in a popover", async ({ page }) => {
     await page.goto("/");
 

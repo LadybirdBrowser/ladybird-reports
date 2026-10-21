@@ -73,6 +73,7 @@ pub fn router(state: AdminState) -> Router {
             get(handlers::reports::attachment).layer(CompressionLayer::new()),
         )
         .route("/github-assets/{id}", get(handlers::issues::github_image))
+        .route("/reports/{id}/shares", post(handlers::shares::create))
         .route("/issues", get(handlers::issues::index))
         .route("/api/issue-list", get(handlers::issues::list))
         .route(
@@ -123,6 +124,12 @@ pub fn router(state: AdminState) -> Router {
         .route(
             "/webhooks/github",
             post(handlers::github_webhook::receive).layer(DefaultBodyLimit::max(256 * 1024)),
+        )
+        // Opened without a session: the token in the address is the permission.
+        .route("/share/{token}", get(handlers::shares::shared_report))
+        .route(
+            "/share/{token}/attachments/{attachment_id}",
+            get(handlers::shares::shared_attachment).layer(CompressionLayer::new()),
         )
         .route("/assets/{name}", get(handlers::assets::unversioned_asset))
         .route(

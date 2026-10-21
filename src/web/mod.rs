@@ -32,7 +32,7 @@ where
                         tracing::info_span!(
                             "http.request",
                             method = %request.method(),
-                            path = request.uri().path(),
+                            path = loggable_path(request.uri().path()).as_ref(),
                             request_id,
                         )
                     })
@@ -44,6 +44,19 @@ where
                     ),
             ),
     )
+}
+
+/// The path of a request as it is logged. The token of a link that shares a report is the permission to open it, so
+/// it never reaches a log.
+fn loggable_path(path: &str) -> std::borrow::Cow<'_, str> {
+    match path
+        .strip_prefix("/share/")
+        .map(|rest| rest.split_once('/'))
+    {
+        Some(Some((_, rest))) => format!("/share/<token>/{rest}").into(),
+        Some(None) => "/share/<token>".into(),
+        None => path.into(),
+    }
 }
 
 async fn assign_request_id(mut request: Request, next: Next) -> Response {
@@ -127,6 +140,16 @@ mod tests {
     use tower::ServiceExt;
 
     use super::{admin_response_headers, public_response_headers};
+
+    #[test]
+    fn the_token_of_a_shared_report_is_not_logged() {
+        assert_eq!(super::loggable_path("/share/secret"), "/share/<token>");
+        assert_eq!(
+            super::loggable_path("/share/secret/attachments/abc"),
+            "/share/<token>/attachments/abc"
+        );
+        assert_eq!(super::loggable_path("/reports/abc"), "/reports/abc");
+    }
 
     #[tokio::test]
     async fn admin_responses_are_private_and_not_stored() {

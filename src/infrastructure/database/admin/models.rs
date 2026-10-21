@@ -60,6 +60,13 @@ pub struct IssueStateCounts {
     pub rejected: i64,
 }
 
+/// What a link opens: the report it shares, and until when.
+#[derive(Clone, Copy, Debug, sqlx::FromRow)]
+pub struct ReportShareAccess {
+    pub report_id: ReportId,
+    pub expires_at: DateTime<Utc>,
+}
+
 /// The title, platform, architecture and URL are filled in after loading, so they are not read from the row.
 #[derive(Clone, Debug, sqlx::FromRow)]
 pub struct ReportSummary {

@@ -291,6 +291,7 @@ async fn run_maintenance(state: AdminState) {
                             || result.submission_sources_deleted > 0
                             || result.inactive_source_blocks_deleted > 0
                             || result.audit_events_deleted > 0
+                            || result.report_shares_deleted > 0
                             || reports_deleted > 0
                         {
                             tracing::info!(
@@ -301,6 +302,7 @@ async fn run_maintenance(state: AdminState) {
                                 inactive_source_blocks_deleted =
                                     result.inactive_source_blocks_deleted,
                                 audit_events_deleted = result.audit_events_deleted,
+                                report_shares_deleted = result.report_shares_deleted,
                                 reports_deleted,
                             );
                         }

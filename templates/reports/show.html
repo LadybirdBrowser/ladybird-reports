@@ -197,6 +197,17 @@
                     </section>
                 {% endif %}
 
+                <section class="action-group">
+                    <button
+                        class="button-secondary"
+                        type="button"
+                        data-share-url="/reports/{{ report.id }}/shares"
+                        data-share-csrf="{{ navigation.as_ref().unwrap().csrf_token }}"
+                    >
+                        Share YAML
+                    </button>
+                </section>
+
                 {% if report.state == ReportState::Rejected %}
                     <section class="action-group">
                         <form method="post" action="/reports/{{ report.id }}/state">
@@ -313,6 +324,34 @@
             </div>
         </aside>
     </div>
+
+    <dialog
+        class="issue-dialog compact-dialog modal-overlay"
+        id="share-dialog"
+        aria-labelledby="share-dialog-title"
+    >
+        <div class="issue-dialog-header">
+            <div>
+                <p class="eyebrow">Report</p>
+                <h2 id="share-dialog-title">Share YAML</h2>
+            </div>
+            <button class="dialog-close" type="button" data-dialog-close aria-label="Close dialog">×</button>
+        </div>
+        <p>Opens this report as YAML, without signing in, for 24 hours. The link is not shown again.</p>
+        {% let field = share_dialog_field %}
+        <div class="url-dialog-field" data-copy-scope>
+            <input
+                type="text"
+                value=""
+                readonly
+                aria-label="Share link"
+                data-copy-source
+                data-share-link
+            >
+            {% include "reports/_copy_button.html" %}
+        </div>
+        <p class="form-note" data-share-error hidden>The link could not be created. Try again.</p>
+    </dialog>
 
     <dialog
         class="issue-dialog compact-dialog modal-overlay"

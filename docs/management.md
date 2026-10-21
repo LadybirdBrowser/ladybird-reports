@@ -78,6 +78,14 @@ existing tracked issues.
 
 ## Runtime settings
 
+A maintainer can share a report with an agent through **Share YAML** on the report page. One click creates a link,
+`/share/<token>` on the admin address, and shows it in a dialog with a copy button. It is shown only then, and works for
+24 hours without signing in. The link opens the report as YAML: the report's kind, state, build and submission time,
+every field under its own name, the address of each attachment, and the tracked GitHub issue when there is one. The
+text of the report comes from an anonymous reporter, and the document says so. The attachments are served under the same
+link. A link cannot be revoked; it ends after 24 hours or with its report. Creating a link is in the audit log. Requests
+for links are limited to 300 per minute in all, and the token is masked in the request logs.
+
 Runtime configuration is stored as one active JSON document. Saving replaces that document after validating it against
 compiled safety limits. The setting details panel describes the setting on the editor line containing the caret.
 

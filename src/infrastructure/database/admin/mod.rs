@@ -6,6 +6,7 @@ mod issues;
 mod maintenance;
 mod models;
 mod notifications;
+mod report_shares;
 mod reports;
 mod settings;
 mod stack_signatures;

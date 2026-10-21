@@ -7,6 +7,7 @@ text_enum! {
         ReportSubmitted => "report.submitted",
         ReportUpdateIssue => "report.update_issue",
         ReportUpdateState => "report.update_state",
+        ReportShareCreate => "report.share_create",
         SubmissionSourceUpdateState => "submission_source.update_state",
         IssueCreate => "issue.create",
         IssueUpdateState => "issue.update_state",

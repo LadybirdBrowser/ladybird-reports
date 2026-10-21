@@ -806,6 +806,76 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
     assert!(ingestion_sweep.challenges_deleted >= 2);
     assert!(ingestion_sweep.rate_buckets_deleted >= 1);
 
+    // A link shares a report for 24 hours, then expires, and goes away with its report.
+    assert!(
+        sqlx::query("SELECT * FROM report_shares LIMIT 1")
+            .execute(&reporting_pool)
+            .await
+            .is_err(),
+        "reporting role cannot read share links"
+    );
+    let share_hash = ladybird_reports::infrastructure::hash_secret("integration-share-token");
+    let expires_at = admin_database
+        .create_report_share(report_id, 999, &share_hash)
+        .await
+        .expect("create share link");
+    let lifetime = expires_at - chrono::Utc::now();
+    assert!(
+        lifetime > chrono::Duration::hours(23) && lifetime <= chrono::Duration::hours(24),
+        "{lifetime}"
+    );
+    let opened = admin_database
+        .open_report_share(&share_hash)
+        .await
+        .expect("open share link")
+        .expect("a new link works");
+    assert_eq!(opened.report_id, report_id);
+    assert!(
+        admin_database
+            .open_report_share(&ladybird_reports::infrastructure::hash_secret(
+                "another token"
+            ))
+            .await
+            .expect("open unknown link")
+            .is_none()
+    );
+    let use_count: i64 = sqlx::query_scalar("SELECT use_count FROM report_shares")
+        .fetch_one(&admin_pool)
+        .await
+        .expect("read how often the link was opened");
+    assert_eq!(use_count, 1);
+
+    sqlx::query(
+        "UPDATE report_shares
+         SET created_at = now() - interval '25 hours', expires_at = now() - interval '1 hour'",
+    )
+    .execute(&admin_pool)
+    .await
+    .expect("expire the link");
+    assert!(
+        admin_database
+            .open_report_share(&share_hash)
+            .await
+            .expect("open expired link")
+            .is_none()
+    );
+
+    let share_actions: Vec<String> = sqlx::query_scalar(
+        "SELECT action FROM audit_events WHERE action LIKE 'report.share_%' ORDER BY id",
+    )
+    .fetch_all(&admin_pool)
+    .await
+    .expect("read share audit events");
+    assert_eq!(share_actions, ["report.share_create"]);
+    admin_database
+        .create_report_share(
+            report_id,
+            999,
+            &ladybird_reports::infrastructure::hash_secret("share-until-purge"),
+        )
+        .await
+        .expect("create a link that is still there when its report is purged");
+
     sqlx::query("UPDATE reports SET expires_at = now() - interval '1 second' WHERE id = $1")
         .bind(report_id)
         .execute(&admin_pool)
@@ -834,6 +904,10 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
     assert_eq!(admin_sweep.sessions_deleted, 1);
     assert_eq!(admin_sweep.oauth_states_deleted, 1);
     assert!(admin_sweep.reports_ready_for_purge.contains(&report_id));
+    assert_eq!(
+        admin_sweep.report_shares_deleted, 1,
+        "only the expired link"
+    );
 
     admin_database
         .finish_report_purge(report_id)
@@ -846,6 +920,13 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
             .expect("query purged report")
             .is_none()
     );
+    let shares_left: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM report_shares WHERE report_id = $1")
+            .bind(report_id)
+            .fetch_one(&admin_pool)
+            .await
+            .expect("count links of the purged report");
+    assert_eq!(shares_left, 0, "links go with their report");
 
     let issue_id = IssueId::new();
     sqlx::query(
