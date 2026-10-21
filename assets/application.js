@@ -725,20 +725,51 @@ function initializeSettingsHelp() {
     const empty = help.querySelector("[data-settings-help-empty]");
     const entries = Array.from(help.querySelectorAll("[data-setting-help-entry]"));
 
-    const update = () => {
-        const lineStart = editor.value.lastIndexOf("\n", editor.selectionStart - 1) + 1;
-        const lineEnd = editor.value.indexOf("\n", editor.selectionStart);
-        const line = editor.value.slice(lineStart, lineEnd < 0 ? undefined : lineEnd);
-        const currentKey = line.match(/"([A-Za-z0-9._-]+)"\s*:/)?.[1];
+    // The path of the setting at the caret, such as "github.labels.web_compat": the same name can occur under more
+    // than one object, so the keys of the objects around it are part of it. The text is pretty-printed, where
+    // indentation says which object a key is in.
+    const pathAtCaret = () => {
+        const lines = editor.value.split("\n");
+        const caretLine = editor.value.slice(0, editor.selectionStart).split("\n").length - 1;
+        const stack = [];
 
-        empty.hidden = Boolean(currentKey);
-        let matched = false;
-        for (const entry of entries) {
-            const active = entry.dataset.settingKey === currentKey;
-            entry.hidden = !active;
-            matched ||= active;
+        for (let index = 0; index <= caretLine; index += 1) {
+            const text = lines[index];
+            const indent = text.length - text.trimStart().length;
+            const key = text.match(/"([A-Za-z0-9._-]+)"\s*:/)?.[1];
+
+            if (key !== undefined) {
+                while (stack.length > 0 && stack.at(-1).indent >= indent) {
+                    stack.pop();
+                }
+                stack.push({ indent, key });
+            } else if (index === caretLine && /^\s*[^\s\]}]/.test(text)) {
+                // An element of a list belongs to the key that opened the list.
+                while (stack.length > 0 && stack.at(-1).indent >= indent) {
+                    stack.pop();
+                }
+            }
         }
-        empty.hidden = matched;
+
+        return stack.length > 0 ? stack.map((entry) => entry.key).join(".") : undefined;
+    };
+
+    const update = () => {
+        const path = pathAtCaret();
+        const name = path?.split(".").at(-1);
+
+        // Without an exact match, as when the text is not laid out as it was served, a name that only one setting
+        // has still finds its description.
+        let matching = entries.filter((entry) => entry.dataset.settingPath === path);
+        if (matching.length === 0 && name !== undefined) {
+            const byName = entries.filter((entry) => entry.dataset.settingKey === name);
+            matching = byName.length === 1 ? byName : [];
+        }
+
+        for (const entry of entries) {
+            entry.hidden = !matching.includes(entry);
+        }
+        empty.hidden = matching.length > 0;
     };
 
     for (const eventName of ["click", "keyup", "select", "input", "focus"]) {

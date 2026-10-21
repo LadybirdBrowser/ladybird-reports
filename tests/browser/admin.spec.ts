@@ -1026,6 +1026,44 @@ test.describe("authenticated management UI", () => {
     await expect(editor).toHaveValue(/"authorization_team": "LadybirdBrowser\/maintainers"/);
   });
 
+  test("explains one setting for a name that occurs under more than one object", async ({ page }) => {
+    await page.goto("/settings");
+    const editor = page.getByLabel("Configuration JSON");
+    const entries = page.locator("[data-setting-help-entry]:visible");
+
+    // The same names are used for the Discord webhooks and the GitHub labels of both kinds of report.
+    const caretAfter = (parent: string, name: string) => editor.evaluate(
+      (element: HTMLTextAreaElement, [parent, name]: string[]) => {
+        const start = element.value.indexOf(`"${parent}"`);
+        const offset = element.value.indexOf(`"${name}"`, start);
+        element.focus();
+        element.setSelectionRange(offset, offset);
+        element.dispatchEvent(new Event("select", { bubbles: true }));
+      },
+      [parent, name],
+    );
+
+    for (const [parent, name, path] of [
+      ["webhook_urls", "web_compat", "discord.webhook_urls.web_compat"],
+      ["labels", "web_compat", "github.labels.web_compat"],
+      ["webhook_urls", "crash", "discord.webhook_urls.crash"],
+      ["labels", "crash", "github.labels.crash"],
+    ]) {
+      await caretAfter(parent, name);
+      await expect(entries).toHaveCount(1);
+      await expect(entries.locator(".eyebrow")).toHaveText(path);
+    }
+
+    // A label in the list belongs to the setting of the list.
+    await editor.evaluate((element: HTMLTextAreaElement) => {
+      const offset = element.value.indexOf('"web compatibility"');
+      element.setSelectionRange(offset, offset);
+      element.dispatchEvent(new Event("select", { bubbles: true }));
+    });
+    await expect(entries).toHaveCount(1);
+    await expect(entries.locator(".eyebrow")).toHaveText("github.labels.web_compat");
+  });
+
   test("opens account actions in a popover", async ({ page }) => {
     await page.goto("/");
 
