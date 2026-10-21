@@ -1279,7 +1279,8 @@ button:active,
     text-align: center;
 }
 
-.filter-pill-triage .filter-pill-count {
+.filter-pill-triage .filter-pill-count,
+.filter-pill-warning .filter-pill-count {
     background: var(--warning-soft);
     color: var(--warning);
 }

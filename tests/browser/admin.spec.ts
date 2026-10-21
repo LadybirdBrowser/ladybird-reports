@@ -234,6 +234,32 @@ test.describe("authenticated management UI", () => {
     });
   });
 
+  test("filters the issue list with status pills", async ({ page }) => {
+    const bar = page.getByRole("navigation", { name: "Filter by issue status" });
+    // The name of a pill also holds its count, and "Resolved" is part of "Unresolved".
+    const pill = (name: string) => bar.getByRole("link", { name: new RegExp(`^${name}\\b`) });
+
+    await page.goto("/issues");
+    await expect(page.locator('input[name="q"]')).toHaveValue("state:unresolved state:needs_attention");
+    await expect(pill("Unresolved")).toHaveAttribute("aria-current", "true");
+    await expect(pill("Needs attention")).toHaveAttribute("aria-current", "true");
+    await expect(pill("Resolved")).not.toHaveAttribute("aria-current", "true");
+    // Every pill shows how many issues are in its state.
+    for (const name of ["Unresolved", "Needs attention", "Resolved", "Rejected"]) {
+      await expect(pill(name).locator(".filter-pill-count")).toHaveText(/^\d+$/);
+    }
+
+    // The same rules as the report list: a click replaces the query and updates the list, and a second click on
+    // the only active pill returns to the default.
+    await pill("Resolved").click();
+    await expect(page.locator('input[name="q"]')).toHaveValue("state:resolved");
+    await expect(pill("Resolved")).toHaveAttribute("aria-current", "true");
+    await expect(page).toHaveURL(/q=state%3Aresolved$/);
+    await pill("Resolved").click();
+    await expect(page.locator('input[name="q"]'))
+      .toHaveValue("state:unresolved state:needs_attention");
+  });
+
   test("serves text attachments uncompressed, and compressed in transit when asked", async ({ page }) => {
     await page.goto(`/reports/${reportId}`);
     const diagnostics = page.getByRole("link", { name: "Download crash-diagnostics.txt" });

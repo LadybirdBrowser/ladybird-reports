@@ -3,9 +3,16 @@
 {% block title %}Issues{% endblock %}
 {% block nav_issues %}aria-current="page"{% endblock %}
 
-{% block scripts %}<script src="/assets/{{ asset_version }}/list-search.js" defer></script>{% endblock %}
+{% block scripts %}
+    <script src="/assets/{{ asset_version }}/list-search.js" defer></script>
+    <script src="/assets/{{ asset_version }}/filter-bar.js" defer></script>
+{% endblock %}
 
 {% block content %}
+    <div class="list-toolbar">
+        {% include "_filter_bar.html" %}
+    </div>
+
     <section class="filter-panel" aria-label="Issue filters">
         <form
             class="filters"

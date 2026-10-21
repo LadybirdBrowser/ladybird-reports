@@ -13,11 +13,31 @@ use crate::{
 };
 
 use super::{
-    GithubIssueAssignment, GithubIssueLink, IssueDetails, IssueRecord, IssueSummary, ReportSummary,
-    insert_audit_event, lock_issue_operations,
+    GithubIssueAssignment, GithubIssueLink, IssueDetails, IssueRecord, IssueStateCounts,
+    IssueSummary, ReportSummary, insert_audit_event, lock_issue_operations,
 };
 
 impl AdminDatabase {
+    /// The issues per state, without those that were merged into another, as in the list.
+    pub async fn issue_state_counts(&self) -> Result<IssueStateCounts> {
+        let totals = sqlx::query_as::<_, (IssueState, i64)>(
+            "SELECT state, count(*) FROM issues WHERE merged_into IS NULL GROUP BY state",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        let mut counts = IssueStateCounts::default();
+        for (state, count) in totals {
+            match state {
+                IssueState::Unresolved => counts.unresolved = count,
+                IssueState::NeedsAttention => counts.needs_attention = count,
+                IssueState::Resolved => counts.resolved = count,
+                IssueState::Rejected => counts.rejected = count,
+            }
+        }
+        Ok(counts)
+    }
+
     pub async fn list_issues(&self, search: &IssueSearch) -> Result<Vec<IssueSummary>> {
         let mut sql = QueryBuilder::<Postgres>::new(
             "SELECT

@@ -17,7 +17,7 @@ use crate::{
 };
 
 use super::super::{
-    AdminState, TemplateResponse,
+    AdminState, FilterBar, FilterOption, TemplateResponse,
     authentication::Navigation,
     session::{CsrfForm, Session},
     templates::HistoryEvent,
@@ -40,6 +40,7 @@ pub struct IssuesTemplate {
     asset_version: &'static str,
     search: String,
     issues: Vec<IssueSummary>,
+    filter_bar: FilterBar,
 }
 
 #[derive(Template)]
@@ -167,13 +168,38 @@ pub async fn index(
     Extension(session): Extension<Session>,
     Query(filters): Query<IssueFilters>,
 ) -> Result<TemplateResponse<IssuesTemplate>> {
-    let issues = load_issue_list(&state, &filters).await?.issues;
+    let (list, counts) = tokio::try_join!(
+        load_issue_list(&state, &filters),
+        state.database.issue_state_counts(),
+    )?;
+    let filter_bar = FilterBar::new(
+        "Filter by issue status",
+        "/issues",
+        &default_issue_search(),
+        &filters.q,
+        [
+            (IssueState::Unresolved, counts.unresolved),
+            (IssueState::NeedsAttention, counts.needs_attention),
+            (IssueState::Resolved, counts.resolved),
+            (IssueState::Rejected, counts.rejected),
+        ]
+        .map(|(issue, count)| {
+            let (label, tone) = issue_state(issue);
+            FilterOption {
+                label,
+                tone,
+                count: Some(count),
+                expression: format!("state:{}", issue.as_str()),
+            }
+        }),
+    );
 
     Ok(TemplateResponse(IssuesTemplate {
         navigation: Some(Navigation::for_session(&state, &session)),
         asset_version: super::assets::asset_version(),
         search: filters.q,
-        issues,
+        issues: list.issues,
+        filter_bar,
     }))
 }
 
@@ -233,6 +259,16 @@ pub async fn search_completions(
     };
 
     Ok(Json(CompletionResponse { results }))
+}
+
+/// The label shown for a state and the tone of its pill, which follows the badge of the issue list.
+fn issue_state(state: IssueState) -> (&'static str, &'static str) {
+    match state {
+        IssueState::Unresolved => ("Unresolved", "triage"),
+        IssueState::NeedsAttention => ("Needs attention", "warning"),
+        IssueState::Resolved => ("Resolved", "resolved"),
+        IssueState::Rejected => ("Rejected", "rejected"),
+    }
 }
 
 fn default_issue_search() -> String {

@@ -51,6 +51,15 @@ pub struct ReportStateCounts {
     pub new_triage: i64,
 }
 
+/// How many issues there are per state.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct IssueStateCounts {
+    pub unresolved: i64,
+    pub needs_attention: i64,
+    pub resolved: i64,
+    pub rejected: i64,
+}
+
 /// The title, platform, architecture and URL are filled in after loading, so they are not read from the row.
 #[derive(Clone, Debug, sqlx::FromRow)]
 pub struct ReportSummary {
