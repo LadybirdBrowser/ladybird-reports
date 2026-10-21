@@ -56,6 +56,7 @@ async fn run() -> Result<()> {
     let github = GithubClient::new(
         required_environment("GITHUB_CLIENT_ID")?,
         required_environment("GITHUB_CLIENT_SECRET")?,
+        required_environment("GITHUB_UPLOAD_TOKEN")?,
     )?;
     let github_webhook_secret = std::env::var("GITHUB_WEBHOOK_SECRET")
         .ok()

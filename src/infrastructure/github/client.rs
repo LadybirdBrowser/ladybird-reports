@@ -16,6 +16,7 @@ pub struct GithubClient {
     http: Client,
     client_id: String,
     client_secret: String,
+    upload_token: String,
     api_base_url: reqwest::Url,
     uploads_base_url: reqwest::Url,
     oauth_base_url: reqwest::Url,
@@ -186,7 +187,9 @@ struct NewIssue<'a> {
 }
 
 impl GithubClient {
-    pub fn new(client_id: String, client_secret: String) -> Result<Self> {
+    /// `upload_token` is a token of a dedicated account, used only to upload screenshots: the upload endpoint accepts
+    /// no GitHub App token, and the user access tokens of maintainers are such tokens.
+    pub fn new(client_id: String, client_secret: String, upload_token: String) -> Result<Self> {
         let http = Client::builder()
             .user_agent("Ladybird-Reports/0.1")
             .connect_timeout(Duration::from_secs(5))
@@ -238,6 +241,7 @@ impl GithubClient {
             http,
             client_id,
             client_secret,
+            upload_token,
             api_base_url,
             uploads_base_url,
             oauth_base_url,
@@ -496,7 +500,6 @@ impl GithubClient {
     /// Markdown. This endpoint is not documented, so callers must be prepared for it to fail.
     pub async fn upload_attachment(
         &self,
-        token: &str,
         repository: &str,
         name: &str,
         content_type: &str,
@@ -506,7 +509,7 @@ impl GithubClient {
             .request_json(
                 Method::GET,
                 &format!("/repos/{repository}"),
-                token,
+                &self.upload_token,
                 Option::<&()>::None,
             )
             .await
@@ -526,7 +529,7 @@ impl GithubClient {
         let response = self
             .http
             .post(url)
-            .bearer_auth(token)
+            .bearer_auth(&self.upload_token)
             .header("accept", "application/json")
             .header("content-type", content_type)
             .body(bytes)
@@ -790,8 +793,12 @@ mod tests {
 
     #[test]
     fn authorization_url_does_not_request_legacy_oauth_scopes() {
-        let client = GithubClient::new("client-id".into(), "client-secret".into())
-            .expect("create GitHub client");
+        let client = GithubClient::new(
+            "client-id".into(),
+            "client-secret".into(),
+            "upload-token".into(),
+        )
+        .expect("create GitHub client");
         let authorization_url = client
             .authorization_url("https://reports.example/auth/callback", "state-token")
             .expect("build authorization URL");

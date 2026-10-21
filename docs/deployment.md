@@ -48,6 +48,27 @@ field's type and visibility before writing an issue URL; it retries failed links
 organization-only visibility also includes repository collaborators, so it is broader than the Reports maintainer login
 policy.
 
+## Screenshot uploads
+
+A new GitHub issue can embed the report's screenshot. GitHub's upload endpoint for issue images is undocumented and
+refuses GitHub App tokens, so the admin service uploads with a separate token, `GITHUB_UPLOAD_TOKEN`, that belongs to a
+dedicated GitHub account. The service uses it only for this, and creates the issue with the maintainer's own token. The
+account that owns the token appears as the uploader of each image.
+
+1. Create a GitHub account for this purpose, and give it access to the issue tracking repository, such as read access
+   through a team. Its role in the organization can be a plain member.
+2. In the organization's **Settings → Personal access tokens**, allow fine-grained personal access tokens, and decide
+   whether they need approval.
+3. As that account, open **Settings → Developer settings → Personal access tokens → Fine-grained tokens** and generate a
+   token with the organization as resource owner, **Only select repositories** set to the tracking repository, and the
+   repository permission **Issues: Read and write**. **Metadata: Read-only** is added automatically. Grant nothing else.
+4. Choose the longest expiry the organization allows, and set `GITHUB_UPLOAD_TOKEN` on the admin service. Replace the
+   token before it expires: when it does, creating an issue with a screenshot fails until it is replaced, and the
+   description needs `{screenshot}` removed to continue.
+
+If an upload fails, the admin service logs `github.attachment_upload_rejected` with GitHub's status and the permissions
+it wanted.
+
 ## Database bootstrap
 
 Start the admin container with `ADMIN_DATABASE_URL`, the GitHub App credentials, `SESSION_ENCRYPTION_KEY`, and the
@@ -109,6 +130,7 @@ characters of the Git commit identifier.
 | `SESSION_ENCRYPTION_KEY` | admin | Base64-encoded 32-byte key for GitHub tokens and pending setup credentials. |
 | `GITHUB_CLIENT_ID` | admin | GitHub App client ID. |
 | `GITHUB_CLIENT_SECRET` | admin | GitHub App client secret used for the user authorization flow. |
+| `GITHUB_UPLOAD_TOKEN` | admin | Fine-grained personal access token of a dedicated GitHub account, used to upload report screenshots. See [Screenshot uploads](#screenshot-uploads). |
 | `GITHUB_WEBHOOK_SECRET` | admin | Secret for verifying signed GitHub issue events. Set the same value in the GitHub App. |
 | `GITHUB_APP_PRIVATE_KEY_BASE64` | admin | Base64-encoded GitHub App private key (PEM), used only to read duplicate issue targets. |
 | `POW_HMAC_KEY` | public API | Base64-encoded 32-byte challenge-signing key. |

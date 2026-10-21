@@ -208,13 +208,8 @@ pub async fn create_from_report(
     let access_token = session.github_access_token(&state)?;
     let description = if form.description.contains(SCREENSHOT_PLACEHOLDER) {
         // Upload before creating the issue, so that a failure leaves nothing half done.
-        let screenshot_url = upload_screenshot(
-            &state,
-            &access_token,
-            &configuration.github.repository,
-            report_id,
-        )
-        .await?;
+        let screenshot_url =
+            upload_screenshot(&state, &configuration.github.repository, report_id).await?;
         embed_screenshot(&form.description, &screenshot_url)
     } else {
         form.description
@@ -259,7 +254,6 @@ pub async fn create_from_report(
 
 async fn upload_screenshot(
     state: &AdminState,
-    access_token: &str,
     repository: &str,
     report_id: ReportId,
 ) -> Result<String> {
@@ -277,7 +271,6 @@ async fn upload_screenshot(
     state
         .github
         .upload_attachment(
-            access_token,
             repository,
             &screenshot.name,
             &screenshot.media_type,
@@ -287,7 +280,7 @@ async fn upload_screenshot(
         .map_err(|error| {
             tracing::warn!(event = "issue.screenshot_upload_failed", %report_id, ?error);
             AppError::InvalidRequest(
-                "The screenshot could not be uploaded to GitHub. Try again, or remove {screenshot} from the description.",
+                "The screenshot could not be uploaded to GitHub. Remove {screenshot} from the description to create the issue without it.",
             )
         })
 }

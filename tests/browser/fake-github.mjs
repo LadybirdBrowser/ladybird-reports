@@ -211,7 +211,7 @@ const server = createServer((request, response) => {
         name: url.searchParams.get("name"),
         content_type: url.searchParams.get("content_type"),
         repository_id: url.searchParams.get("repository_id"),
-        authorized: Boolean(request.headers.authorization),
+        authorized: request.headers.authorization === "Bearer browser-test-upload-token",
         size: Buffer.concat(chunks).length,
       };
       sendJson(response, 201, {

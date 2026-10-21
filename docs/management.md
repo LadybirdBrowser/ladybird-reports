@@ -51,9 +51,10 @@ Selecting an untracked GitHub issue creates the corresponding issue record and a
 publishes it to GitHub and records it in the service as one operation. The editable draft uses the report type, selected
 environment fields, the page URL, and the raw stack trace in a code block. It omits unknown fields and attachments,
 except that a report with a screenshot gets a `{screenshot}` placeholder. When the issue is created, the screenshot is
-uploaded to GitHub, through the same endpoint as dragging an image into an issue, and replaces the placeholder. If the
-upload fails, no issue is created; remove the placeholder to continue without the screenshot. GitHub does not document
-this endpoint, so it may stop working.
+uploaded to GitHub, through the same endpoint as dragging an image into an issue, with the upload account's token
+(see [Screenshot uploads](deployment.md#screenshot-uploads)), and replaces the placeholder. If the upload fails, no
+issue is created; remove the placeholder to continue without the screenshot. GitHub does not document this endpoint,
+so it may stop working.
 Maintainers can review and edit the public draft before creating it. Every issue in the service has a GitHub issue at
 creation. The issue list uses the same search interaction as the report list: Enter or leaving the field updates results
 without reloading the page. Its default query is `state:unresolved state:needs_attention`; clearing the query shows all
