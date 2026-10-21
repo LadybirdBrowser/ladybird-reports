@@ -72,6 +72,7 @@ pub fn router(state: AdminState) -> Router {
             "/attachments/{id}",
             get(handlers::reports::attachment).layer(CompressionLayer::new()),
         )
+        .route("/github-assets/{id}", get(handlers::issues::github_image))
         .route("/issues", get(handlers::issues::index))
         .route("/api/issue-list", get(handlers::issues::list))
         .route(

@@ -221,6 +221,23 @@ const server = createServer((request, response) => {
     return;
   }
 
+  // GitHub redirects an uploaded image to signed storage, which is another address.
+  const assetMatch = url.pathname.match(/^\/user-attachments\/assets\/([0-9a-f-]{36})$/);
+  if (request.method === "GET" && assetMatch) {
+    response.writeHead(302, { location: `/test/asset-storage/${assetMatch[1]}` });
+    response.end();
+    return;
+  }
+
+  if (request.method === "GET" && url.pathname.startsWith("/test/asset-storage/")) {
+    response.writeHead(200, { "content-type": "image/png" });
+    response.end(Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+      "base64",
+    ));
+    return;
+  }
+
   if (request.method === "GET" && url.pathname === "/test/latest-upload") {
     sendJson(response, 200, latestUpload ?? null);
     return;

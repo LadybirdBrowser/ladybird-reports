@@ -25,6 +25,10 @@ initial proposal includes selected report context, the raw stack trace, and the 
 and attachments. A report's screenshot is the exception: the draft holds a placeholder that is uploaded to GitHub, as
 the upload account, when the issue is created, and a maintainer can remove it. That account's token can only edit issues
 in the tracking repository. Maintainers review the public draft before creating the issue.
+Images in an issue's description that were uploaded to GitHub are fetched by the admin service from a fixed GitHub
+address, by identifier, and shown only when GitHub answers with a raster image of at most 10 MiB. The request carries no
+credentials, and the identifier is validated, so a description cannot make the service fetch an arbitrary address. GitHub's
+redirect is followed only to a named `amazonaws.com` host over HTTPS, never to an IP address or another site.
 
 Reports, attachments, and audit events expire after the configured retention period; short-lived unauthenticated and
 authentication records expire individually. Maintenance deletes them along with attachment files.

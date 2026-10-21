@@ -3,6 +3,7 @@ use jsonwebtoken::{Algorithm, EncodingKey, Header, encode};
 use reqwest::{Client, Method, StatusCode};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use std::{sync::Arc, time::Duration};
+use uuid::Uuid;
 
 use base64::Engine;
 
@@ -14,6 +15,8 @@ use crate::{
 #[derive(Clone)]
 pub struct GithubClient {
     http: Client,
+    /// Follows redirects, but only to the scheme of GitHub's own address, for images that redirect to signed storage.
+    image_http: Client,
     client_id: String,
     client_secret: String,
     upload_token: String,
@@ -227,6 +230,23 @@ impl GithubClient {
             ));
         }
 
+        let image_origin = oauth_base_url.clone();
+        let image_http = Client::builder()
+            .user_agent("Ladybird-Reports/0.1")
+            .connect_timeout(Duration::from_secs(5))
+            .timeout(Duration::from_secs(15))
+            .redirect(reqwest::redirect::Policy::custom(move |attempt| {
+                if is_image_redirect_allowed(attempt.url(), &image_origin)
+                    && attempt.previous().len() < 5
+                {
+                    attempt.follow()
+                } else {
+                    attempt.stop()
+                }
+            }))
+            .build()
+            .map_err(AppError::internal)?;
+
         let app_private_key = std::env::var("GITHUB_APP_PRIVATE_KEY_BASE64")
             .ok()
             .map(|encoded| {
@@ -240,6 +260,7 @@ impl GithubClient {
 
         Ok(Self {
             http,
+            image_http,
             client_id,
             client_secret,
             upload_token,
@@ -591,6 +612,55 @@ impl GithubClient {
         Ok(upload.url)
     }
 
+    /// An image that was uploaded to GitHub, such as a screenshot in an issue, as its content type and bytes. GitHub
+    /// redirects its address to signed storage, which the pages of this service cannot load themselves: the address
+    /// of that storage is GitHub's choice, so no content security policy can name it reliably.
+    pub async fn issue_image(&self, id: Uuid) -> Result<(&'static str, Vec<u8>)> {
+        const MAXIMUM_BYTES: usize = 10 * 1024 * 1024;
+
+        let url = self
+            .oauth_base_url
+            .join(&format!("/user-attachments/assets/{id}"))
+            .map_err(AppError::internal)?;
+        let mut response = self
+            .image_http
+            .get(url)
+            .header("accept", "image/*")
+            .send()
+            .await
+            .map_err(AppError::internal)?;
+
+        match response.status() {
+            status if status.is_success() => {}
+            StatusCode::NOT_FOUND => return Err(AppError::NotFound("Image not found")),
+            _ => return Err(AppError::Unavailable),
+        }
+
+        let content_type = response
+            .headers()
+            .get(reqwest::header::CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok())
+            .map(|value| value.split(';').next().unwrap_or_default().trim())
+            .and_then(image_content_type)
+            .ok_or(AppError::NotFound("Image not found"))?;
+
+        if response
+            .content_length()
+            .is_some_and(|length| length > MAXIMUM_BYTES as u64)
+        {
+            return Err(AppError::PayloadTooLarge);
+        }
+        let mut bytes = Vec::new();
+        while let Some(chunk) = response.chunk().await.map_err(AppError::internal)? {
+            if bytes.len() + chunk.len() > MAXIMUM_BYTES {
+                return Err(AppError::PayloadTooLarge);
+            }
+            bytes.extend_from_slice(&chunk);
+        }
+
+        Ok((content_type, bytes))
+    }
+
     pub async fn verify_private_text_issue_field(
         &self,
         token: &str,
@@ -705,6 +775,28 @@ impl GithubClient {
     }
 }
 
+/// Where GitHub may send a request for an uploaded image on: its own address, or the signed storage it keeps images
+/// in, which must be a named host of Amazon's storage over HTTPS. Nothing else is followed, whatever the redirect says.
+fn is_image_redirect_allowed(target: &reqwest::Url, github: &reqwest::Url) -> bool {
+    if target.origin() == github.origin() {
+        return true;
+    }
+
+    target.scheme() == "https"
+        && target.port().is_none()
+        && target.username().is_empty()
+        && target
+            .host_str()
+            .is_some_and(|host| host.ends_with(".amazonaws.com"))
+}
+
+/// The content types that are served as an image, which keeps anything else GitHub may send from being shown.
+fn image_content_type(content_type: &str) -> Option<&'static str> {
+    ["image/png", "image/jpeg", "image/gif", "image/webp"]
+        .into_iter()
+        .find(|allowed| content_type.eq_ignore_ascii_case(allowed))
+}
+
 fn is_attachment_url(url: &str) -> bool {
     url.strip_prefix("https://github.com/user-attachments/assets/")
         .is_some_and(|id| {
@@ -745,6 +837,41 @@ mod tests {
     use super::{
         DuplicateLookup, GithubClient, GraphqlResponse, is_attachment_url, team_membership_path,
     };
+
+    #[test]
+    fn image_redirects_only_go_to_github_or_amazon_storage() {
+        let github = reqwest::Url::parse("https://github.com").unwrap();
+        let allowed = |target: &str| {
+            super::is_image_redirect_allowed(&reqwest::Url::parse(target).unwrap(), &github)
+        };
+
+        assert!(allowed("https://github.com/user-attachments/assets/x"));
+        assert!(allowed(
+            "https://github-production-user-asset-6210df.s3.amazonaws.com/1/2.png?X-Amz-Expires=300"
+        ));
+        for target in [
+            "http://github.com/x",
+            "http://bucket.s3.amazonaws.com/x",
+            "https://example.test/x",
+            "https://amazonaws.com.example.test/x",
+            "https://s3.amazonaws.com.example.test/x",
+            "https://bucket.s3.amazonaws.com:8443/x",
+            "https://user@bucket.s3.amazonaws.com/x",
+            "https://127.0.0.1/x",
+            "https://[::1]/x",
+            "https://169.254.169.254/latest/meta-data",
+        ] {
+            assert!(!allowed(target), "followed {target}");
+        }
+    }
+
+    #[test]
+    fn only_raster_images_are_served() {
+        assert_eq!(super::image_content_type("image/PNG"), Some("image/png"));
+        for content_type in ["image/svg+xml", "text/html", "application/octet-stream", ""] {
+            assert_eq!(super::image_content_type(content_type), None);
+        }
+    }
 
     #[test]
     fn only_github_attachment_addresses_are_accepted() {

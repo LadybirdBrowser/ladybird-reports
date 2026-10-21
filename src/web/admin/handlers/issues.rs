@@ -2,10 +2,12 @@ use askama::Template;
 use axum::{
     Extension, Form, Json,
     extract::{Path, Query, State},
-    response::Redirect,
+    response::{IntoResponse, Redirect, Response},
 };
 use comrak::{Options, markdown_to_html};
 use serde::Deserialize;
+use std::sync::Arc;
+use uuid::Uuid;
 
 use crate::{
     application::{SCREENSHOT_PLACEHOLDER, embed_screenshot, screenshot_attachment},
@@ -59,8 +61,35 @@ pub struct IssueTemplate {
     github_field_warning: bool,
 }
 
+/// Images that were uploaded to GitHub are shown through this service, which fetches them from GitHub: the storage
+/// GitHub redirects them to cannot be allowed by name in the content security policy.
+fn proxied_image_url(url: &str) -> String {
+    url.strip_prefix("https://github.com/user-attachments/assets/")
+        .filter(|id| id.len() == 36)
+        .and_then(|id| Uuid::parse_str(id).ok())
+        .map_or_else(|| url.to_owned(), |id| format!("/github-assets/{id}"))
+}
+
+pub async fn github_image(
+    State(state): State<AdminState>,
+    Path(id): Path<Uuid>,
+) -> Result<Response> {
+    let (content_type, bytes) = state.github.issue_image(id).await?;
+
+    Ok((
+        [
+            ("content-type", content_type),
+            // An uploaded image never changes.
+            ("cache-control", "private, max-age=31536000, immutable"),
+        ],
+        bytes,
+    )
+        .into_response())
+}
+
 fn render_issue_description(markdown: &str) -> String {
     let mut options = Options::default();
+    options.extension.image_url_rewriter = Some(Arc::new(|url: &str| proxied_image_url(url)));
     options.extension.table = true;
     options.extension.strikethrough = true;
     options.extension.autolink = true;
@@ -76,7 +105,32 @@ fn render_issue_description(markdown: &str) -> String {
 
 #[cfg(test)]
 mod markdown_tests {
-    use super::render_issue_description;
+    use super::{proxied_image_url, render_issue_description};
+
+    #[test]
+    fn images_uploaded_to_github_are_shown_through_this_service() {
+        let id = "9e556ce5-f2f6-4e1a-bbfd-1f4a53fd53eb";
+        assert_eq!(
+            proxied_image_url(&format!("https://github.com/user-attachments/assets/{id}")),
+            format!("/github-assets/{id}")
+        );
+        assert!(
+            render_issue_description(&format!(
+                "![x](https://github.com/user-attachments/assets/{id})"
+            ))
+            .contains(&format!("src=\"/github-assets/{id}\""))
+        );
+
+        for url in [
+            "https://example.test/a.png",
+            "https://github.com/user-attachments/assets/not-a-uuid",
+            "https://github.com/user-attachments/assets/9e556ce5f2f64e1abbfd1f4a53fd53eb",
+            "https://github.com/user-attachments/assets/9e556ce5-f2f6-4e1a-bbfd-1f4a53fd53eb/x",
+            "http://github.com/user-attachments/assets/9e556ce5-f2f6-4e1a-bbfd-1f4a53fd53eb",
+        ] {
+            assert_eq!(proxied_image_url(url), url);
+        }
+    }
 
     #[test]
     fn renders_github_markdown_without_trusting_raw_html() {

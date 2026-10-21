@@ -55,7 +55,11 @@ uploaded to GitHub, through the same endpoint as dragging an image into an issue
 (see [Screenshot uploads](deployment.md#screenshot-uploads)), and replaces the placeholder. If the upload fails, no
 issue is created; remove the placeholder to continue without the screenshot. GitHub does not document this endpoint,
 so it may stop working.
-Maintainers can review and edit the public draft before creating it. Every issue in the service has a GitHub issue at
+Maintainers can review and edit the public draft before creating it.
+Images that were uploaded to GitHub, such as that screenshot, are shown in a tracked issue's description through
+`/github-assets/<id>`: the service fetches the image from GitHub for the signed-in maintainer. GitHub redirects such
+an image to storage whose address it chooses, which the content security policy cannot name. Only PNG, JPEG, GIF and
+WebP images up to 10 MiB are served, and only from the fixed GitHub address. Every issue in the service has a GitHub issue at
 creation. The issue list uses the same search interaction as the report list: Enter or leaving the field updates results
 without reloading the page. Its default query is `state:unresolved state:needs_attention`; clearing the query shows all
 states. Plain words search titles, issue IDs, and GitHub issue numbers. Use `state:resolved`, `state:rejected`,

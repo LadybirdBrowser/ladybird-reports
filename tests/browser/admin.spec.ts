@@ -1165,6 +1165,15 @@ test.describe("authenticated management UI", () => {
     await expect(page.getByText("GitHub", { exact: true })).toBeVisible();
     await expect(page.locator(".issue-description"))
       .toContainText("Created by the browser test.");
+    // The screenshot is fetched through this service, since GitHub redirects it to storage the policy cannot name.
+    const screenshot = page.locator(".issue-description img");
+    await expect(screenshot).toHaveAttribute(
+      "src",
+      "/github-assets/00000000-0000-4000-8000-000000000001",
+    );
+    await expect.poll(() =>
+      screenshot.evaluate((image: HTMLImageElement) => image.complete ? image.naturalWidth : 0),
+    ).toBeGreaterThan(0);
     const editFromReports = await page.request.post(page.url(), {
       form: {
         csrf: "browser-test-csrf",
