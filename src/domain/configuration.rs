@@ -46,6 +46,34 @@ pub struct GithubConfiguration {
     #[serde(default = "default_token_refresh_before_seconds")]
     pub token_refresh_before_seconds: u64,
     pub membership_recheck_seconds: u64,
+    #[serde(default)]
+    pub labels: GithubIssueLabels,
+}
+
+/// The labels of the GitHub issue created from a report, by kind of report. A kind without labels gets none.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct GithubIssueLabels {
+    pub crash: Vec<String>,
+    pub web_compat: Vec<String>,
+}
+
+impl GithubIssueLabels {
+    pub fn for_kind(&self, kind: ReportKind) -> &[String] {
+        match kind {
+            ReportKind::Crash => &self.crash,
+            ReportKind::WebCompat => &self.web_compat,
+        }
+    }
+}
+
+impl Default for GithubIssueLabels {
+    fn default() -> Self {
+        Self {
+            crash: vec!["crash".into()],
+            web_compat: vec!["web compatibility".into()],
+        }
+    }
 }
 
 impl Default for GithubConfiguration {
@@ -56,6 +84,7 @@ impl Default for GithubConfiguration {
             reports_issue_field_id: None,
             token_refresh_before_seconds: default_token_refresh_before_seconds(),
             membership_recheck_seconds: 1800,
+            labels: GithubIssueLabels::default(),
         }
     }
 }
@@ -209,6 +238,20 @@ pub const SETTING_DEFINITIONS: &[SettingDefinition] = &[
         "GitHub Reports field",
         "The organization-only GitHub issue text field that links back to a tracked issue.",
         "A positive issue field ID, or null to disable the backlink.",
+    ),
+    setting(
+        "crash",
+        "github.labels.crash",
+        "GitHub crash labels",
+        "The labels of a GitHub issue created from a crash report. GitHub only applies them when the maintainer who creates the issue has push access, and creates a label that does not exist yet.",
+        "A list of label names of at most 50 characters, such as [\"crash\"]; an empty list adds no label.",
+    ),
+    setting(
+        "web_compat",
+        "github.labels.web_compat",
+        "GitHub web compatibility labels",
+        "The labels of a GitHub issue created from a web compatibility report. GitHub only applies them when the maintainer who creates the issue has push access, and creates a label that does not exist yet.",
+        "A list of label names of at most 50 characters, such as [\"web compatibility\"]; an empty list adds no label.",
     ),
     setting(
         "trusted_proxies",
@@ -612,6 +655,7 @@ impl RuntimeConfiguration {
         validate_origin(&self.admin_base_url, "Invalid admin URL")?;
         self.validate_github_repository()?;
         self.validate_github_authorization_team()?;
+        self.validate_github_labels()?;
         if self.github.reports_issue_field_id.is_some_and(|id| id < 1) {
             return Err(AppError::InvalidRequest("Invalid GitHub Reports field ID"));
         }
@@ -641,6 +685,25 @@ impl RuntimeConfiguration {
 
         if !valid_component(owner) || !valid_component(repository) || components.next().is_some() {
             return Err(AppError::InvalidRequest("Invalid GitHub repository"));
+        }
+
+        Ok(())
+    }
+
+    fn validate_github_labels(&self) -> Result<()> {
+        // GitHub limits a label name to 50 characters and an issue to a hundred labels.
+        for labels in [&self.github.labels.crash, &self.github.labels.web_compat] {
+            let invalid = labels.len() > 20
+                || labels.iter().any(|label| {
+                    label.trim().is_empty()
+                        || label.trim() != label
+                        || label.chars().count() > 50
+                        || label.chars().any(char::is_control)
+                });
+
+            if invalid {
+                return Err(AppError::InvalidRequest("Invalid GitHub issue labels"));
+            }
         }
 
         Ok(())
@@ -851,6 +914,46 @@ mod tests {
             .collect::<BTreeSet<_>>();
 
         assert_eq!(documented_paths, configuration_paths);
+    }
+
+    #[test]
+    fn github_labels_follow_the_kind_of_report_and_are_validated() {
+        let labels = GithubIssueLabels::default();
+        assert_eq!(labels.for_kind(ReportKind::Crash), ["crash"]);
+        assert_eq!(
+            labels.for_kind(ReportKind::WebCompat),
+            ["web compatibility"]
+        );
+
+        let mut configuration = RuntimeConfiguration::default();
+        configuration.github.labels.crash = Vec::new();
+        configuration.github.labels.web_compat = vec!["a".into(), "b".into()];
+        assert!(configuration.validate().is_ok());
+
+        for invalid in [
+            vec![String::new()],
+            vec![" padded ".into()],
+            vec!["x".repeat(51)],
+            vec!["new\nline".into()],
+            vec!["label".to_owned(); 21],
+        ] {
+            let mut configuration = RuntimeConfiguration::default();
+            configuration.github.labels.crash = invalid.clone();
+            assert!(configuration.validate().is_err(), "accepted {invalid:?}");
+        }
+    }
+
+    #[test]
+    fn stored_configuration_without_labels_gets_the_default_labels() {
+        let mut stored = serde_json::to_value(RuntimeConfiguration::default()).expect("serialize");
+        stored["github"]
+            .as_object_mut()
+            .expect("github settings")
+            .remove("labels");
+
+        let configuration: RuntimeConfiguration =
+            serde_json::from_value(stored).expect("deserialize");
+        assert_eq!(configuration.github.labels.crash, ["crash"]);
     }
 
     #[test]

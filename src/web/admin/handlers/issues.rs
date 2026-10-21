@@ -11,7 +11,7 @@ use crate::{
     application::{SCREENSHOT_PLACEHOLDER, embed_screenshot, screenshot_attachment},
     domain::{GithubLinkState, IssueId, IssueReportAction, IssueSearch, IssueState, ReportId},
     error::{AppError, Result},
-    infrastructure::database::{IssueRecord, IssueSummary},
+    infrastructure::database::{IssueRecord, IssueSummary, ReportDetails},
 };
 
 use super::super::{
@@ -201,6 +201,11 @@ pub async fn create_from_report(
 ) -> Result<Redirect> {
     session.verify_csrf(&form.csrf)?;
     state.database.ensure_report_unassigned(report_id).await?;
+    let details = state
+        .database
+        .report_details(report_id)
+        .await?
+        .ok_or(AppError::NotFound("Report not found"))?;
 
     crate::infrastructure::database::validate_issue_text(&form.title, &form.description)?;
 
@@ -209,7 +214,7 @@ pub async fn create_from_report(
     let description = if form.description.contains(SCREENSHOT_PLACEHOLDER) {
         // Upload before creating the issue, so that a failure leaves nothing half done.
         let screenshot_url =
-            upload_screenshot(&state, &configuration.github.repository, report_id).await?;
+            upload_screenshot(&state, &configuration.github.repository, &details).await?;
         embed_screenshot(&form.description, &screenshot_url)
     } else {
         form.description
@@ -221,6 +226,7 @@ pub async fn create_from_report(
             &configuration.github.repository,
             form.title.trim(),
             &description,
+            configuration.github.labels.for_kind(details.report.kind),
         )
         .await?;
     let assignment = state
@@ -255,13 +261,8 @@ pub async fn create_from_report(
 async fn upload_screenshot(
     state: &AdminState,
     repository: &str,
-    report_id: ReportId,
+    details: &ReportDetails,
 ) -> Result<String> {
-    let details = state
-        .database
-        .report_details(report_id)
-        .await?
-        .ok_or(AppError::NotFound("Report not found"))?;
     let screenshot =
         screenshot_attachment(&details.attachments).ok_or(AppError::InvalidRequest(
             "This report has no screenshot. Remove {screenshot} from the description.",
@@ -270,19 +271,8 @@ async fn upload_screenshot(
 
     state
         .github
-        .upload_attachment(
-            repository,
-            &screenshot.name,
-            &screenshot.media_type,
-            bytes,
-        )
+        .upload_attachment(repository, &screenshot.name, &screenshot.media_type, bytes)
         .await
-        .map_err(|error| {
-            tracing::warn!(event = "issue.screenshot_upload_failed", %report_id, ?error);
-            AppError::InvalidRequest(
-                "The screenshot could not be uploaded to GitHub. Remove {screenshot} from the description to create the issue without it.",
-            )
-        })
 }
 
 pub async fn show(
@@ -458,6 +448,7 @@ pub async fn create_replacement(
             &configuration.github.repository,
             &details.issue.title,
             &details.issue.description,
+            &[],
         )
         .await?;
     state

@@ -85,7 +85,9 @@ request timeouts, retry delays, and the native-stack excerpt included in each me
 
 The `github` object holds everything about how the service uses GitHub: `repository` (the repository its issues link
 to), `authorization_team` (who may sign in; changing it signs out every session), `reports_issue_field_id`,
-`token_refresh_before_seconds` and `membership_recheck_seconds`.
+`token_refresh_before_seconds` and `membership_recheck_seconds`. `labels.crash` and `labels.web_compat` list the labels
+put on a GitHub issue created from a report of that kind, by default `crash` and `web compatibility`. Each is a list of
+zero or more names, and GitHub only applies them when the maintainer who creates the issue has push access.
 
 The `audit` object controls the audit log. `denied_sign_in_window_seconds` (default 600) limits how often one denied
 GitHub account is recorded; 0 records every denial. `retention_days` (default 3650; 30 to 36500) is how long events are

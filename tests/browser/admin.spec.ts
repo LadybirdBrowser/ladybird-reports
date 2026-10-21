@@ -1183,6 +1183,7 @@ test.describe("authenticated management UI", () => {
     const createdIssue = await page.request.get(
       `${fakeGithub}/test/latest-created-issue`,
     );
+    expect((await createdIssue.json()).labels).toEqual(["web compatibility"]);
     expect((await createdIssue.json()).body).toBe(
       // Browsers submit line breaks in a textarea as CRLF.
       "Created by the browser test.\r\n\r\n" +

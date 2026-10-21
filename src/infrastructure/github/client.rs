@@ -184,6 +184,7 @@ struct GithubUpload {
 struct NewIssue<'a> {
     title: &'a str,
     body: &'a str,
+    labels: &'a [String],
 }
 
 impl GithubClient {
@@ -490,10 +491,20 @@ impl GithubClient {
         repository: &str,
         title: &str,
         body: &str,
+        labels: &[String],
     ) -> Result<GithubIssue> {
         let path = format!("/repos/{repository}/issues");
-        self.request_json(Method::POST, &path, token, Some(&NewIssue { title, body }))
-            .await
+        self.request_json(
+            Method::POST,
+            &path,
+            token,
+            Some(&NewIssue {
+                title,
+                body,
+                labels,
+            }),
+        )
+        .await
     }
 
     /// Upload an image the way dragging it into an issue on github.com does, and return the address to embed in
