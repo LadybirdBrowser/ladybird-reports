@@ -444,62 +444,7 @@
             {% endif %}
             <form method="post" action="/reports/{{ report.id }}/issue">
                 <input type="hidden" name="csrf" value="{{ navigation.as_ref().unwrap().csrf_token }}">
-                <div
-                    class="entity-selector"
-                    data-entity-selector
-                    data-search-url="/api/issue-options"
-                    data-entity-singular="issue"
-                    data-entity-plural="issues"
-                    data-maximum-selections="1"
-                >
-                    <input
-                        type="hidden"
-                        name="issue_selection"
-                        value=""
-                        required
-                        data-entity-value
-                    >
-                    <div class="entity-selector-selection" data-entity-selection hidden>
-                        <div class="entity-selector-selection-header">
-                            <span>Selected issue</span>
-                            <span data-entity-selection-count></span>
-                        </div>
-                        <div class="entity-selector-chips" data-entity-chips></div>
-                    </div>
-                    <div class="entity-selector-input-wrap">
-                        <span class="search-glyph" aria-hidden="true"></span>
-                        <input
-                            type="search"
-                            role="combobox"
-                            aria-label="Search issues"
-                            aria-autocomplete="list"
-                            aria-controls="issue-results"
-                            aria-expanded="false"
-                            autocomplete="off"
-                            placeholder="Search Reports and GitHub issues…"
-                            data-entity-search
-                        >
-                    </div>
-                    <div class="entity-selector-popover" data-entity-popover popover="auto">
-                        <div class="entity-selector-popover-header">
-                            <span>Matching issues</span>
-                            <span data-entity-result-count></span>
-                        </div>
-                        <div
-                            id="issue-results"
-                            class="entity-selector-results"
-                            role="listbox"
-                            aria-label="Matching issues"
-                            data-entity-results
-                        ></div>
-                        <div class="entity-selector-empty" data-entity-empty hidden>
-                            <span class="entity-selector-empty-icon" aria-hidden="true"></span>
-                            <strong>No issues found</strong>
-                            <span>Try words from the title or a GitHub issue number.</span>
-                        </div>
-                    </div>
-                    <p class="visually-hidden" aria-live="polite" data-entity-status></p>
-                </div>
+                {% include "reports/_issue_selector.html" %}
                 <div class="dialog-actions">
                     <button class="button-secondary" type="button" data-dialog-close>
                         Cancel

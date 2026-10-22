@@ -11,8 +11,8 @@ use ladybird_reports::{
     domain::{
         AttachmentManifest, AttachmentMediaType, AuditAction, DiagnosticField, FieldKind,
         FieldValue, GithubLinkState, GithubSyncSource, IssueId, IssueReportAction, IssueSearch,
-        IssueState, ReportId, ReportKind, ReportManifest, ReportState, STACK_SIGNATURE_VERSION,
-        StorageState, SubmissionId, UploadId, proof_is_valid, sha256_hex,
+        IssueState, ReportId, ReportKind, ReportManifest, ReportState, ReportStateAction,
+        STACK_SIGNATURE_VERSION, StorageState, SubmissionId, UploadId, proof_is_valid, sha256_hex,
     },
     infrastructure::{
         SecretCipher,
@@ -2066,6 +2066,7 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
     assert_eq!(destination_count, 1);
 
     assert_reports_follow_their_issue(&admin_pool, &admin_database).await;
+    assert_bulk_report_actions(&admin_pool, &admin_database).await;
 
     // The indexer is event-driven. Reports that became ready before it started are found by its startup check, spanning
     // more than one batch; a report that becomes ready afterwards is found because the database announces it, as the
@@ -2183,6 +2184,175 @@ async fn assert_reports_follow_their_issue(pool: &sqlx::PgPool, database: &Admin
     issue_state(pool, issue_id, "unresolved", "open").await;
     assert_eq!(state_of(pool, unlinked).await, "triage");
     assert_eq!(state_of(pool, tracked).await, "confirmed");
+}
+
+async fn assert_bulk_report_actions(pool: &sqlx::PgPool, database: &AdminDatabase) {
+    async fn state_of(pool: &sqlx::PgPool, report_id: ReportId) -> (String, Option<IssueId>) {
+        sqlx::query_as("SELECT state, issue_id FROM reports WHERE id = $1")
+            .bind(report_id)
+            .fetch_one(pool)
+            .await
+            .expect("read report state and issue")
+    }
+    async fn insert_issue(pool: &sqlx::PgPool, github_number: i64) -> IssueId {
+        let issue_id = IssueId::new();
+        sqlx::query(
+            "INSERT INTO issues
+                (id, title, description, github_number, github_url, github_repository)
+             VALUES ($1, 'Bulk actions', '', $2,
+                'https://github.com/example/example/issues/' || $2, 'example/example')",
+        )
+        .bind(issue_id)
+        .bind(github_number)
+        .execute(pool)
+        .await
+        .expect("insert issue");
+        issue_id
+    }
+
+    let issue = insert_issue(pool, 9200).await;
+    let other_issue = insert_issue(pool, 9201).await;
+    let mut reports = Vec::new();
+    for index in 0..3 {
+        let stack = format!("#0 in Bulk{index}::crash() at liblagom.so");
+        reports.push(insert_stack_report_for_matching(pool, &stack, 0).await);
+    }
+
+    // Several reports are linked to an issue at once, and linking them again changes nothing.
+    for _ in 0..2 {
+        database
+            .assign_reports_to_issue(&reports, issue, 999)
+            .await
+            .expect("link the reports");
+        for &report in &reports {
+            assert_eq!(
+                state_of(pool, report).await,
+                ("confirmed".into(), Some(issue))
+            );
+        }
+    }
+
+    // All or none: a report that is on another issue keeps every report from being linked.
+    let elsewhere =
+        insert_stack_report_for_matching(pool, "#0 in Bulk3::crash() at liblagom.so", 0).await;
+    database
+        .assign_report_to_issue(elsewhere, other_issue, 999)
+        .await
+        .expect("link a report to the other issue");
+    let unlinked =
+        insert_stack_report_for_matching(pool, "#0 in Bulk4::crash() at liblagom.so", 0).await;
+    assert!(
+        database
+            .assign_reports_to_issue(&[unlinked, elsewhere], issue, 999)
+            .await
+            .is_err(),
+        "a report on another issue fails the whole request"
+    );
+    assert_eq!(state_of(pool, unlinked).await, ("triage".into(), None));
+
+    // Rejecting reports rejects all of them, and rejecting them again changes nothing.
+    let changed = database
+        .apply_report_state_action(&reports, ReportStateAction::Reject, 999)
+        .await
+        .expect("reject the reports");
+    assert_eq!(changed, 3);
+    assert_eq!(
+        database
+            .apply_report_state_action(&reports, ReportStateAction::Reject, 999)
+            .await
+            .expect("reject the reports again"),
+        0
+    );
+    for &report in &reports {
+        assert_eq!(
+            state_of(pool, report).await,
+            ("rejected".into(), Some(issue))
+        );
+    }
+
+    // Confirming restores linked reports; one that isn't linked fails the whole request.
+    database
+        .apply_report_state_action(&[unlinked], ReportStateAction::Reject, 999)
+        .await
+        .expect("reject the unlinked report");
+    assert!(
+        database
+            .apply_report_state_action(&[reports[0], unlinked], ReportStateAction::Confirm, 999)
+            .await
+            .is_err(),
+        "an unlinked report can't be confirmed"
+    );
+    assert_eq!(
+        state_of(pool, reports[0]).await,
+        ("rejected".into(), Some(issue))
+    );
+    assert_eq!(
+        database
+            .apply_report_state_action(&reports[..2], ReportStateAction::Confirm, 999)
+            .await
+            .expect("confirm the linked reports"),
+        2
+    );
+    assert_eq!(
+        state_of(pool, reports[1]).await,
+        ("confirmed".into(), Some(issue))
+    );
+
+    // A confirmed report of a resolved issue is resolved, as the issue is.
+    sqlx::query(
+        "UPDATE issues SET state = 'resolved', github_state = 'closed', resolved_at = now() WHERE id = $1",
+    )
+    .bind(issue)
+    .execute(pool)
+    .await
+    .expect("resolve the issue");
+    database
+        .apply_report_state_action(&reports[2..], ReportStateAction::Confirm, 999)
+        .await
+        .expect("confirm the report of the resolved issue");
+    assert_eq!(
+        state_of(pool, reports[2]).await,
+        ("resolved".into(), Some(issue))
+    );
+
+    // Returning to triage unlinks linked reports and restores rejected ones that aren't linked.
+    assert_eq!(
+        database
+            .apply_report_state_action(
+                &[reports[0], reports[1], unlinked],
+                ReportStateAction::ReturnToTriage,
+                999,
+            )
+            .await
+            .expect("return the reports to triage"),
+        3
+    );
+    for report in [reports[0], reports[1], unlinked] {
+        assert_eq!(state_of(pool, report).await, ("triage".into(), None));
+    }
+    let unlink_events: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM audit_events
+         WHERE entity_id = $1 AND action = 'report.update_issue' AND details->>'to' IS NULL",
+    )
+    .bind(reports[1].0)
+    .fetch_one(pool)
+    .await
+    .expect("count unlink events");
+    assert_eq!(unlink_events, 1);
+
+    // A report that doesn't exist fails the whole request.
+    assert!(
+        database
+            .apply_report_state_action(
+                &[reports[0], ReportId::new()],
+                ReportStateAction::Reject,
+                999
+            )
+            .await
+            .is_err(),
+        "an unknown report fails the whole request"
+    );
+    assert_eq!(state_of(pool, reports[0]).await, ("triage".into(), None));
 }
 
 fn new_session<'a>(authorized_team: &'a str, token_hash: &'a str) -> NewSession<'a> {

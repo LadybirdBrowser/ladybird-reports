@@ -1343,6 +1343,84 @@ button:active,
     min-width: 0;
 }
 
+/* The report list leads with a column of checkboxes, so its other columns move one along. */
+.report-list-table th:first-child {
+    width: 2.75rem;
+}
+
+.report-list-table th:nth-child(2) {
+    width: 58%;
+}
+
+.report-list-table th:nth-child(3) {
+    width: 16%;
+}
+
+/* Above the row link, so a click selects the report instead of opening it. The label fills the cell, so a click
+   anywhere in it does. */
+.report-select {
+    position: relative;
+    z-index: 1;
+    padding: 0;
+}
+
+.report-select-target {
+    display: flex;
+    min-height: 100%;
+    padding: 0.85rem 0.75rem;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+}
+
+.report-select-target input {
+    margin: 0;
+}
+
+/* What can be done to every selected report: see report-selection.js. */
+.bulk-actions {
+    display: flex;
+    position: sticky;
+    z-index: 2;
+    top: 0.75rem;
+    margin-bottom: 0.75rem;
+    padding: 0.6rem 0.9rem;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.6rem 1rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: var(--surface);
+    box-shadow: var(--shadow-sm);
+}
+
+.bulk-actions[hidden] {
+    display: none;
+}
+
+.bulk-actions-count,
+.bulk-actions-limit,
+.bulk-actions-error {
+    margin: 0;
+}
+
+.bulk-actions-limit,
+.bulk-actions-error {
+    color: var(--danger);
+}
+
+.bulk-actions-buttons {
+    display: flex;
+    margin-left: auto;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.bulk-actions-buttons form {
+    margin: 0;
+}
+
 /* The reports of an issue: no state column, so the report gets the room. */
 .issue-report-table th:first-child {
     width: auto;
@@ -1463,8 +1541,11 @@ button:active,
 }
 
 .report-group-member td:first-child {
-    padding-left: 2.2rem;
     box-shadow: inset 3px 0 0 var(--border-strong);
+}
+
+.report-group-member .report-table-report {
+    padding-left: 2.2rem;
 }
 
 /* Data and status */
@@ -3019,6 +3100,27 @@ pre {
     .report-group-member td:first-child {
         padding-left: 0;
         box-shadow: none;
+    }
+
+    .report-group-member .report-table-report {
+        padding-left: 0;
+    }
+
+    /* The checkbox gets its own column, beside both lines of the row. */
+    .report-list-table tr {
+        grid-template-areas:
+            "select report report"
+            "select state received";
+        grid-template-columns: auto minmax(0, 1fr) auto;
+    }
+
+    .report-list-table .report-select {
+        grid-area: select;
+        align-self: start;
+    }
+
+    .report-list-table .report-select-target {
+        padding: 0.15rem 0.75rem 0 0;
     }
 
     .issue-report-table tr {

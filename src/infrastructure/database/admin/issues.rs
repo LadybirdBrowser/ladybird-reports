@@ -14,7 +14,7 @@ use crate::{
 
 use super::{
     GithubIssueAssignment, GithubIssueLink, IssueDetails, IssueRecord, IssueStateCounts,
-    IssueSummary, ReportSummary, insert_audit_event, lock_issue_operations,
+    IssueSummary, ReportSummary, insert_audit_event, lock_issue_operations, reports::in_lock_order,
 };
 
 impl AdminDatabase {
@@ -200,6 +200,23 @@ impl AdminDatabase {
         repository: &str,
         actor: i64,
     ) -> Result<GithubIssueAssignment> {
+        self.assign_reports_to_github_issue(issue, &[report_id], repository, actor)
+            .await
+    }
+
+    /// Links ready reports to the issue that tracks an open GitHub issue, creating that issue first if nothing tracks
+    /// it yet: all of them, or none if one of them can't be linked.
+    pub async fn assign_reports_to_github_issue(
+        &self,
+        issue: &GithubIssue,
+        report_ids: &[ReportId],
+        repository: &str,
+        actor: i64,
+    ) -> Result<GithubIssueAssignment> {
+        let report_ids = in_lock_order(report_ids);
+        let Some(&first_report_id) = report_ids.first() else {
+            return Err(AppError::InvalidRequest("Select a report"));
+        };
         let description = issue.body.as_deref().unwrap_or_default();
         validate_issue_text(&issue.title, description)?;
         if issue.state != GithubIssueState::Open || !issue.belongs_to_repository(repository) {
@@ -289,18 +306,26 @@ impl AdminDatabase {
                 Some(actor),
                 AuditAction::IssueCreate,
                 Some(issue_id.0),
-                serde_json::json!({
-                    "github_number": issue.number,
-                    "github_url": issue.html_url,
-                    "report_id": report_id,
-                }),
+                if report_ids.len() == 1 {
+                    serde_json::json!({
+                        "github_number": issue.number,
+                        "github_url": issue.html_url,
+                        "report_id": first_report_id,
+                    })
+                } else {
+                    serde_json::json!({
+                        "github_number": issue.number,
+                        "github_url": issue.html_url,
+                        "report_ids": report_ids,
+                    })
+                },
             )
             .await?;
 
             (issue_id, true)
         };
 
-        self.link_report(&mut transaction, report_id, issue_id, actor)
+        self.link_reports(&mut transaction, &report_ids, issue_id, actor)
             .await?;
         transaction.commit().await?;
 
@@ -394,6 +419,22 @@ impl AdminDatabase {
         .await?
         .ok_or(AppError::NotFound("Assigned report not found"))?;
 
+        self.unlink_report(&mut transaction, report_id, issue_id, previous_state, actor)
+            .await?;
+
+        transaction.commit().await?;
+        Ok(())
+    }
+
+    /// Unlinks a locked report from its issue within the caller's transaction, which returns it to triage.
+    pub(super) async fn unlink_report(
+        &self,
+        transaction: &mut sqlx::Transaction<'_, Postgres>,
+        report_id: ReportId,
+        issue_id: IssueId,
+        previous_state: ReportState,
+        actor: i64,
+    ) -> Result<()> {
         sqlx::query(
             "UPDATE reports
              SET issue_id = NULL, state = 'triage', updated_at = now()
@@ -402,11 +443,11 @@ impl AdminDatabase {
         )
         .bind(report_id)
         .bind(issue_id)
-        .execute(&mut *transaction)
+        .execute(&mut **transaction)
         .await?;
 
         insert_audit_event(
-            &mut *transaction,
+            &mut **transaction,
             Some(actor),
             AuditAction::ReportUpdateIssue,
             Some(report_id.0),
@@ -416,7 +457,7 @@ impl AdminDatabase {
 
         if previous_state != ReportState::Triage {
             self.audit_report_state_change(
-                &mut transaction,
+                transaction,
                 report_id,
                 actor,
                 previous_state,
@@ -424,8 +465,6 @@ impl AdminDatabase {
             )
             .await?;
         }
-
-        transaction.commit().await?;
         Ok(())
     }
 
