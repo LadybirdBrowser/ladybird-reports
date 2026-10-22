@@ -6,9 +6,14 @@
         </div>
     {% else %}
         <div class="table-scroll report-table-scroll">
-            <table class="report-table">
+            <table class="report-table report-list-table">
             <thead>
                 <tr>
+                    <th class="report-select">
+                        <label class="report-select-target">
+                            <input type="checkbox" aria-label="Select every report in the list" data-report-select-all>
+                        </label>
+                    </th>
                     <th>Report</th>
                     <th>State</th>
                     <th>Received</th>
@@ -20,6 +25,16 @@
                         class="clickable-report-row"
                         {% if let Some(signature) = report.signature %}data-signature="{{ signature }}"{% endif %}
                     >
+                        <td class="report-select">
+                            <label class="report-select-target">
+                                <input
+                                    type="checkbox"
+                                    value="{{ report.id }}"
+                                    aria-label="Select {{ report.title }}"
+                                    data-report-select
+                                >
+                            </label>
+                        </td>
                         <td class="report-table-report">
                             <a
                                 class="primary-link report-title-link row-link"

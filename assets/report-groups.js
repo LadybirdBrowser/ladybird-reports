@@ -47,6 +47,16 @@ function createHeader(newest) {
     link.replaceWith(toggle);
     header.querySelector(".report-table-metadata").hidden = true;
 
+    // The header's checkbox selects the reports of the group, rather than the report it repeats (see
+    // report-selection.js).
+    const checkbox = header.querySelector("[data-report-select]");
+    if (checkbox) {
+        delete checkbox.dataset.reportSelect;
+        checkbox.removeAttribute("value");
+        checkbox.checked = false;
+        checkbox.dataset.reportSelectGroup = "";
+    }
+
     return header;
 }
 
@@ -66,6 +76,9 @@ function describe(header) {
     }
 
     header.querySelector(".report-group-count").textContent = rows.length;
+    header
+        .querySelector("[data-report-select-group]")
+        ?.setAttribute("aria-label", `Select the ${rows.length} reports of this group`);
     header.querySelector(".badge:not(.report-group-count)").title =
         Array.from(states, ([state, count]) => `${count} ${state}`).join(" · ");
 }

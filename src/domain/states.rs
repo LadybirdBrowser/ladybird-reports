@@ -8,6 +8,17 @@ text_enum! {
     }
 }
 
+/// A state change asked of several reports at once. Each report moves as it would from its own page: a report is
+/// confirmed by its issue link, returns to triage by losing it, and can be rejected whatever its state.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ReportStateAction {
+    /// Restores rejected reports that are linked to an issue.
+    Confirm,
+    /// Unlinks linked reports, and restores rejected ones that aren't linked.
+    ReturnToTriage,
+    Reject,
+}
+
 text_enum! {
     /// Where an internal issue is in its life. Mirrors the `issues_state_valid` constraint.
     pub enum IssueState {

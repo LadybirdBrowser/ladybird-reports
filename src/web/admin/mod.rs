@@ -50,6 +50,7 @@ pub fn router(state: AdminState) -> Router {
             "/reports/{id}/unblock-ip",
             post(handlers::reports::unblock_ip),
         )
+        .route("/reports/bulk", post(handlers::reports::bulk_action))
         .route(
             "/reports/{report_id}/issue",
             post(handlers::reports::assign_to_issue),

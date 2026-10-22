@@ -1701,7 +1701,68 @@ test.describe("authenticated management UI", () => {
     await expect(page.locator(".badge-resolved")).toHaveText("Resolved");
   });
 
+  test("applies an action to every selected report at once", async ({ page }) => {
+    // Four rejected reports, in two groups: two crashes and two web compatibility reports.
+    const bulkReports = (state: string) => `/?q=state%3A${state}+version%3A%22Bulk+fixture%22`;
+    const bar = page.getByRole("region", { name: /selected$/ });
+    const reports = page.locator("tbody tr:not(.report-group-row)");
+    const selectAll = page.getByLabel("Select every report in the list");
+    const crashGroup = page.locator(".report-group-row", { hasText: "Crash" }).getByRole("checkbox");
 
+    await page.goto(bulkReports("rejected"));
+    await expect(reports).toHaveCount(4);
+    await expect(bar).toBeHidden();
+
+    // A group's checkbox selects its reports, and the list's checkbox selects every report.
+    await crashGroup.check();
+    await expect(bar).toContainText("2 reports selected");
+    await expect(selectAll).toHaveJSProperty("indeterminate", true);
+    await selectAll.check();
+    await expect(bar).toContainText("4 reports selected");
+    await expect(crashGroup).toBeChecked();
+
+    // Back to triage asks first, then restores rejected reports that aren't linked to an issue.
+    await bar.getByRole("button", { name: "Back to triage" }).click();
+    const triage = page.getByRole("dialog", { name: "Return 4 reports to triage?" });
+    await triage.getByRole("button", { name: "Back to triage" }).click();
+    await expect(page.getByText("No matching reports")).toBeVisible();
+    await expect.poll(() => new URL(page.url()).searchParams.get("q"))
+      .toBe('state:rejected version:"Bulk fixture"');
+
+    // Adding reports to an issue confirms them, and opens the issue (which an earlier test merged into another).
+    await page.goto(bulkReports("triage"));
+    await crashGroup.check();
+    await bar.getByRole("button", { name: "Add to issue…" }).click();
+    const dialog = page.getByRole("dialog", { name: "Add 2 reports to an issue" });
+    await dialog.getByRole("combobox", { name: "Search issues" }).fill("navigation timeout");
+    await page.getByRole("option", { name: /Intermittent navigation timeout/ }).click();
+    await dialog.getByRole("button", { name: "Add reports", exact: true }).click();
+    await expect(page).toHaveURL(/\/issues\/[0-9a-f-]+$/);
+    await page.goto(bulkReports("confirmed"));
+    await expect(reports).toHaveCount(2);
+
+    // Reject asks first, then rejects every selected report, linked or not.
+    await page.goto(bulkReports("triage+state%3Aconfirmed"));
+    await selectAll.check();
+    await bar.getByRole("button", { name: "Reject" }).click();
+    await page.getByRole("dialog", { name: "Reject 4 reports?" }).getByRole("button", { name: "Reject" }).click();
+    await expect(page.getByText("No matching reports")).toBeVisible();
+
+    // Confirming needs an issue link for every report; when one lacks it, nothing changes and the bar says why.
+    await page.goto(bulkReports("rejected"));
+    await selectAll.check();
+    await bar.getByRole("button", { name: "Confirm" }).click();
+    await expect(bar.getByRole("alert")).toHaveText("Add the selected reports to an issue to confirm them");
+    await expect(bar).toContainText("4 reports selected");
+    await page.reload();
+    await expect(reports).toHaveCount(4);
+
+    await crashGroup.check();
+    await bar.getByRole("button", { name: "Confirm" }).click();
+    await expect(reports).toHaveCount(2);
+    await page.goto(bulkReports("confirmed"));
+    await expect(reports).toHaveCount(2);
+  });
 });
 
 // Last, because it waits for a sweep of the background task. The fake GitHub issues tokens that expire inside the

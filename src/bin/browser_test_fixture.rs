@@ -405,6 +405,32 @@ async fn main() -> Result<()> {
         .await?;
     }
 
+    // Two crashes and two web compatibility reports for the bulk actions, rejected so that the default list doesn't
+    // count them.
+    for index in 0..4 {
+        insert_example_report(
+            &mut transaction,
+            ExampleReport {
+                kind: if index % 2 == 0 {
+                    ReportKind::Crash
+                } else {
+                    ReportKind::WebCompat
+                },
+                client_version: "Bulk fixture",
+                build: "BulkOS · x86_64 · Release",
+                platform: "BulkOS",
+                architecture: "x86_64",
+                hours_ago: 2 + index,
+                issue_id: None,
+                confirmed: false,
+            },
+        )
+        .await?;
+    }
+    sqlx::query("UPDATE reports SET state = 'rejected' WHERE client_version = 'Bulk fixture'")
+        .execute(&mut *transaction)
+        .await?;
+
     transaction.commit().await?;
 
     // Exercise the same backfill used for reports submitted before deployment.

@@ -5,8 +5,8 @@ use sqlx::{Postgres, QueryBuilder, Row};
 use crate::{
     domain::{
         AttachmentId, AuditAction, IssueId, IssueState, REPORT_TITLE_STACK_CHARACTERS, ReportId,
-        ReportKind, ReportState, ReportTitleInput, STACK_SIGNATURE_VERSION, TitleStyle,
-        generate_report_title,
+        ReportKind, ReportState, ReportStateAction, ReportTitleInput, STACK_SIGNATURE_VERSION,
+        TitleStyle, generate_report_title,
     },
     error::{AppError, Result},
     infrastructure::database::AdminDatabase,
@@ -463,6 +463,17 @@ impl AdminDatabase {
         issue_id: IssueId,
         actor: i64,
     ) -> Result<()> {
+        self.assign_reports_to_issue(&[report_id], issue_id, actor)
+            .await
+    }
+
+    /// Links ready reports to an issue in one transaction: all of them, or none if one of them can't be linked.
+    pub async fn assign_reports_to_issue(
+        &self,
+        report_ids: &[ReportId],
+        issue_id: IssueId,
+        actor: i64,
+    ) -> Result<()> {
         let mut transaction = self.pool.begin().await?;
 
         // Human issue operations share one lock. This prevents an assignment from racing with a merge or hide while
@@ -488,9 +499,44 @@ impl AdminDatabase {
             ));
         }
 
-        self.link_report(&mut transaction, report_id, issue_id, actor)
+        self.link_reports(&mut transaction, report_ids, issue_id, actor)
             .await?;
         transaction.commit().await?;
+        Ok(())
+    }
+
+    /// Links ready reports to an issue within the caller's transaction, as link_report() does, locking them in a
+    /// fixed order so that two requests for overlapping reports can't deadlock.
+    pub(super) async fn link_reports(
+        &self,
+        transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        report_ids: &[ReportId],
+        issue_id: IssueId,
+        actor: i64,
+    ) -> Result<()> {
+        let report_ids = in_lock_order(report_ids);
+        if report_ids.len() > 1 {
+            let linked_elsewhere: bool = sqlx::query_scalar(
+                "SELECT EXISTS(
+                    SELECT 1 FROM reports
+                    WHERE id = ANY($1) AND issue_id IS NOT NULL AND issue_id <> $2
+                 )",
+            )
+            .bind(report_ids.iter().map(|id| id.0).collect::<Vec<_>>())
+            .bind(issue_id)
+            .fetch_one(&mut **transaction)
+            .await?;
+            if linked_elsewhere {
+                return Err(AppError::Conflict(
+                    "Unlink the selected reports that are on another issue before adding them",
+                ));
+            }
+        }
+
+        for report_id in report_ids {
+            self.link_report(transaction, report_id, issue_id, actor)
+                .await?;
+        }
         Ok(())
     }
 
@@ -652,6 +698,114 @@ impl AdminDatabase {
             serde_json::json!({ "from": from, "to": to }),
         )
         .await
+    }
+
+    /// Applies one state change to ready reports in one transaction: all of them change, or none do if one of them
+    /// can't make the change. Reports already in the state the change leads to are left alone. Returns how many
+    /// reports changed.
+    pub async fn apply_report_state_action(
+        &self,
+        report_ids: &[ReportId],
+        action: ReportStateAction,
+        actor: i64,
+    ) -> Result<usize> {
+        let report_ids = in_lock_order(report_ids);
+        let mut transaction = self.pool.begin().await?;
+        // Returning a linked report to triage unlinks it, which is an issue operation.
+        lock_issue_operations(&mut transaction).await?;
+
+        let reports: Vec<(ReportId, ReportState, Option<IssueId>, Option<IssueState>)> =
+            sqlx::query_as(
+                "SELECT reports.id, reports.state, reports.issue_id, issues.state
+                 FROM reports
+                 LEFT JOIN issues ON issues.id = reports.issue_id
+                 WHERE reports.id = ANY($1)
+                    AND reports.storage_state = 'ready'
+                 ORDER BY reports.id
+                 FOR UPDATE OF reports",
+            )
+            .bind(report_ids.iter().map(|id| id.0).collect::<Vec<_>>())
+            .fetch_all(&mut *transaction)
+            .await?;
+        if reports.len() != report_ids.len() {
+            return Err(AppError::NotFound("Report not found"));
+        }
+
+        enum Change {
+            State(ReportState),
+            Unlink(IssueId),
+        }
+
+        // Every report is checked before any changes, so the error names the first problem rather than whatever the
+        // order happened to reach.
+        let mut changes = Vec::new();
+        for (report_id, state, issue_id, issue_state) in reports {
+            let change = match action {
+                ReportStateAction::Reject => {
+                    (state != ReportState::Rejected).then_some(Change::State(ReportState::Rejected))
+                }
+                ReportStateAction::Confirm => match (state, issue_id) {
+                    (ReportState::Confirmed | ReportState::Resolved, _) => None,
+                    // A confirmed report of a resolved issue is resolved, as the issue is.
+                    (ReportState::Rejected, Some(_)) => Some(Change::State(
+                        if issue_state == Some(IssueState::Resolved) {
+                            ReportState::Resolved
+                        } else {
+                            ReportState::Confirmed
+                        },
+                    )),
+                    _ => {
+                        return Err(AppError::InvalidRequest(
+                            "Add the selected reports to an issue to confirm them",
+                        ));
+                    }
+                },
+                ReportStateAction::ReturnToTriage => match (state, issue_id) {
+                    (_, Some(issue_id)) => Some(Change::Unlink(issue_id)),
+                    (ReportState::Triage, None) => None,
+                    (ReportState::Rejected, None) => Some(Change::State(ReportState::Triage)),
+                    _ => {
+                        return Err(AppError::InvalidRequest(
+                            "Only linked or rejected reports can return to triage",
+                        ));
+                    }
+                },
+            };
+            if let Some(change) = change {
+                changes.push((report_id, state, change));
+            }
+        }
+
+        for (report_id, previous, change) in &changes {
+            match *change {
+                Change::State(target) => {
+                    sqlx::query(
+                        "UPDATE reports
+                         SET state = $2, updated_at = now()
+                         WHERE id = $1",
+                    )
+                    .bind(report_id)
+                    .bind(target)
+                    .execute(&mut *transaction)
+                    .await?;
+                    self.audit_report_state_change(
+                        &mut transaction,
+                        *report_id,
+                        actor,
+                        *previous,
+                        target,
+                    )
+                    .await?;
+                }
+                Change::Unlink(issue_id) => {
+                    self.unlink_report(&mut transaction, *report_id, issue_id, *previous, actor)
+                        .await?;
+                }
+            }
+        }
+
+        transaction.commit().await?;
+        Ok(changes.len())
     }
 
     pub async fn report_search_values(&self, key: &str) -> Result<Vec<String>> {
@@ -937,4 +1091,13 @@ fn push_report_column_filter_predicate(
         .push(") = lower(")
         .push_bind(value.to_owned())
         .push(")");
+}
+
+/// The distinct reports, sorted, so that transactions locking several reports always take the row locks in the same
+/// order.
+pub(super) fn in_lock_order(report_ids: &[ReportId]) -> Vec<ReportId> {
+    let mut report_ids = report_ids.to_vec();
+    report_ids.sort_by_key(|report_id| report_id.0);
+    report_ids.dedup();
+    report_ids
 }

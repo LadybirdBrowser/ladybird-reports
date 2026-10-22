@@ -11,8 +11,8 @@ use crate::{
     application::{IssueProposal, propose_issue, title_for_report},
     domain::{
         AttachmentId, FieldKind, GithubLinkState, IssueId, ParsedStackTrace, ReportId, ReportKind,
-        ReportSearch, ReportState, filter_expression, is_commit_id, parse_stack_trace,
-        stack_fingerprint,
+        ReportSearch, ReportState, ReportStateAction, filter_expression, is_commit_id,
+        parse_stack_trace, stack_fingerprint,
     },
     error::{AppError, Result},
     infrastructure::database::{
@@ -23,7 +23,7 @@ use crate::{
 
 use super::super::{
     AdminState, FilterBar, FilterOption, TemplateResponse,
-    authentication::Navigation,
+    authentication::{Navigation, validated_return_to},
     session::{CsrfForm, Session},
     templates::{HistoryEvent, Timestamp, display_timestamp},
 };
@@ -712,46 +712,9 @@ pub async fn assign_to_issue(
     session.verify_csrf(&form.csrf)?;
     state.database.ensure_report_unassigned(report_id).await?;
 
-    let issue_id = if let Some(value) = form.issue_selection.strip_prefix("issue:") {
-        let issue_id = value
-            .parse::<IssueId>()
-            .map_err(|_| AppError::InvalidRequest("Select an issue"))?;
-        state
-            .database
-            .assign_report_to_issue(report_id, issue_id, session.github_id)
+    let issue_id =
+        add_reports_to_selected_issue(&state, &session, &form.issue_selection, &[report_id])
             .await?;
-        issue_id
-    } else if let Some(value) = form.issue_selection.strip_prefix("github:") {
-        let github_number = value
-            .parse::<i64>()
-            .map_err(|_| AppError::InvalidRequest("Select an issue"))?;
-        if github_number < 1 {
-            return Err(AppError::InvalidRequest("Select an issue"));
-        }
-
-        let configuration = state.database.configuration().await?;
-        let access_token = session.github_access_token(&state)?;
-        let github_issue = state
-            .github
-            .issue(
-                &access_token,
-                &configuration.github.repository,
-                github_number,
-            )
-            .await?;
-        state
-            .database
-            .assign_report_to_github_issue(
-                &github_issue,
-                report_id,
-                &configuration.github.repository,
-                session.github_id,
-            )
-            .await?
-            .issue_id
-    } else {
-        return Err(AppError::InvalidRequest("Select an issue"));
-    };
 
     tracing::info!(
         event = "report.update_issue",
@@ -761,6 +724,139 @@ pub async fn assign_to_issue(
     );
 
     Ok(Redirect::to(&format!("/issues/{issue_id}")))
+}
+
+/// Links reports to the issue chosen in the issue selector: a tracked issue (`issue:<id>`), or a GitHub issue
+/// (`github:<number>`) that starts being tracked if nothing tracks it yet.
+async fn add_reports_to_selected_issue(
+    state: &AdminState,
+    session: &Session,
+    selection: &str,
+    report_ids: &[ReportId],
+) -> Result<IssueId> {
+    if let Some(value) = selection.strip_prefix("issue:") {
+        let issue_id = value
+            .parse::<IssueId>()
+            .map_err(|_| AppError::InvalidRequest("Select an issue"))?;
+        state
+            .database
+            .assign_reports_to_issue(report_ids, issue_id, session.github_id)
+            .await?;
+        Ok(issue_id)
+    } else if let Some(value) = selection.strip_prefix("github:") {
+        let github_number = value
+            .parse::<i64>()
+            .map_err(|_| AppError::InvalidRequest("Select an issue"))?;
+        if github_number < 1 {
+            return Err(AppError::InvalidRequest("Select an issue"));
+        }
+
+        let configuration = state.database.configuration().await?;
+        let access_token = session.github_access_token(state)?;
+        let github_issue = state
+            .github
+            .issue(
+                &access_token,
+                &configuration.github.repository,
+                github_number,
+            )
+            .await?;
+        Ok(state
+            .database
+            .assign_reports_to_github_issue(
+                &github_issue,
+                report_ids,
+                &configuration.github.repository,
+                session.github_id,
+            )
+            .await?
+            .issue_id)
+    } else {
+        Err(AppError::InvalidRequest("Select an issue"))
+    }
+}
+
+/// The most reports one bulk action takes: four pages of the report list.
+const BULK_REPORT_LIMIT: usize = 200;
+
+#[derive(Clone, Copy, Debug, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BulkReportAction {
+    AddToIssue,
+    Confirm,
+    ReturnToTriage,
+    Reject,
+}
+
+#[derive(Deserialize)]
+pub struct BulkReportForm {
+    csrf: String,
+    action: BulkReportAction,
+    /// The selected report IDs, separated by spaces.
+    reports: String,
+    #[serde(default)]
+    issue_selection: String,
+    /// The report list to return to, with its search.
+    #[serde(default)]
+    return_to: String,
+}
+
+/// Applies one action to the reports selected in the report list, all or none of them.
+pub async fn bulk_action(
+    State(state): State<AdminState>,
+    Extension(session): Extension<Session>,
+    Form(form): Form<BulkReportForm>,
+) -> Result<Redirect> {
+    session.verify_csrf(&form.csrf)?;
+
+    let report_ids = form
+        .reports
+        .split_whitespace()
+        .map(str::parse::<ReportId>)
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .map_err(|_| AppError::InvalidRequest("Select reports"))?;
+    if report_ids.is_empty() {
+        return Err(AppError::InvalidRequest("Select reports"));
+    }
+    if report_ids.len() > BULK_REPORT_LIMIT {
+        return Err(AppError::InvalidRequest(
+            "Select at most 200 reports at a time",
+        ));
+    }
+
+    let state_action = match form.action {
+        BulkReportAction::AddToIssue => {
+            let issue_id =
+                add_reports_to_selected_issue(&state, &session, &form.issue_selection, &report_ids)
+                    .await?;
+            tracing::info!(
+                event = "report.bulk_update_issue",
+                reports = report_ids.len(),
+                %issue_id,
+                actor = session.login,
+            );
+            return Ok(Redirect::to(&format!("/issues/{issue_id}")));
+        }
+        BulkReportAction::Confirm => ReportStateAction::Confirm,
+        BulkReportAction::ReturnToTriage => ReportStateAction::ReturnToTriage,
+        BulkReportAction::Reject => ReportStateAction::Reject,
+    };
+
+    let changed = state
+        .database
+        .apply_report_state_action(&report_ids, state_action, session.github_id)
+        .await?;
+    tracing::info!(
+        event = "report.bulk_update_state",
+        action = ?state_action,
+        reports = report_ids.len(),
+        changed,
+        actor = session.login,
+    );
+
+    Ok(Redirect::to(
+        validated_return_to(&form.return_to).unwrap_or("/"),
+    ))
 }
 
 #[derive(Deserialize)]

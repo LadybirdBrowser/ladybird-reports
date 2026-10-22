@@ -7,6 +7,7 @@
     <script src="/assets/{{ asset_version }}/list-search.js" defer></script>
     <script src="/assets/{{ asset_version }}/filter-bar.js" defer></script>
     <script src="/assets/{{ asset_version }}/report-groups.js" defer></script>
+    <script src="/assets/{{ asset_version }}/report-selection.js" defer></script>
 {% endblock %}
 
 {% block content %}
@@ -64,8 +65,127 @@
         </p>
     </section>
 
+    <section class="bulk-actions" aria-labelledby="bulk-actions-count" data-bulk-actions hidden>
+        <p class="bulk-actions-count" id="bulk-actions-count" aria-live="polite">
+            <strong data-bulk-count></strong> selected
+        </p>
+        <p class="bulk-actions-limit" data-bulk-limit hidden>Select at most 200 reports at a time.</p>
+        <p class="bulk-actions-error" role="alert" data-bulk-error hidden></p>
+        <div class="bulk-actions-buttons">
+            <button type="button" data-bulk-dialog-open="bulk-issue-dialog" data-bulk-action>Add to issue…</button>
+            <form method="post" action="/reports/bulk" data-bulk-form>
+                <input type="hidden" name="csrf" value="{{ navigation.as_ref().unwrap().csrf_token }}">
+                <input type="hidden" name="reports" value="" data-bulk-reports>
+                <input type="hidden" name="return_to" value="/" data-bulk-return-to>
+                <input type="hidden" name="action" value="confirm">
+                <button class="button-secondary" type="submit" data-bulk-action>Confirm</button>
+            </form>
+            <button
+                class="button-secondary"
+                type="button"
+                popovertarget="bulk-triage-confirmation"
+                data-bulk-action
+            >
+                Back to triage
+            </button>
+            <div
+                class="confirmation-popover modal-overlay"
+                id="bulk-triage-confirmation"
+                role="dialog"
+                aria-labelledby="bulk-triage-confirmation-title"
+                popover
+            >
+                <form method="post" action="/reports/bulk" data-bulk-form>
+                    <input type="hidden" name="csrf" value="{{ navigation.as_ref().unwrap().csrf_token }}">
+                    <input type="hidden" name="reports" value="" data-bulk-reports>
+                    <input type="hidden" name="return_to" value="/" data-bulk-return-to>
+                    <input type="hidden" name="action" value="return_to_triage">
+                    <h3 id="bulk-triage-confirmation-title">Return <span data-bulk-count-text></span> to triage?</h3>
+                    <p>Reports that are linked to an issue are unlinked from it.</p>
+                    <div class="popover-actions">
+                        <button
+                            class="button-secondary"
+                            type="button"
+                            popovertarget="bulk-triage-confirmation"
+                            popovertargetaction="hide"
+                        >
+                            Cancel
+                        </button>
+                        <button type="submit">Back to triage</button>
+                    </div>
+                </form>
+            </div>
+            <button
+                class="button-danger"
+                type="button"
+                popovertarget="bulk-reject-confirmation"
+                data-bulk-action
+            >
+                Reject
+            </button>
+            <div
+                class="confirmation-popover modal-overlay"
+                id="bulk-reject-confirmation"
+                role="dialog"
+                aria-labelledby="bulk-reject-confirmation-title"
+                popover
+            >
+                <form method="post" action="/reports/bulk" data-bulk-form>
+                    <input type="hidden" name="csrf" value="{{ navigation.as_ref().unwrap().csrf_token }}">
+                    <input type="hidden" name="reports" value="" data-bulk-reports>
+                    <input type="hidden" name="return_to" value="/" data-bulk-return-to>
+                    <input type="hidden" name="action" value="reject">
+                    <h3 id="bulk-reject-confirmation-title">Reject <span data-bulk-count-text></span>?</h3>
+                    <p>
+                        They will leave the default report list, but remain available
+                        with the <code>state:rejected</code> filter.
+                    </p>
+                    <div class="popover-actions">
+                        <button
+                            class="button-secondary"
+                            type="button"
+                            popovertarget="bulk-reject-confirmation"
+                            popovertargetaction="hide"
+                        >
+                            Cancel
+                        </button>
+                        <button class="button-danger" type="submit">Reject</button>
+                    </div>
+                </form>
+            </div>
+            <button class="button-secondary" type="button" data-bulk-clear>Clear selection</button>
+        </div>
+    </section>
+
     <section class="card report-list-card" aria-label="Reports" data-list-results>
         {% include "reports/_list.html" %}
     </section>
     <p class="visually-hidden" aria-live="polite" data-list-search-status></p>
+
+    <dialog
+        class="issue-dialog modal-overlay"
+        id="bulk-issue-dialog"
+        aria-labelledby="bulk-issue-dialog-title"
+    >
+        <div class="issue-dialog-header">
+            <div>
+                <p class="eyebrow">Report workflow</p>
+                <h2 id="bulk-issue-dialog-title">Add <span data-bulk-count-text></span> to an issue</h2>
+            </div>
+            <button class="dialog-close" type="button" data-dialog-close aria-label="Close dialog">×</button>
+        </div>
+        <form method="post" action="/reports/bulk" data-bulk-form>
+            <input type="hidden" name="csrf" value="{{ navigation.as_ref().unwrap().csrf_token }}">
+            <input type="hidden" name="reports" value="" data-bulk-reports>
+            <input type="hidden" name="return_to" value="/" data-bulk-return-to>
+            <input type="hidden" name="action" value="add_to_issue">
+            {% include "reports/_issue_selector.html" %}
+            <div class="dialog-actions">
+                <button class="button-secondary" type="button" data-dialog-close>
+                    Cancel
+                </button>
+                <button type="submit">Add reports</button>
+            </div>
+        </form>
+    </dialog>
 {% endblock %}
