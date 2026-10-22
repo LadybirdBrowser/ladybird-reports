@@ -579,7 +579,9 @@ button,
     font: inherit;
 }
 
-input,
+/* Fields for text. A checkbox or radio button keeps its native appearance, which the border, background and padding
+   here would take away in an engine that applies them to it. */
+input:not([type="checkbox"], [type="radio"]),
 select,
 textarea {
     width: 100%;
@@ -715,7 +717,7 @@ textarea {
     resize: vertical;
 }
 
-input:focus,
+input:not([type="checkbox"], [type="radio"]):focus,
 select:focus,
 textarea:focus {
     border-color: var(--brand);
