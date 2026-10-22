@@ -453,6 +453,12 @@ test.describe("authenticated management UI", () => {
     expect(screenshot.y - (submitted.y + submitted.height)).toBeCloseTo(1, 0);
     expect(screenshot.y - (platform.y + platform.height)).toBeCloseTo(1, 0);
 
+    // Without the screenshot, as for a report that has none, the last two fields still share a row.
+    await overview.locator(".overview-screenshot").evaluate((element) => element.closest("div")!.remove());
+    const [lastPlatform, lastSubmitted] = [await box("Platform & Architecture"), await box("Submitted")];
+    expect(lastSubmitted.y).toBeCloseTo(lastPlatform.y, 0);
+    expect(lastSubmitted.width).toBeCloseTo(lastPlatform.width, 0);
+
     // It is never a plain link to a page an anonymous user chose, and it appears once.
     await expect(overview.getByRole("link", { name: /example\.test/ })).toHaveCount(0);
     await expect(page.locator(".report-layout").getByText(pageUrl)).toHaveCount(1);

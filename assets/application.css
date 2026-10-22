@@ -1707,8 +1707,9 @@ tbody tr:hover {
     background: var(--surface);
 }
 
-.definition-list > div.overview-wide,
-.definition-list > div:last-child:nth-child(odd) {
+/* Only a field marked as wide spans a row. Whether a field is the last one says nothing about its place in a row, as a
+   wide field before it moves every field after it. */
+.definition-list > div.overview-wide {
     grid-column: 1 / -1;
 }
 
