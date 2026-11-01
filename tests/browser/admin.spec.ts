@@ -730,7 +730,7 @@ test.describe("authenticated management UI", () => {
     await expect(page.getByText("Intermittent navigation timeout")).toBeVisible();
 
     await page.goto(`/reports/${reportId}`);
-    await page.getByRole("button", { name: "Add report to issue" }).click();
+    await page.getByRole("button", { name: "Add or create issue" }).click();
     const issueDialog = page.getByRole("dialog", { name: "Add report to an issue" });
     await expect(issueDialog).toBeVisible();
     await expect(issueDialog).toHaveClass(/modal-overlay/);
@@ -834,7 +834,7 @@ test.describe("authenticated management UI", () => {
     await page.goto("/?q=state%3Atriage+platform%3APaginationOS");
     await openGroups(page);
     await page.locator(".report-title-link").first().click();
-    await page.getByRole("button", { name: "Add report to issue" }).click();
+    await page.getByRole("button", { name: "Add or create issue" }).click();
 
     const issueSearch = page.getByRole("combobox", { name: "Search issues" });
     await issueSearch.fill("navigation timeout");
@@ -1237,11 +1237,19 @@ test.describe("authenticated management UI", () => {
     await expect(page.locator(".badge-triage")).toHaveText("Needs triage");
 
     // A merged pull request resolves a report that isn't linked to an issue, which reopening undoes.
-    await page.getByRole("button", { name: "Add report to issue" }).click();
-    const fixDialog = page.getByRole("dialog", { name: "Add report to an issue" });
-    await fixDialog.getByRole("combobox", { name: "Search issues" }).fill("fixture crash");
+    await page.getByRole("button", { name: "Mark as resolved…" }).click();
+    const fixDialog = page.getByRole("dialog", { name: "Mark report as resolved" });
+    // With nothing chosen, the dialog stays open rather than sending the form.
+    await fixDialog.getByRole("button", { name: "Mark as resolved", exact: true }).click();
+    await expect(fixDialog).toBeVisible();
+    await expect(page.locator(".badge-triage")).toHaveText("Needs triage");
+    // Only commits on the default branch are offered.
+    await fixDialog.getByRole("combobox", { name: "Search fixes" }).fill("side branch");
+    await expect(page.getByRole("option", { name: /Fix the bulk fixture crash/ })).toBeVisible();
+    await expect(page.getByRole("option", { name: /A commit on a side branch/ })).toHaveCount(0);
+    await fixDialog.getByRole("combobox", { name: "Search fixes" }).fill("fixture crash");
     await page.getByRole("option", { name: /Fix the bulk fixture crash/ }).click();
-    await fixDialog.getByRole("button", { name: "Add report", exact: true }).click();
+    await fixDialog.getByRole("button", { name: "Mark as resolved", exact: true }).click();
     await expect(page.locator(".badge-resolved")).toHaveText("Resolved");
     await expect(page.getByRole("region", { name: "Fixed by" }).getByRole("link", { name: "Pull request #8100" }))
       .toHaveAttribute("href", "https://github.com/LadybirdBrowser/ladybird/pull/8100");
@@ -1281,7 +1289,7 @@ test.describe("authenticated management UI", () => {
 
   test("creates an issue, assigns the report, and filters it from triage", async ({ page }) => {
     await page.goto(`/reports/${reportId}`);
-    await page.getByRole("button", { name: "Add report to issue" }).click();
+    await page.getByRole("button", { name: "Add or create issue" }).click();
     await page.getByRole("button", { name: "Create new" }).click();
     const issueDialog = page.getByRole("dialog", { name: "Add report to an issue" });
     const cancelHeight = await issueDialog.getByRole("button", { name: "Cancel" })
@@ -1486,7 +1494,7 @@ test.describe("authenticated management UI", () => {
     await page.getByRole("button", { name: "Unlink report", exact: true }).click();
     await expect(page).toHaveURL(candidateUrl!);
     await expect(page.locator(".badge-triage")).toHaveText("Needs triage");
-    await expect(page.getByRole("button", { name: "Add report to issue" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Add or create issue" })).toBeVisible();
   });
 
   test("keeps GitHub issue state and replacement links in sync", async ({ page }) => {
@@ -1569,7 +1577,7 @@ test.describe("authenticated management UI", () => {
       .toBeVisible();
 
     await page.goto(candidateUrl!);
-    await page.getByRole("button", { name: "Add report to issue" }).click();
+    await page.getByRole("button", { name: "Add or create issue" }).click();
     const issueDialog = page.getByRole("dialog", { name: "Add report to an issue" });
     const suggestion = issueDialog.locator(".issue-suggestion").filter({
       hasText: "Navigation stops after redirect",
@@ -1702,7 +1710,7 @@ test.describe("authenticated management UI", () => {
     await openGroups(page);
     const reportPath = await page.locator(".report-title-link").first().getAttribute("href");
     await page.goto(reportPath!);
-    await page.getByRole("button", { name: "Add report to issue" }).click();
+    await page.getByRole("button", { name: "Add or create issue" }).click();
 
     const issueSearch = page.getByRole("combobox", { name: "Search issues" });
     await issueSearch.fill("Fixed in a nightly");
@@ -1755,11 +1763,11 @@ test.describe("authenticated management UI", () => {
     // reopens them.
     await page.goto(bulkReports("triage"));
     await selectAll.check();
-    await bar.getByRole("button", { name: "Add to issue…" }).click();
-    const fixDialog = page.getByRole("dialog", { name: "Add 4 reports to an issue" });
-    await fixDialog.getByRole("combobox", { name: "Search issues" }).fill("0123456789a");
+    await bar.getByRole("button", { name: "Mark as resolved…" }).click();
+    const fixDialog = page.getByRole("dialog", { name: "Mark 4 reports as resolved" });
+    await fixDialog.getByRole("combobox", { name: "Search fixes" }).fill("0123456789a");
     await page.getByRole("option", { name: /Stop the fixture crash/ }).click();
-    await fixDialog.getByRole("button", { name: "Add reports", exact: true }).click();
+    await fixDialog.getByRole("button", { name: "Mark as resolved", exact: true }).click();
     await expect(page.getByText("No matching reports")).toBeVisible();
     await page.goto(bulkReports("resolved"));
     await expect(reports).toHaveCount(4);

@@ -73,6 +73,14 @@
         <p class="bulk-actions-error" role="alert" data-bulk-error hidden></p>
         <div class="bulk-actions-buttons">
             <button type="button" data-bulk-dialog-open="bulk-issue-dialog" data-bulk-action>Add to issue…</button>
+            <button
+                class="button-secondary"
+                type="button"
+                data-bulk-dialog-open="bulk-fix-dialog"
+                data-bulk-action
+            >
+                Mark as resolved…
+            </button>
             <form method="post" action="/reports/bulk" data-bulk-form>
                 <input type="hidden" name="csrf" value="{{ navigation.as_ref().unwrap().csrf_token }}">
                 <input type="hidden" name="reports" value="" data-bulk-reports>
@@ -165,6 +173,34 @@
         {% include "reports/_list.html" %}
     </section>
     <p class="visually-hidden" aria-live="polite" data-list-search-status></p>
+
+    <dialog
+        class="issue-dialog modal-overlay"
+        id="bulk-fix-dialog"
+        aria-labelledby="bulk-fix-dialog-title"
+    >
+        <div class="issue-dialog-header">
+            <div>
+                <p class="eyebrow">Report workflow</p>
+                <h2 id="bulk-fix-dialog-title">Mark <span data-bulk-count-text></span> as resolved</h2>
+            </div>
+            <button class="dialog-close" type="button" data-dialog-close aria-label="Close dialog">×</button>
+        </div>
+        <p class="form-note">The merged pull request, or the commit on the default branch, that fixed them.</p>
+        <form method="post" action="/reports/bulk" data-bulk-form>
+            <input type="hidden" name="csrf" value="{{ navigation.as_ref().unwrap().csrf_token }}">
+            <input type="hidden" name="reports" value="" data-bulk-reports>
+            <input type="hidden" name="return_to" value="/" data-bulk-return-to>
+            <input type="hidden" name="action" value="resolve_with_fix">
+            {% include "reports/_fix_selector.html" %}
+            <div class="dialog-actions">
+                <button class="button-secondary" type="button" data-dialog-close>
+                    Cancel
+                </button>
+                <button type="submit">Mark as resolved</button>
+            </div>
+        </form>
+    </dialog>
 
     <dialog
         class="issue-dialog modal-overlay"

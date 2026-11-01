@@ -41,24 +41,24 @@ The dialog takes an optional reason of up to 500 characters, which the audit log
 report’s activity list shows in full. Rejected reports remain available through `state:rejected`; retention still
 governs when their data is removed. Adding a report to an issue confirms it.
 
-The issue selector also finds merged pull requests, and commits on the repository’s default branch, by words from their
-titles, a pull request number, or a commit hash. Choosing one for a report that isn’t linked to an issue resolves the
-report with that fix rather than linking it: Its page shows the fix, and the audit log records it. The report keeps the
-fix while it stays resolved and unlinked, and **Reopen report** returns it to triage. A linked report is resolved only
-with its issue.
+A report that isn’t linked to an issue can instead be resolved by the fix that resolved it: **Mark as resolved…** opens
+a search for merged pull requests, and commits on the repository’s default branch, by words from their titles, a pull
+request number, or a commit hash. Choosing one resolves the report with that fix: Its page shows the fix, and the audit
+log records it. The report keeps the fix while it stays resolved and unlinked, and **Reopen report** returns it to
+triage. A linked report is resolved only with its issue.
 
 The report list can change several reports at once. Each row has a checkbox, the header of a folded group has one for
 the reports of its group, and the table header has one for every report that is loaded. **Show more…** keeps the
-selection, and a new search clears it. With reports selected, a bar above the list offers **Add to issue…**,
-**Confirm**, **Back to triage** and **Reject**, which change each report as its own page would: Adding them to an issue
-links and confirms them, and adding them to a fix resolves them, as the issue workflow of one report does. **Confirm**
-restores rejected reports that are linked to an issue, **Back to triage** unlinks linked reports and returns rejected
-and resolved ones that aren’t linked to triage, and **Reject** rejects them. **Back to triage** and **Reject** ask
-first, and **Reject** takes an optional reason for every report it rejects, as the dialog of one report does. An action
-changes all of the selected reports or none of them: If one of them can’t make the change — a report on another issue,
-an unlinked one to confirm, or a linked one to resolve with a fix — nothing changes, and the bar says why. Reports
-already where the action leads are left alone. One action takes at most 200 reports, and each report it changes gets the
-same audit events as a change from its page.
+selection, and a new search clears it. With reports selected, a bar above the list offers **Add to issue…**, **Mark as
+resolved…**, **Confirm**, **Back to triage** and **Reject**, which change each report as its own page would: Adding them
+to an issue links and confirms them, and marking them as resolved with a fix resolves them, as the issue workflow of one
+report does. **Confirm** restores rejected reports that are linked to an issue, **Back to triage** unlinks linked
+reports and returns rejected and resolved ones that aren’t linked to triage, and **Reject** rejects them. **Back to
+triage** and **Reject** ask first, and **Reject** takes an optional reason for every report it rejects, as the dialog of
+one report does. An action changes all of the selected reports or none of them: If one of them can’t make the change — a
+report on another issue, an unlinked one to confirm, or a linked one to resolve with a fix — nothing changes, and the
+bar says why. Reports already where the action leads are left alone. One action takes at most 200 reports, and each
+report it changes gets the same audit events as a change from its page.
 
 Blocking a submission source needs the report's stored identifier, which is cleared after the submission source
 retention period (48 hours by default); the block action is then not shown. An active block keeps its own identifier

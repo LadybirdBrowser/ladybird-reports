@@ -8,7 +8,7 @@ use axum::{
 use crate::{
     domain::{GithubLinkState, IssueId, IssueState},
     error::{AppError, Result},
-    infrastructure::github::GithubIssueState,
+    infrastructure::github::{GithubCommit, GithubIssueState},
 };
 
 use super::super::{AdminState, session::Session};
@@ -54,36 +54,15 @@ pub async fn issue_options(
     let configuration = state.database.configuration().await?;
     let token = session.github_access_token(&state)?;
     let repository = &configuration.github.repository;
-    // A fix is looked for only once the search says something: An empty search lists tracked issues.
-    let searches_fixes = !query.is_empty();
-    let (tracked_issues, github_issues, pull_requests, commits) = tokio::join!(
+    let (tracked_issues, github_issues) = tokio::join!(
         state.database.search_issues(query),
         tokio::time::timeout(
             GITHUB_SEARCH_TIMEOUT,
             state.github.search_issues(&token, repository, query),
         ),
-        tokio::time::timeout(GITHUB_SEARCH_TIMEOUT, async {
-            if searches_fixes {
-                state
-                    .github
-                    .search_merged_pull_requests(&token, repository, query)
-                    .await
-            } else {
-                Ok(Vec::new())
-            }
-        }),
-        tokio::time::timeout(GITHUB_SEARCH_TIMEOUT, async {
-            if searches_fixes {
-                state.github.search_commits(&token, repository, query).await
-            } else {
-                Ok(Vec::new())
-            }
-        }),
     );
     let tracked_issues = tracked_issues?;
     let github_issues = github_results(github_issues, "issues");
-    let pull_requests = github_results(pull_requests, "pull_requests");
-    let commits = github_results(commits, "commits");
 
     let github_numbers = github_issues
         .iter()
@@ -161,7 +140,122 @@ pub async fn issue_options(
         });
     }
 
-    // A merged pull request or a commit resolves a report that isn't linked to an issue, with the fix as the reason.
+    // Open tracked issues come first, and resolved ones last, as a report is rarely added to an issue that is fixed.
+    results.sort_by_key(|option| match option.group {
+        Some(TRACKED_ISSUES) => 0,
+        Some(GITHUB_ISSUES) => 1,
+        _ => 2,
+    });
+
+    Ok(Json(EntitySearchResponse { results }))
+}
+
+/// The commits the default branch contains, which are the ones that resolve a report. The checks run together, and a
+/// commit whose check fails or takes too long isn’t offered.
+async fn commits_on_default_branch(
+    state: &AdminState,
+    token: &str,
+    repository: &str,
+    commits: Vec<GithubCommit>,
+) -> Vec<GithubCommit> {
+    if commits.is_empty() {
+        return commits;
+    }
+    let branch = match tokio::time::timeout(
+        GITHUB_SEARCH_TIMEOUT,
+        state.github.default_branch(token, repository),
+    )
+    .await
+    {
+        Ok(Ok(branch)) => branch,
+        Ok(Err(error)) => {
+            tracing::warn!(event = "github.default_branch_failed", ?error);
+            return Vec::new();
+        }
+        Err(_) => {
+            tracing::warn!(event = "github.default_branch_timed_out");
+            return Vec::new();
+        }
+    };
+
+    let mut checks = tokio::task::JoinSet::new();
+    for (index, commit) in commits.iter().enumerate() {
+        let github = state.github.clone();
+        let (token, repository, branch, sha) = (
+            token.to_owned(),
+            repository.to_owned(),
+            branch.clone(),
+            commit.sha.clone(),
+        );
+        checks.spawn(async move {
+            let contains = tokio::time::timeout(
+                GITHUB_SEARCH_TIMEOUT,
+                github.branch_contains(&token, &repository, &branch, &sha),
+            )
+            .await;
+            (index, matches!(contains, Ok(Ok(true))))
+        });
+    }
+    let mut on_branch = vec![false; commits.len()];
+    while let Some(Ok((index, contains))) = checks.join_next().await {
+        on_branch[index] = contains;
+    }
+    commits
+        .into_iter()
+        .zip(on_branch)
+        .filter_map(|(commit, contains)| contains.then_some(commit))
+        .collect()
+}
+
+/// The fixes the fix selector offers for a search: merged pull requests, and commits on the repository's default branch,
+/// by words from their titles, a pull request number, or a commit hash.
+pub async fn fix_options(
+    State(state): State<AdminState>,
+    Extension(session): Extension<Session>,
+    Query(parameters): Query<ReportSearchQuery>,
+) -> Result<Json<EntitySearchResponse>> {
+    let query = parameters.query.trim();
+    if query.len() > 128 {
+        return Err(AppError::InvalidRequest("Fix search is too long"));
+    }
+    if query.is_empty() {
+        return Ok(Json(EntitySearchResponse {
+            results: Vec::new(),
+        }));
+    }
+
+    let configuration = state.database.configuration().await?;
+    let token = session.github_access_token(&state)?;
+    let repository = &configuration.github.repository;
+    let (pull_requests, commits) = tokio::join!(
+        tokio::time::timeout(
+            GITHUB_SEARCH_TIMEOUT,
+            state
+                .github
+                .search_merged_pull_requests(&token, repository, query),
+        ),
+        tokio::time::timeout(
+            GITHUB_SEARCH_TIMEOUT,
+            state.github.search_commits(&token, repository, query),
+        ),
+    );
+    // A search can name another repository with its own qualifier, while a choice carries only a number or a hash
+    // that's looked up in the configured repository: Only that repository's results are offered.
+    let pull_requests = github_results(pull_requests, "pull_requests")
+        .into_iter()
+        .filter(|pull_request| {
+            pull_request
+                .html_url
+                .contains(&format!("/{repository}/pull/"))
+        })
+        .collect::<Vec<_>>();
+    let commits = github_results(commits, "commits")
+        .into_iter()
+        .filter(|commit| commit.html_url.contains(&format!("/{repository}/commit/")))
+        .collect::<Vec<_>>();
+    let commits = commits_on_default_branch(&state, &token, repository, commits).await;
+
+    let mut results = Vec::new();
     for pull_request in pull_requests {
         results.push(EntitySearchOption {
             value: format!("pull:{}", pull_request.number),
@@ -182,19 +276,10 @@ pub async fn issue_options(
             identifier: commit.sha.chars().take(11).collect(),
             badge: "Commit".into(),
             badge_tone: "resolved",
-            footnote: "Resolves the report, if it's on the default branch".into(),
+            footnote: "Resolves the report".into(),
             group: Some(COMMITS),
         });
     }
-
-    // Open tracked issues come first, and resolved ones last, as a report is rarely added to an issue that is fixed.
-    results.sort_by_key(|option| match option.group {
-        Some(TRACKED_ISSUES) => 0,
-        Some(GITHUB_ISSUES) => 1,
-        Some(MERGED_PULL_REQUESTS) => 2,
-        Some(COMMITS) => 3,
-        _ => 4,
-    });
 
     Ok(Json(EntitySearchResponse { results }))
 }

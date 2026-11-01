@@ -718,20 +718,6 @@ pub async fn assign_to_issue(
     session.verify_csrf(&form.csrf)?;
     state.database.ensure_report_unassigned(report_id).await?;
 
-    if let Some(fix) = selected_fix(&state, &session, &form.issue_selection).await? {
-        state
-            .database
-            .resolve_reports_with_fix(&[report_id], &fix, session.github_id)
-            .await?;
-        tracing::info!(
-            event = "report.resolve_with_fix",
-            %report_id,
-            fix = fix.url,
-            actor = session.login,
-        );
-        return Ok(report_redirect(report_id));
-    }
-
     let issue_id =
         add_reports_to_selected_issue(&state, &session, &form.issue_selection, &[report_id])
             .await?;
@@ -746,22 +732,48 @@ pub async fn assign_to_issue(
     Ok(Redirect::to(&format!("/issues/{issue_id}")))
 }
 
+#[derive(Deserialize)]
+pub struct FixSelectionForm {
+    csrf: String,
+    fix_selection: String,
+}
+
+/// Resolves a report that isn't linked to an issue with the fix chosen in the fix selector.
+pub async fn resolve_with_fix(
+    State(state): State<AdminState>,
+    Extension(session): Extension<Session>,
+    Path(report_id): Path<ReportId>,
+    Form(form): Form<FixSelectionForm>,
+) -> Result<Redirect> {
+    session.verify_csrf(&form.csrf)?;
+    let fix = selected_fix(&state, &session, &form.fix_selection).await?;
+    state
+        .database
+        .resolve_reports_with_fix(&[report_id], &fix, session.github_id)
+        .await?;
+    tracing::info!(
+        event = "report.resolve_with_fix",
+        %report_id,
+        fix = fix.url,
+        actor = session.login,
+    );
+    Ok(report_redirect(report_id))
+}
+
 /// The longest title a report keeps of the fix that resolved it.
 const FIX_TITLE_LIMIT: usize = 512;
 
-/// The fix chosen in the issue selector, if the choice is one: a merged pull request (`pull:<number>`) or a commit on
-/// the repository's default branch (`commit:<hash>`), as GitHub describes it now. `None` for an issue.
-async fn selected_fix(
-    state: &AdminState,
-    session: &Session,
-    selection: &str,
-) -> Result<Option<ReportFix>> {
+/// The fix chosen in the fix selector: a merged pull request (`pull:<number>`) or a commit on the repository's default
+/// branch (`commit:<hash>`), as GitHub describes it now.
+async fn selected_fix(state: &AdminState, session: &Session, selection: &str) -> Result<ReportFix> {
     let (kind, value) = if let Some(value) = selection.strip_prefix("pull:") {
         (ReportFixKind::PullRequest, value)
     } else if let Some(value) = selection.strip_prefix("commit:") {
         (ReportFixKind::Commit, value)
     } else {
-        return Ok(None);
+        return Err(AppError::InvalidRequest(
+            "Select a pull request or a commit",
+        ));
     };
 
     let configuration = state.database.configuration().await?;
@@ -815,7 +827,7 @@ async fn selected_fix(
             }
         }
     };
-    Ok(Some(fix))
+    Ok(fix)
 }
 
 /// Links reports to the issue chosen in the issue selector: a tracked issue (`issue:<id>`), or a GitHub issue
@@ -875,6 +887,7 @@ const BULK_REPORT_LIMIT: usize = 200;
 #[serde(rename_all = "snake_case")]
 pub enum BulkReportAction {
     AddToIssue,
+    ResolveWithFix,
     Confirm,
     ReturnToTriage,
     Reject,
@@ -888,6 +901,8 @@ pub struct BulkReportForm {
     reports: String,
     #[serde(default)]
     issue_selection: String,
+    #[serde(default)]
+    fix_selection: String,
     /// Why the reports are rejected, for the reject action.
     #[serde(default)]
     reason: String,
@@ -920,23 +935,24 @@ pub async fn bulk_action(
     }
 
     let state_action = match form.action {
+        BulkReportAction::ResolveWithFix => {
+            let fix = selected_fix(&state, &session, &form.fix_selection).await?;
+            let changed = state
+                .database
+                .resolve_reports_with_fix(&report_ids, &fix, session.github_id)
+                .await?;
+            tracing::info!(
+                event = "report.bulk_resolve_with_fix",
+                reports = report_ids.len(),
+                changed,
+                fix = fix.url,
+                actor = session.login,
+            );
+            return Ok(Redirect::to(
+                validated_return_to(&form.return_to).unwrap_or("/"),
+            ));
+        }
         BulkReportAction::AddToIssue => {
-            if let Some(fix) = selected_fix(&state, &session, &form.issue_selection).await? {
-                let changed = state
-                    .database
-                    .resolve_reports_with_fix(&report_ids, &fix, session.github_id)
-                    .await?;
-                tracing::info!(
-                    event = "report.bulk_resolve_with_fix",
-                    reports = report_ids.len(),
-                    changed,
-                    fix = fix.url,
-                    actor = session.login,
-                );
-                return Ok(Redirect::to(
-                    validated_return_to(&form.return_to).unwrap_or("/"),
-                ));
-            }
             let issue_id =
                 add_reports_to_selected_issue(&state, &session, &form.issue_selection, &report_ids)
                     .await?;

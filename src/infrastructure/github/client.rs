@@ -617,15 +617,28 @@ impl GithubClient {
         repository: &str,
         sha: &str,
     ) -> Result<bool> {
+        let branch = self.default_branch(token, repository).await?;
+        self.branch_contains(token, repository, &branch, sha).await
+    }
+
+    pub async fn default_branch(&self, token: &str, repository: &str) -> Result<String> {
         let path = format!("/repos/{repository}");
         let repository_info: GithubDefaultBranch = self
             .request_json(Method::GET, &path, token, Option::<&()>::None)
             .await?;
+        Ok(repository_info.default_branch)
+    }
+
+    /// Whether the branch contains the commit.
+    pub async fn branch_contains(
+        &self,
+        token: &str,
+        repository: &str,
+        branch: &str,
+        sha: &str,
+    ) -> Result<bool> {
         // The comparison runs from the branch to the commit: A commit the branch contains is behind it, or is its tip.
-        let path = format!(
-            "/repos/{repository}/compare/{}...{sha}",
-            repository_info.default_branch
-        );
+        let path = format!("/repos/{repository}/compare/{branch}...{sha}");
         let comparison: GithubComparison = self
             .request_json(Method::GET, &path, token, Option::<&()>::None)
             .await?;

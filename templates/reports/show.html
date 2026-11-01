@@ -196,8 +196,15 @@
                 {% endif %}
                 {% if !report.is_assigned %}
                     <section class="action-group">
-                        <button type="button" data-dialog-open="issue-dialog">Add report to issue</button>
+                        <button type="button" data-dialog-open="issue-dialog">Add or create issue</button>
                     </section>
+                    {% if report.state != ReportState::Rejected %}
+                        <section class="action-group">
+                            <button class="button-secondary" type="button" data-dialog-open="fix-dialog">
+                                Mark as resolved…
+                            </button>
+                        </section>
+                    {% endif %}
                 {% endif %}
                 {% if let Some(fix) = report.fix %}
                     <section class="action-group report-linked-issue" aria-labelledby="fix-title">
@@ -423,6 +430,33 @@
             </a>
         </div>
     </dialog>
+
+    {% if !report.is_assigned && report.state != ReportState::Rejected %}
+    <dialog
+        class="issue-dialog modal-overlay"
+        id="fix-dialog"
+        aria-labelledby="fix-dialog-title"
+    >
+        <div class="issue-dialog-header">
+            <div>
+                <p class="eyebrow">Report workflow</p>
+                <h2 id="fix-dialog-title">Mark report as resolved</h2>
+            </div>
+            <button class="dialog-close" type="button" data-dialog-close aria-label="Close dialog">×</button>
+        </div>
+        <p class="form-note">The merged pull request, or the commit on the default branch, that fixed it.</p>
+        <form method="post" action="/reports/{{ report.id }}/fix">
+            <input type="hidden" name="csrf" value="{{ navigation.as_ref().unwrap().csrf_token }}">
+            {% include "reports/_fix_selector.html" %}
+            <div class="dialog-actions">
+                <button class="button-secondary" type="button" data-dialog-close>
+                    Cancel
+                </button>
+                <button type="submit">Mark as resolved</button>
+            </div>
+        </form>
+    </dialog>
+    {% endif %}
 
     {% if !report.is_assigned %}
     <dialog

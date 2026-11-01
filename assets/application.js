@@ -28,6 +28,22 @@ class EntitySelector {
     }
 
     connect() {
+        // A hidden input takes no part in form validation, so a required selection is checked here: in the capture
+        // phase, ahead of handlers that send the form themselves.
+        this.searchInput.form?.addEventListener(
+            "submit",
+            (event) => {
+                if (!this.valueInput.required || this.valueInput.value !== "") {
+                    return;
+                }
+                event.preventDefault();
+                event.stopImmediatePropagation();
+                this.searchInput.setCustomValidity(`Select ${this.entitySingular === "fix" ? "a" : "an"} ${this.entitySingular}.`);
+                this.searchInput.reportValidity();
+            },
+            { capture: true },
+        );
+        this.searchInput.addEventListener("input", () => this.searchInput.setCustomValidity(""));
         this.searchInput.addEventListener("focus", () => {
             this.open();
 

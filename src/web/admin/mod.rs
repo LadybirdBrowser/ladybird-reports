@@ -45,6 +45,7 @@ pub fn router(state: AdminState) -> Router {
             get(handlers::reports::search_completions),
         )
         .route("/api/issue-options", get(handlers::github::issue_options))
+        .route("/api/fix-options", get(handlers::github::fix_options))
         .route("/reports/{id}/block-ip", post(handlers::reports::block_ip))
         .route(
             "/reports/{id}/unblock-ip",
@@ -54,6 +55,10 @@ pub fn router(state: AdminState) -> Router {
         .route(
             "/reports/{report_id}/issue",
             post(handlers::reports::assign_to_issue),
+        )
+        .route(
+            "/reports/{report_id}/fix",
+            post(handlers::reports::resolve_with_fix),
         )
         .route(
             "/reports/{report_id}/unlink",
