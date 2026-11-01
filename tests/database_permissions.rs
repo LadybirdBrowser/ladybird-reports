@@ -11,8 +11,9 @@ use ladybird_reports::{
     domain::{
         AttachmentManifest, AttachmentMediaType, AuditAction, DiagnosticField, FieldKind,
         FieldValue, GithubLinkState, GithubSyncSource, IssueId, IssueReportAction, IssueSearch,
-        IssueState, ReportId, ReportKind, ReportManifest, ReportState, ReportStateAction,
-        STACK_SIGNATURE_VERSION, StorageState, SubmissionId, UploadId, proof_is_valid, sha256_hex,
+        IssueState, ReportFix, ReportFixKind, ReportId, ReportKind, ReportManifest, ReportState,
+        ReportStateAction, STACK_SIGNATURE_VERSION, StorageState, SubmissionId, UploadId,
+        proof_is_valid, sha256_hex,
     },
     infrastructure::{
         SecretCipher,
@@ -463,6 +464,7 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
     )
     .await;
     assert_constraint_values(&admin_pool, "reports_kind_check", ReportKind::ALL).await;
+    assert_constraint_values(&admin_pool, "reports_fix_kind_valid", ReportFixKind::ALL).await;
     assert_constraint_values(&admin_pool, "report_fields_kind_check", FieldKind::ALL).await;
     assert_constraint_values(&admin_pool, "field_definitions_kind_check", FieldKind::ALL).await;
     assert!(
@@ -2068,6 +2070,7 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
     assert_reports_follow_their_issue(&admin_pool, &admin_database).await;
     assert_bulk_report_actions(&admin_pool, &admin_database).await;
     assert_rejection_reasons_are_recorded(&admin_pool, &admin_database).await;
+    assert_reports_resolve_with_a_fix(&admin_pool, &admin_database).await;
 
     // The indexer is event-driven. Reports that became ready before it started are found by its startup check, spanning
     // more than one batch; a report that becomes ready afterwards is found because the database announces it, as the
@@ -2427,6 +2430,168 @@ async fn assert_rejection_reasons_are_recorded(pool: &sqlx::PgPool, database: &A
             Some("No way to reproduce")
         );
     }
+}
+
+/// A report that isn't linked to an issue is resolved by the fix that resolved it, alone or in bulk, and keeps the fix
+/// only while it stays resolved and unlinked. A linked one follows its issue.
+async fn assert_reports_resolve_with_a_fix(pool: &sqlx::PgPool, database: &AdminDatabase) {
+    async fn state_and_fix(pool: &sqlx::PgPool, report_id: ReportId) -> (String, Option<String>) {
+        sqlx::query_as("SELECT state, fix_reference FROM reports WHERE id = $1")
+            .bind(report_id)
+            .fetch_one(pool)
+            .await
+            .expect("read report state and fix")
+    }
+    let pull_request = ReportFix {
+        kind: ReportFixKind::PullRequest,
+        reference: "8100".into(),
+        title: "LibWeb: Fix the crash".into(),
+        url: "https://github.com/example/example/pull/8100".into(),
+    };
+    let commit = ReportFix {
+        kind: ReportFixKind::Commit,
+        reference: "0123456789abcdef0123456789abcdef01234567".into(),
+        title: "LibWeb: Stop the crash".into(),
+        url: "https://github.com/example/example/commit/0123456789abcdef0123456789abcdef01234567"
+            .into(),
+    };
+
+    let issue_id = IssueId::new();
+    sqlx::query(
+        "INSERT INTO issues
+            (id, title, description, github_number, github_url, github_repository)
+         VALUES ($1, 'Resolves its own reports', '', 9300,
+            'https://github.com/example/example/issues/9300', 'example/example')",
+    )
+    .bind(issue_id)
+    .execute(pool)
+    .await
+    .expect("insert issue");
+    let mut reports = Vec::new();
+    for index in 0..4 {
+        reports.push(
+            insert_stack_report_for_matching(
+                pool,
+                &format!("#0 in Fixed{index}::crash() at liblagom.so"),
+                0,
+            )
+            .await,
+        );
+    }
+    let [single, first, second, linked] = reports[..] else {
+        unreachable!()
+    };
+    sqlx::query("UPDATE reports SET issue_id = $2, state = 'confirmed' WHERE id = $1")
+        .bind(linked)
+        .bind(issue_id)
+        .execute(pool)
+        .await
+        .expect("link report");
+
+    // Resolving takes a fix: A report in triage can't be resolved by itself.
+    assert!(
+        database
+            .set_report_state(single, ReportState::Resolved, 999, None)
+            .await
+            .is_err(),
+        "a report is resolved with an issue or a fix"
+    );
+
+    // One report: resolved with a fix, which the audit log records, and reopened, which drops the fix.
+    assert_eq!(
+        database
+            .resolve_reports_with_fix(&[single], &pull_request, 999)
+            .await
+            .expect("resolve a report with a merged pull request"),
+        1
+    );
+    assert_eq!(
+        state_and_fix(pool, single).await,
+        ("resolved".into(), Some("8100".into()))
+    );
+    let fix_events: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM audit_events
+         WHERE entity_id = $1 AND action = 'report.update_state' AND actor = 999
+            AND details->>'to' = 'resolved' AND details->'fix'->>'reference' = '8100'",
+    )
+    .bind(single.0)
+    .fetch_one(pool)
+    .await
+    .expect("count fix events");
+    assert_eq!(fix_events, 1);
+    database
+        .set_report_state(single, ReportState::Triage, 999, None)
+        .await
+        .expect("reopen a report a fix resolved");
+    assert_eq!(state_and_fix(pool, single).await, ("triage".into(), None));
+
+    // A fix doesn't resolve a linked report, which follows its issue, nor a rejected one; and the database keeps a fix
+    // only on a resolved report that isn't linked.
+    assert!(
+        database
+            .resolve_reports_with_fix(&[first, linked], &commit, 999)
+            .await
+            .is_err(),
+        "a linked report fails the whole request"
+    );
+    assert_eq!(state_and_fix(pool, first).await, ("triage".into(), None));
+    assert!(
+        sqlx::query("UPDATE reports SET fix_kind = 'commit', fix_reference = 'a', fix_title = 't', fix_url = 'u' WHERE id = $1")
+            .bind(first)
+            .execute(pool)
+            .await
+            .is_err(),
+        "a report in triage holds no fix"
+    );
+
+    // In bulk, all of the selected reports or none of them; a report already resolved with the fix is left alone, and
+    // another fix replaces the one it holds.
+    assert_eq!(
+        database
+            .resolve_reports_with_fix(&[first, second], &commit, 999)
+            .await
+            .expect("resolve reports with a commit"),
+        2
+    );
+    assert_eq!(
+        database
+            .resolve_reports_with_fix(&[first, second], &commit, 999)
+            .await
+            .expect("resolve the reports again"),
+        0
+    );
+    assert_eq!(
+        database
+            .resolve_reports_with_fix(&[first], &pull_request, 999)
+            .await
+            .expect("resolve a report with another fix"),
+        1
+    );
+    assert_eq!(
+        state_and_fix(pool, first).await,
+        ("resolved".into(), Some("8100".into()))
+    );
+
+    // Leaving the resolved state, or being linked to an issue, drops the fix.
+    database
+        .apply_report_state_action(&[second], ReportStateAction::Reject, 999, None)
+        .await
+        .expect("reject a report a fix resolved");
+    assert_eq!(state_and_fix(pool, second).await, ("rejected".into(), None));
+    assert!(
+        database
+            .resolve_reports_with_fix(&[second], &commit, 999)
+            .await
+            .is_err(),
+        "a rejected report is restored before a fix resolves it"
+    );
+    sqlx::query("UPDATE reports SET issue_id = $2, state = 'confirmed' WHERE id = $1")
+        .bind(first)
+        .bind(issue_id)
+        .execute(pool)
+        .await
+        .expect("link a report a fix resolved");
+    assert_eq!(state_and_fix(pool, first).await, ("confirmed".into(), None));
 }
 
 fn new_session<'a>(authorized_team: &'a str, token_hash: &'a str) -> NewSession<'a> {

@@ -172,6 +172,79 @@ const server = createServer((request, response) => {
     return;
   }
 
+  // A merged pull request and a commit on the default branch resolve reports; the rest are there to be refused.
+  const pullRequests = new Map([
+    [8100, { title: "LibWeb: Fix the bulk fixture crash", merged: true }],
+    [8101, { title: "LibWeb: Draft that never merged", merged: false }],
+  ]);
+  const commits = new Map([
+    ["0123456789abcdef0123456789abcdef01234567", { message: "LibWeb: Stop the fixture crash\n\nDetails.", onDefaultBranch: true }],
+    ["fedcba9876543210fedcba9876543210fedcba98", { message: "LibWeb: A commit on a side branch", onDefaultBranch: false }],
+  ]);
+  const commitJson = ([sha, commit]) => ({
+    sha,
+    html_url: `https://github.com/LadybirdBrowser/ladybird/commit/${sha}`,
+    commit: { message: commit.message },
+  });
+
+  if (request.method === "GET" && url.pathname === "/search/issues" && /\bis:pr\b/.test(url.searchParams.get("q") ?? "")) {
+    sendJson(response, 200, {
+      items: [...pullRequests].filter(([, pull]) => pull.merged).map(([number, pull]) => ({
+        id: number + 90000,
+        number,
+        title: pull.title,
+        body: "",
+        html_url: `https://github.com/LadybirdBrowser/ladybird/pull/${number}`,
+        state: "closed",
+        updated_at: "2026-09-15T12:00:00Z",
+      })),
+    });
+    return;
+  }
+
+  const pullMatch = url.pathname.match(/^\/repos\/[^/]+\/[^/]+\/pulls\/(\d+)$/);
+  if (request.method === "GET" && pullMatch) {
+    const number = Number(pullMatch[1]);
+    const pull = pullRequests.get(number);
+    if (!pull) {
+      sendJson(response, 404, { message: "Not Found" });
+      return;
+    }
+    sendJson(response, 200, {
+      number,
+      title: pull.title,
+      html_url: `https://github.com/LadybirdBrowser/ladybird/pull/${number}`,
+      merged_at: pull.merged ? "2026-09-20T12:00:00Z" : null,
+    });
+    return;
+  }
+
+  if (request.method === "GET" && url.pathname === "/search/commits") {
+    const words = (url.searchParams.get("q") ?? "").replace(/repo:\S+/, "").trim().toLowerCase();
+    sendJson(response, 200, {
+      items: [...commits].filter(([, commit]) => commit.message.toLowerCase().includes(words)).map(commitJson),
+    });
+    return;
+  }
+
+  const commitMatch = url.pathname.match(/^\/repos\/[^/]+\/[^/]+\/commits\/([0-9a-f]{7,40})$/);
+  if (request.method === "GET" && commitMatch) {
+    const found = [...commits].find(([sha]) => sha.startsWith(commitMatch[1]));
+    if (!found) {
+      sendJson(response, 404, { message: "No commit found for SHA" });
+      return;
+    }
+    sendJson(response, 200, commitJson(found));
+    return;
+  }
+
+  const compareMatch = url.pathname.match(/^\/repos\/[^/]+\/[^/]+\/compare\/master\.\.\.([0-9a-f]{40})$/);
+  if (request.method === "GET" && compareMatch) {
+    const commit = commits.get(compareMatch[1]);
+    sendJson(response, 200, { status: commit?.onDefaultBranch ? "behind" : "diverged" });
+    return;
+  }
+
   if (request.method === "GET" && url.pathname === "/search/issues") {
     sendJson(response, 200, {
       items: [
@@ -199,7 +272,7 @@ const server = createServer((request, response) => {
   }
 
   if (request.method === "GET" && /^\/repos\/[^/]+\/[^/]+$/.test(url.pathname)) {
-    sendJson(response, 200, { id: 4242 });
+    sendJson(response, 200, { id: 4242, default_branch: "master" });
     return;
   }
 

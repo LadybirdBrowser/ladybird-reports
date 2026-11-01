@@ -1236,6 +1236,19 @@ test.describe("authenticated management UI", () => {
 
     await expect(page.locator(".badge-triage")).toHaveText("Needs triage");
 
+    // A merged pull request resolves a report that isn't linked to an issue, which reopening undoes.
+    await page.getByRole("button", { name: "Add report to issue" }).click();
+    const fixDialog = page.getByRole("dialog", { name: "Add report to an issue" });
+    await fixDialog.getByRole("combobox", { name: "Search issues" }).fill("fixture crash");
+    await page.getByRole("option", { name: /Fix the bulk fixture crash/ }).click();
+    await fixDialog.getByRole("button", { name: "Add report", exact: true }).click();
+    await expect(page.locator(".badge-resolved")).toHaveText("Resolved");
+    await expect(page.getByRole("region", { name: "Fixed by" }).getByRole("link", { name: "Pull request #8100" }))
+      .toHaveAttribute("href", "https://github.com/LadybirdBrowser/ladybird/pull/8100");
+    await page.getByRole("button", { name: "Reopen report" }).click();
+    await expect(page.locator(".badge-triage")).toHaveText("Needs triage");
+    await expect(page.getByRole("region", { name: "Fixed by" })).toHaveCount(0);
+
     await page.getByRole("button", { name: "Reject report" }).first().click();
     const confirmation = page.getByRole("dialog", { name: "Reject this report?" });
     await expect(confirmation).toBeVisible();
@@ -1737,6 +1750,25 @@ test.describe("authenticated management UI", () => {
     await expect(page.getByText("No matching reports")).toBeVisible();
     await expect.poll(() => new URL(page.url()).searchParams.get("q"))
       .toBe('state:rejected version:"Bulk fixture"');
+
+    // A commit on the default branch, found by its hash, resolves reports that aren't linked, and Back to triage
+    // reopens them.
+    await page.goto(bulkReports("triage"));
+    await selectAll.check();
+    await bar.getByRole("button", { name: "Add to issue…" }).click();
+    const fixDialog = page.getByRole("dialog", { name: "Add 4 reports to an issue" });
+    await fixDialog.getByRole("combobox", { name: "Search issues" }).fill("0123456789a");
+    await page.getByRole("option", { name: /Stop the fixture crash/ }).click();
+    await fixDialog.getByRole("button", { name: "Add reports", exact: true }).click();
+    await expect(page.getByText("No matching reports")).toBeVisible();
+    await page.goto(bulkReports("resolved"));
+    await expect(reports).toHaveCount(4);
+    await selectAll.check();
+    await bar.getByRole("button", { name: "Back to triage" }).click();
+    await page.getByRole("dialog", { name: "Return 4 reports to triage?" })
+      .getByRole("button", { name: "Back to triage" })
+      .click();
+    await expect(page.getByText("No matching reports")).toBeVisible();
 
     // Adding reports to an issue confirms them, and opens the issue (which an earlier test merged into another).
     await page.goto(bulkReports("triage"));

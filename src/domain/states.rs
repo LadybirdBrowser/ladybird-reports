@@ -14,9 +14,40 @@ text_enum! {
 pub enum ReportStateAction {
     /// Restores rejected reports that are linked to an issue.
     Confirm,
-    /// Unlinks linked reports, and restores rejected ones that aren't linked.
+    /// Unlinks linked reports, and restores rejected and resolved ones that aren't linked.
     ReturnToTriage,
     Reject,
+}
+
+text_enum! {
+    /// What kind of fix resolved a report that isn't linked to an issue. Mirrors the `reports_fix_kind_valid`
+    /// constraint.
+    pub enum ReportFixKind {
+        PullRequest => "pull_request",
+        Commit => "commit",
+    }
+}
+
+/// The fix that resolved a report which isn't linked to an issue: a merged pull request, by its number, or a commit on
+/// the repository's default branch, by its full hash.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ReportFix {
+    pub kind: ReportFixKind,
+    pub reference: String,
+    pub title: String,
+    pub url: String,
+}
+
+impl ReportFix {
+    /// What the fix is called on GitHub: a pull request by its number, a commit by its abbreviated hash.
+    pub fn label(&self) -> String {
+        match self.kind {
+            ReportFixKind::PullRequest => format!("Pull request #{}", self.reference),
+            ReportFixKind::Commit => {
+                format!("Commit {}", &self.reference[..self.reference.len().min(11)])
+            }
+        }
+    }
 }
 
 text_enum! {

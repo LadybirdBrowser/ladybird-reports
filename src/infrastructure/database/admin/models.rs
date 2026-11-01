@@ -3,7 +3,7 @@ use serde_json::Value;
 
 use crate::domain::{
     AttachmentId, DiscordDeliveryLeaseId, FieldKind, GithubLinkState, IssueId, IssueState,
-    ReportId, ReportKind, ReportSearch, ReportState,
+    ReportFix, ReportFixKind, ReportId, ReportKind, ReportSearch, ReportState,
 };
 
 #[derive(Clone, Debug, sqlx::FromRow)]
@@ -139,6 +139,22 @@ pub struct ReportRecord {
     pub submission_source_is_blocked: bool,
     pub created_at: DateTime<Utc>,
     pub expires_at: Option<DateTime<Utc>>,
+    pub fix_kind: Option<ReportFixKind>,
+    pub fix_reference: Option<String>,
+    pub fix_title: Option<String>,
+    pub fix_url: Option<String>,
+}
+
+impl ReportRecord {
+    /// The fix that resolved the report, if one did with no issue.
+    pub fn fix(&self) -> Option<ReportFix> {
+        Some(ReportFix {
+            kind: self.fix_kind?,
+            reference: self.fix_reference.clone()?,
+            title: self.fix_title.clone()?,
+            url: self.fix_url.clone()?,
+        })
+    }
 }
 
 #[derive(Clone, Debug, sqlx::FromRow)]

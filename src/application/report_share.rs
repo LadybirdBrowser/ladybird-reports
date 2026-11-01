@@ -142,6 +142,10 @@ mod tests {
                 submission_source_is_blocked: false,
                 created_at: Utc.with_ymd_and_hms(2026, 10, 22, 8, 0, 0).unwrap(),
                 expires_at: None,
+                fix_kind: None,
+                fix_reference: None,
+                fix_title: None,
+                fix_url: None,
             },
             fields: vec![
                 field(

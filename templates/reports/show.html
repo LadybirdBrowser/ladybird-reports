@@ -199,6 +199,25 @@
                         <button type="button" data-dialog-open="issue-dialog">Add report to issue</button>
                     </section>
                 {% endif %}
+                {% if let Some(fix) = report.fix %}
+                    <section class="action-group report-linked-issue" aria-labelledby="fix-title">
+                        <h3 id="fix-title">Fixed by</h3>
+                        <a class="primary-link" href="{{ fix.url }}">{{ fix.title }}</a>
+                        <div class="issue-link-field">
+                            <span>GitHub</span>
+                            <a href="{{ fix.url }}">{{ fix.label() }}</a>
+                        </div>
+                    </section>
+                {% endif %}
+                {% if !report.is_assigned && report.state == ReportState::Resolved %}
+                    <section class="action-group">
+                        <form method="post" action="/reports/{{ report.id }}/state">
+                            <input type="hidden" name="csrf" value="{{ navigation.as_ref().unwrap().csrf_token }}">
+                            <input type="hidden" name="state" value="triage">
+                            <button class="button-secondary" type="submit">Reopen report</button>
+                        </form>
+                    </section>
+                {% endif %}
 
                 <section class="action-group">
                     <button

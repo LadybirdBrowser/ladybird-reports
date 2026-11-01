@@ -10,14 +10,17 @@ use serde::{Deserialize, Serialize};
 use crate::{
     application::{IssueProposal, propose_issue, title_for_report},
     domain::{
-        AttachmentId, FieldKind, GithubLinkState, IssueId, ParsedStackTrace, ReportId, ReportKind,
-        ReportSearch, ReportState, ReportStateAction, filter_expression, is_commit_id,
-        parse_stack_trace, stack_fingerprint,
+        AttachmentId, FieldKind, GithubLinkState, IssueId, ParsedStackTrace, ReportFix,
+        ReportFixKind, ReportId, ReportKind, ReportSearch, ReportState, ReportStateAction,
+        filter_expression, is_commit_id, parse_stack_trace, stack_fingerprint,
     },
     error::{AppError, Result},
-    infrastructure::database::{
-        IssueRecord, PotentialIssueMatch, REPORT_PAGE_SIZE, ReportQuery, ReportSummary,
-        SEARCH_VALUE_LIMIT, StoredAttachment,
+    infrastructure::{
+        database::{
+            IssueRecord, PotentialIssueMatch, REPORT_PAGE_SIZE, ReportQuery, ReportSummary,
+            SEARCH_VALUE_LIMIT, StoredAttachment,
+        },
+        github::is_commit_hash_prefix,
     },
 };
 
@@ -154,6 +157,8 @@ pub struct ReportView {
     state: ReportState,
     overview: Vec<OverviewField>,
     is_assigned: bool,
+    /// The fix that resolved the report, when one did with no issue.
+    fix: Option<ReportFix>,
     has_submission_source: bool,
     submission_source_is_blocked: bool,
 }
@@ -544,6 +549,7 @@ pub async fn show(
         state: details.report.state,
         overview,
         is_assigned: details.report.issue_id.is_some(),
+        fix: details.report.fix(),
         has_submission_source: details.report.has_submission_source,
         submission_source_is_blocked: details.report.submission_source_is_blocked,
     };
@@ -712,6 +718,20 @@ pub async fn assign_to_issue(
     session.verify_csrf(&form.csrf)?;
     state.database.ensure_report_unassigned(report_id).await?;
 
+    if let Some(fix) = selected_fix(&state, &session, &form.issue_selection).await? {
+        state
+            .database
+            .resolve_reports_with_fix(&[report_id], &fix, session.github_id)
+            .await?;
+        tracing::info!(
+            event = "report.resolve_with_fix",
+            %report_id,
+            fix = fix.url,
+            actor = session.login,
+        );
+        return Ok(report_redirect(report_id));
+    }
+
     let issue_id =
         add_reports_to_selected_issue(&state, &session, &form.issue_selection, &[report_id])
             .await?;
@@ -724,6 +744,78 @@ pub async fn assign_to_issue(
     );
 
     Ok(Redirect::to(&format!("/issues/{issue_id}")))
+}
+
+/// The longest title a report keeps of the fix that resolved it.
+const FIX_TITLE_LIMIT: usize = 512;
+
+/// The fix chosen in the issue selector, if the choice is one: a merged pull request (`pull:<number>`) or a commit on
+/// the repository's default branch (`commit:<hash>`), as GitHub describes it now. `None` for an issue.
+async fn selected_fix(
+    state: &AdminState,
+    session: &Session,
+    selection: &str,
+) -> Result<Option<ReportFix>> {
+    let (kind, value) = if let Some(value) = selection.strip_prefix("pull:") {
+        (ReportFixKind::PullRequest, value)
+    } else if let Some(value) = selection.strip_prefix("commit:") {
+        (ReportFixKind::Commit, value)
+    } else {
+        return Ok(None);
+    };
+
+    let configuration = state.database.configuration().await?;
+    let repository = &configuration.github.repository;
+    let access_token = session.github_access_token(state)?;
+    let fix = match kind {
+        ReportFixKind::PullRequest => {
+            let number = value
+                .parse::<i64>()
+                .ok()
+                .filter(|number| *number > 0)
+                .ok_or(AppError::InvalidRequest("Select a pull request"))?;
+            let pull_request = state
+                .github
+                .pull_request(&access_token, repository, number)
+                .await?;
+            if pull_request.merged_at.is_none() {
+                return Err(AppError::InvalidRequest(
+                    "Only a merged pull request resolves a report",
+                ));
+            }
+            ReportFix {
+                kind,
+                reference: pull_request.number.to_string(),
+                title: pull_request.title.chars().take(FIX_TITLE_LIMIT).collect(),
+                url: pull_request.html_url,
+            }
+        }
+        ReportFixKind::Commit => {
+            if !is_commit_hash_prefix(value) {
+                return Err(AppError::InvalidRequest("Select a commit"));
+            }
+            let commit = state
+                .github
+                .commit(&access_token, repository, value)
+                .await?;
+            if !state
+                .github
+                .default_branch_contains(&access_token, repository, &commit.sha)
+                .await?
+            {
+                return Err(AppError::InvalidRequest(
+                    "Only a commit on the default branch resolves a report",
+                ));
+            }
+            ReportFix {
+                kind,
+                title: commit.subject().chars().take(FIX_TITLE_LIMIT).collect(),
+                reference: commit.sha,
+                url: commit.html_url,
+            }
+        }
+    };
+    Ok(Some(fix))
 }
 
 /// Links reports to the issue chosen in the issue selector: a tracked issue (`issue:<id>`), or a GitHub issue
@@ -829,6 +921,22 @@ pub async fn bulk_action(
 
     let state_action = match form.action {
         BulkReportAction::AddToIssue => {
+            if let Some(fix) = selected_fix(&state, &session, &form.issue_selection).await? {
+                let changed = state
+                    .database
+                    .resolve_reports_with_fix(&report_ids, &fix, session.github_id)
+                    .await?;
+                tracing::info!(
+                    event = "report.bulk_resolve_with_fix",
+                    reports = report_ids.len(),
+                    changed,
+                    fix = fix.url,
+                    actor = session.login,
+                );
+                return Ok(Redirect::to(
+                    validated_return_to(&form.return_to).unwrap_or("/"),
+                ));
+            }
             let issue_id =
                 add_reports_to_selected_issue(&state, &session, &form.issue_selection, &report_ids)
                     .await?;

@@ -4,9 +4,9 @@ use sqlx::{Postgres, QueryBuilder, Row};
 
 use crate::{
     domain::{
-        AttachmentId, AuditAction, IssueId, IssueState, REPORT_TITLE_STACK_CHARACTERS, ReportId,
-        ReportKind, ReportState, ReportStateAction, ReportTitleInput, STACK_SIGNATURE_VERSION,
-        TitleStyle, generate_report_title,
+        AttachmentId, AuditAction, IssueId, IssueState, REPORT_TITLE_STACK_CHARACTERS, ReportFix,
+        ReportFixKind, ReportId, ReportKind, ReportState, ReportStateAction, ReportTitleInput,
+        STACK_SIGNATURE_VERSION, TitleStyle, generate_report_title,
     },
     error::{AppError, Result},
     infrastructure::database::AdminDatabase,
@@ -53,6 +53,16 @@ pub const REPORT_PAGE_SIZE: usize = 50;
 pub const SEARCH_VALUE_LIMIT: usize = 25;
 
 const SEARCH_VALUE_QUERY_LIMIT: i64 = SEARCH_VALUE_LIMIT as i64 + 1;
+
+/// A report a fix is asked to resolve, as far as deciding whether it can.
+#[derive(sqlx::FromRow)]
+struct FixCandidate {
+    id: ReportId,
+    state: ReportState,
+    issue_id: Option<IssueId>,
+    fix_kind: Option<ReportFixKind>,
+    fix_reference: Option<String>,
+}
 
 impl AdminDatabase {
     pub async fn ensure_report_unassigned(&self, report_id: ReportId) -> Result<()> {
@@ -407,7 +417,11 @@ impl AdminDatabase {
                         )
                 ) AS submission_source_is_blocked,
                 created_at,
-                expires_at
+                expires_at,
+                fix_kind,
+                fix_reference,
+                fix_title,
+                fix_url
              FROM reports
              WHERE id = $1
                 AND storage_state = 'ready'",
@@ -638,20 +652,31 @@ impl AdminDatabase {
             transaction.commit().await?;
             return Ok(None);
         }
-        if target != ReportState::Rejected && previous.0 != ReportState::Rejected {
-            return Err(AppError::InvalidRequest(
-                "Only rejected reports can be restored",
-            ));
-        }
-        if target == ReportState::Confirmed && previous.1.is_none() {
-            return Err(AppError::InvalidRequest(
-                "Link the report to an issue before confirming it",
-            ));
-        }
-        if target == ReportState::Triage && previous.1.is_some() {
-            return Err(AppError::InvalidRequest(
-                "Unlink the report before returning it to triage",
-            ));
+        match (previous.0, target, previous.1) {
+            (_, ReportState::Rejected, _) => {}
+            (ReportState::Rejected, ReportState::Confirmed, None) => {
+                return Err(AppError::InvalidRequest(
+                    "Link the report to an issue before confirming it",
+                ));
+            }
+            (ReportState::Rejected, ReportState::Triage, Some(_)) => {
+                return Err(AppError::InvalidRequest(
+                    "Unlink the report before returning it to triage",
+                ));
+            }
+            (ReportState::Rejected, ReportState::Confirmed | ReportState::Triage, _) => {}
+            // A report that a fix resolved, with no issue, is reopened directly.
+            (ReportState::Resolved, ReportState::Triage, None) => {}
+            (_, ReportState::Resolved, _) => {
+                return Err(AppError::InvalidRequest(
+                    "Resolve the report with its issue, or with the pull request or commit that fixed it",
+                ));
+            }
+            _ => {
+                return Err(AppError::InvalidRequest(
+                    "Only rejected reports can be restored",
+                ));
+            }
         }
 
         // A confirmed report of a resolved issue is resolved, as the issue is.
@@ -689,6 +714,93 @@ impl AdminDatabase {
 
         transaction.commit().await?;
         Ok(Some(previous.0))
+    }
+
+    /// Resolves ready reports that aren't linked to an issue with the fix that resolved them, in one transaction: all of
+    /// them, or none if one of them is linked or rejected. A report that another fix resolved takes this one instead.
+    /// Returns how many reports changed.
+    pub async fn resolve_reports_with_fix(
+        &self,
+        report_ids: &[ReportId],
+        fix: &ReportFix,
+        actor: i64,
+    ) -> Result<usize> {
+        let report_ids = in_lock_order(report_ids);
+        let mut transaction = self.pool.begin().await?;
+        lock_issue_operations(&mut transaction).await?;
+
+        let reports: Vec<FixCandidate> = sqlx::query_as(
+            "SELECT id, state, issue_id, fix_kind, fix_reference
+                 FROM reports
+                 WHERE id = ANY($1)
+                    AND storage_state = 'ready'
+                 ORDER BY id
+                 FOR UPDATE",
+        )
+        .bind(report_ids.iter().map(|id| id.0).collect::<Vec<_>>())
+        .fetch_all(&mut *transaction)
+        .await?;
+        if reports.len() != report_ids.len() {
+            return Err(AppError::NotFound("Report not found"));
+        }
+
+        let mut changes = Vec::new();
+        for FixCandidate {
+            id: report_id,
+            state,
+            issue_id,
+            fix_kind,
+            fix_reference,
+        } in reports
+        {
+            if issue_id.is_some() {
+                return Err(AppError::InvalidRequest(
+                    "A report on an issue is resolved with its issue",
+                ));
+            }
+            match state {
+                ReportState::Rejected => {
+                    return Err(AppError::InvalidRequest(
+                        "Restore rejected reports before resolving them",
+                    ));
+                }
+                ReportState::Resolved
+                    if fix_kind == Some(fix.kind)
+                        && fix_reference.as_deref() == Some(&*fix.reference) => {}
+                _ => changes.push((report_id, state)),
+            }
+        }
+
+        for (report_id, previous) in &changes {
+            sqlx::query(
+                "UPDATE reports
+                 SET state = 'resolved', fix_kind = $2, fix_reference = $3, fix_title = $4, fix_url = $5,
+                     updated_at = now()
+                 WHERE id = $1",
+            )
+            .bind(report_id)
+            .bind(fix.kind)
+            .bind(&fix.reference)
+            .bind(&fix.title)
+            .bind(&fix.url)
+            .execute(&mut *transaction)
+            .await?;
+            insert_audit_event(
+                &mut *transaction,
+                Some(actor),
+                AuditAction::ReportUpdateState,
+                Some(report_id.0),
+                serde_json::json!({
+                    "from": previous,
+                    "to": ReportState::Resolved,
+                    "fix": { "kind": fix.kind, "reference": fix.reference, "url": fix.url },
+                }),
+            )
+            .await?;
+        }
+
+        transaction.commit().await?;
+        Ok(changes.len())
     }
 
     pub(super) async fn audit_report_state_change(
@@ -778,10 +890,12 @@ impl AdminDatabase {
                 ReportStateAction::ReturnToTriage => match (state, issue_id) {
                     (_, Some(issue_id)) => Some(Change::Unlink(issue_id)),
                     (ReportState::Triage, None) => None,
-                    (ReportState::Rejected, None) => Some(Change::State(ReportState::Triage)),
+                    (ReportState::Rejected | ReportState::Resolved, None) => {
+                        Some(Change::State(ReportState::Triage))
+                    }
                     _ => {
                         return Err(AppError::InvalidRequest(
-                            "Only linked or rejected reports can return to triage",
+                            "Only linked, rejected, or resolved reports can return to triage",
                         ));
                     }
                 },

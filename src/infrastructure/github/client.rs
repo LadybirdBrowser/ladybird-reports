@@ -161,6 +161,50 @@ struct GithubIssueSearch {
     items: Vec<GithubIssue>,
 }
 
+/// A pull request, as far as resolving a report with it needs.
+#[derive(Clone, Debug, Deserialize)]
+pub struct GithubPullRequest {
+    pub number: i64,
+    pub title: String,
+    pub html_url: String,
+    pub merged_at: Option<DateTime<Utc>>,
+}
+
+/// A commit, as far as resolving a report with it needs.
+#[derive(Clone, Debug, Deserialize)]
+pub struct GithubCommit {
+    pub sha: String,
+    pub html_url: String,
+    pub commit: GithubCommitDetails,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct GithubCommitDetails {
+    pub message: String,
+}
+
+impl GithubCommit {
+    /// The first line of the commit message.
+    pub fn subject(&self) -> &str {
+        self.commit.message.lines().next().unwrap_or_default()
+    }
+}
+
+#[derive(Deserialize)]
+struct GithubCommitSearch {
+    items: Vec<GithubCommit>,
+}
+
+#[derive(Deserialize)]
+struct GithubDefaultBranch {
+    default_branch: String,
+}
+
+#[derive(Deserialize)]
+struct GithubComparison {
+    status: String,
+}
+
 #[derive(Deserialize)]
 struct GithubIssueField {
     id: i64,
@@ -506,6 +550,88 @@ impl GithubClient {
         Ok(response.items)
     }
 
+    pub async fn search_merged_pull_requests(
+        &self,
+        token: &str,
+        repository: &str,
+        query: &str,
+    ) -> Result<Vec<GithubIssue>> {
+        let mut url = self.api_url("/search/issues")?;
+        url.query_pairs_mut()
+            .append_pair("q", &format!("repo:{repository} is:pr is:merged {query}"))
+            .append_pair("per_page", "10");
+
+        let response: GithubIssueSearch = self
+            .request_json_url(Method::GET, url, token, Option::<&()>::None)
+            .await?;
+        Ok(response.items)
+    }
+
+    pub async fn pull_request(
+        &self,
+        token: &str,
+        repository: &str,
+        number: i64,
+    ) -> Result<GithubPullRequest> {
+        let path = format!("/repos/{repository}/pulls/{number}");
+        self.request_json(Method::GET, &path, token, Option::<&()>::None)
+            .await
+    }
+
+    /// Commits that match the query: the one it names, when it's a commit hash, or else those whose messages match.
+    pub async fn search_commits(
+        &self,
+        token: &str,
+        repository: &str,
+        query: &str,
+    ) -> Result<Vec<GithubCommit>> {
+        if is_commit_hash_prefix(query) {
+            return Ok(vec![self.commit(token, repository, query).await?]);
+        }
+        let mut url = self.api_url("/search/commits")?;
+        url.query_pairs_mut()
+            .append_pair("q", &format!("repo:{repository} {query}"))
+            .append_pair("per_page", "10");
+
+        let response: GithubCommitSearch = self
+            .request_json_url(Method::GET, url, token, Option::<&()>::None)
+            .await?;
+        Ok(response.items)
+    }
+
+    pub async fn commit(
+        &self,
+        token: &str,
+        repository: &str,
+        reference: &str,
+    ) -> Result<GithubCommit> {
+        let path = format!("/repos/{repository}/commits/{reference}");
+        self.request_json(Method::GET, &path, token, Option::<&()>::None)
+            .await
+    }
+
+    /// Whether the repository's default branch contains the commit.
+    pub async fn default_branch_contains(
+        &self,
+        token: &str,
+        repository: &str,
+        sha: &str,
+    ) -> Result<bool> {
+        let path = format!("/repos/{repository}");
+        let repository_info: GithubDefaultBranch = self
+            .request_json(Method::GET, &path, token, Option::<&()>::None)
+            .await?;
+        // The comparison runs from the branch to the commit: A commit the branch contains is behind it, or is its tip.
+        let path = format!(
+            "/repos/{repository}/compare/{}...{sha}",
+            repository_info.default_branch
+        );
+        let comparison: GithubComparison = self
+            .request_json(Method::GET, &path, token, Option::<&()>::None)
+            .await?;
+        Ok(matches!(comparison.status.as_str(), "behind" | "identical"))
+    }
+
     pub async fn create_issue(
         &self,
         token: &str,
@@ -773,6 +899,11 @@ impl GithubClient {
 
         decode_github_response(response).await
     }
+}
+
+/// Whether a search is a commit hash, or the start of one, which names the commit rather than words in its message.
+pub fn is_commit_hash_prefix(query: &str) -> bool {
+    (7..=40).contains(&query.len()) && query.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
 
 /// Where GitHub may send a request for an uploaded image on: its own address, or the signed storage it keeps images

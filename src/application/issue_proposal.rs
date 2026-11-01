@@ -186,6 +186,10 @@ mod tests {
                 submission_source_is_blocked: false,
                 created_at: Utc::now(),
                 expires_at: None,
+                fix_kind: None,
+                fix_reference: None,
+                fix_title: None,
+                fix_url: None,
             },
             fields: vec![
                 field("platform", FieldKind::Text, json!("macOS")),

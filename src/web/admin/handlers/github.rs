@@ -17,6 +17,29 @@ use super::reports::{EntitySearchOption, EntitySearchResponse, ReportSearchQuery
 const TRACKED_ISSUES: &str = "Tracked issues";
 const GITHUB_ISSUES: &str = "GitHub issues";
 const RESOLVED_ISSUES: &str = "Resolved issues";
+const MERGED_PULL_REQUESTS: &str = "Merged pull requests";
+const COMMITS: &str = "Commits";
+
+/// How long a GitHub search may take before the selector shows what it has without it.
+const GITHUB_SEARCH_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
+
+/// The results of a GitHub search the selector shows, or none when it fails or takes too long.
+fn github_results<T>(
+    outcome: std::result::Result<Result<Vec<T>>, tokio::time::error::Elapsed>,
+    search: &'static str,
+) -> Vec<T> {
+    match outcome {
+        Ok(Ok(results)) => results,
+        Ok(Err(error)) => {
+            tracing::warn!(event = "github.search_failed", search, ?error);
+            Vec::new()
+        }
+        Err(_) => {
+            tracing::warn!(event = "github.search_timed_out", search);
+            Vec::new()
+        }
+    }
+}
 
 pub async fn issue_options(
     State(state): State<AdminState>,
@@ -30,27 +53,37 @@ pub async fn issue_options(
 
     let configuration = state.database.configuration().await?;
     let token = session.github_access_token(&state)?;
-    let (tracked_issues, github_issues) = tokio::join!(
+    let repository = &configuration.github.repository;
+    // A fix is looked for only once the search says something: An empty search lists tracked issues.
+    let searches_fixes = !query.is_empty();
+    let (tracked_issues, github_issues, pull_requests, commits) = tokio::join!(
         state.database.search_issues(query),
         tokio::time::timeout(
-            std::time::Duration::from_secs(3),
-            state
-                .github
-                .search_issues(&token, &configuration.github.repository, query),
+            GITHUB_SEARCH_TIMEOUT,
+            state.github.search_issues(&token, repository, query),
         ),
+        tokio::time::timeout(GITHUB_SEARCH_TIMEOUT, async {
+            if searches_fixes {
+                state
+                    .github
+                    .search_merged_pull_requests(&token, repository, query)
+                    .await
+            } else {
+                Ok(Vec::new())
+            }
+        }),
+        tokio::time::timeout(GITHUB_SEARCH_TIMEOUT, async {
+            if searches_fixes {
+                state.github.search_commits(&token, repository, query).await
+            } else {
+                Ok(Vec::new())
+            }
+        }),
     );
     let tracked_issues = tracked_issues?;
-    let github_issues = match github_issues {
-        Ok(Ok(issues)) => issues,
-        Ok(Err(error)) => {
-            tracing::warn!(event = "github.issue_search_failed", ?error);
-            Vec::new()
-        }
-        Err(_) => {
-            tracing::warn!(event = "github.issue_search_timed_out");
-            Vec::new()
-        }
-    };
+    let github_issues = github_results(github_issues, "issues");
+    let pull_requests = github_results(pull_requests, "pull_requests");
+    let commits = github_results(commits, "commits");
 
     let github_numbers = github_issues
         .iter()
@@ -128,11 +161,39 @@ pub async fn issue_options(
         });
     }
 
+    // A merged pull request or a commit resolves a report that isn't linked to an issue, with the fix as the reason.
+    for pull_request in pull_requests {
+        results.push(EntitySearchOption {
+            value: format!("pull:{}", pull_request.number),
+            label: pull_request.title,
+            description: pull_request.html_url,
+            identifier: format!("#{}", pull_request.number),
+            badge: "Merged".into(),
+            badge_tone: "resolved",
+            footnote: "Resolves the report".into(),
+            group: Some(MERGED_PULL_REQUESTS),
+        });
+    }
+    for commit in commits {
+        results.push(EntitySearchOption {
+            value: format!("commit:{}", commit.sha),
+            label: commit.subject().to_owned(),
+            description: commit.html_url.clone(),
+            identifier: commit.sha.chars().take(11).collect(),
+            badge: "Commit".into(),
+            badge_tone: "resolved",
+            footnote: "Resolves the report, if it's on the default branch".into(),
+            group: Some(COMMITS),
+        });
+    }
+
     // Open tracked issues come first, and resolved ones last, as a report is rarely added to an issue that is fixed.
     results.sort_by_key(|option| match option.group {
         Some(TRACKED_ISSUES) => 0,
         Some(GITHUB_ISSUES) => 1,
-        _ => 2,
+        Some(MERGED_PULL_REQUESTS) => 2,
+        Some(COMMITS) => 3,
+        _ => 4,
     });
 
     Ok(Json(EntitySearchResponse { results }))
