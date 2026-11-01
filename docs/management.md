@@ -37,8 +37,9 @@ reopening an issue, on GitHub or here, moves its reports along, and the audit lo
 actor. Resolved reports are not in the default list; `state:resolved` finds them.
 
 Report actions can confirm a report, return an unlinked report to triage, or reject a report with a confirmation dialog.
-Rejected reports remain available through `state:rejected`; retention still governs when their data is removed. Adding a
-report to an issue confirms it.
+The dialog takes an optional reason of up to 500 characters, which the audit log records with the rejection and the
+report’s activity list shows in full. Rejected reports remain available through `state:rejected`; retention still
+governs when their data is removed. Adding a report to an issue confirms it.
 
 The report list can change several reports at once. Each row has a checkbox, the header of a folded group has one for
 the reports of its group, and the table header has one for every report that is loaded. **Show more…** keeps the
@@ -46,10 +47,11 @@ selection, and a new search clears it. With reports selected, a bar above the li
 **Confirm**, **Back to triage** and **Reject**, which change each report as its own page would: Adding them to an issue
 links and confirms them, as the issue workflow of one report does. **Confirm** restores rejected reports that are linked
 to an issue, **Back to triage** unlinks linked reports and restores rejected ones that aren’t linked, and **Reject**
-rejects them. **Back to triage** and **Reject** ask first. An action changes all of the selected reports or none of
-them: If one of them can’t make the change — a report on another issue, or an unlinked one to confirm — nothing changes,
-and the bar says why. Reports already where the action leads are left alone. One action takes at most 200 reports, and
-each report it changes gets the same audit events as a change from its page.
+rejects them. **Back to triage** and **Reject** ask first, and **Reject** takes an optional reason for every report it
+rejects, as the dialog of one report does. An action changes all of the selected reports or none of them: If one of them
+can’t make the change — a report on another issue, or an unlinked one to confirm — nothing changes, and the bar says
+why. Reports already where the action leads are left alone. One action takes at most 200 reports, and each report it
+changes gets the same audit events as a change from its page.
 
 Blocking a submission source needs the report's stored identifier, which is cleared after the submission source
 retention period (48 hours by default); the block action is then not shown. An active block keeps its own identifier

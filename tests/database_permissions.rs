@@ -995,7 +995,7 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
 
     assert!(
         admin_database
-            .set_report_state(second_triage_report, ReportState::Confirmed, 999)
+            .set_report_state(second_triage_report, ReportState::Confirmed, 999, None)
             .await
             .is_err(),
         "an unlinked report cannot be confirmed"
@@ -1007,7 +1007,7 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
         .expect("represent a previously confirmed unlinked report");
     assert!(
         admin_database
-            .set_report_state(second_triage_report, ReportState::Triage, 999)
+            .set_report_state(second_triage_report, ReportState::Triage, 999, None)
             .await
             .is_err(),
         "an unlinked confirmed report cannot be manually returned to triage"
@@ -1059,7 +1059,7 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
     assert!(confirmed_report_is_visible);
 
     admin_database
-        .set_report_state(second_triage_report, ReportState::Rejected, 999)
+        .set_report_state(second_triage_report, ReportState::Rejected, 999, None)
         .await
         .expect("reject the confirmed report");
     let rejected_report_is_retained: bool = sqlx::query_scalar(
@@ -1085,7 +1085,7 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
     assert!(assigned_report_is_visible);
     assert!(
         admin_database
-            .set_report_state(assigned_report, ReportState::Triage, 999)
+            .set_report_state(assigned_report, ReportState::Triage, 999, None)
             .await
             .is_err(),
         "a linked report cannot return to triage"
@@ -1771,7 +1771,7 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
         .expect("link first report manually");
 
     admin_database
-        .set_report_state(stack_reports[0], ReportState::Rejected, 999)
+        .set_report_state(stack_reports[0], ReportState::Rejected, 999, None)
         .await
         .expect("reject a linked report");
     let unmatched_report =
@@ -2067,6 +2067,7 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
 
     assert_reports_follow_their_issue(&admin_pool, &admin_database).await;
     assert_bulk_report_actions(&admin_pool, &admin_database).await;
+    assert_rejection_reasons_are_recorded(&admin_pool, &admin_database).await;
 
     // The indexer is event-driven. Reports that became ready before it started are found by its startup check, spanning
     // more than one batch; a report that becomes ready afterwards is found because the database announces it, as the
@@ -2173,7 +2174,7 @@ async fn assert_reports_follow_their_issue(pool: &sqlx::PgPool, database: &Admin
         .await
         .expect("reject report");
     database
-        .set_report_state(tracked, ReportState::Confirmed, 999)
+        .set_report_state(tracked, ReportState::Confirmed, 999, None)
         .await
         .expect("restore the report");
     assert_eq!(state_of(pool, tracked).await, "resolved");
@@ -2252,13 +2253,13 @@ async fn assert_bulk_report_actions(pool: &sqlx::PgPool, database: &AdminDatabas
 
     // Rejecting reports rejects all of them, and rejecting them again changes nothing.
     let changed = database
-        .apply_report_state_action(&reports, ReportStateAction::Reject, 999)
+        .apply_report_state_action(&reports, ReportStateAction::Reject, 999, None)
         .await
         .expect("reject the reports");
     assert_eq!(changed, 3);
     assert_eq!(
         database
-            .apply_report_state_action(&reports, ReportStateAction::Reject, 999)
+            .apply_report_state_action(&reports, ReportStateAction::Reject, 999, None)
             .await
             .expect("reject the reports again"),
         0
@@ -2272,12 +2273,17 @@ async fn assert_bulk_report_actions(pool: &sqlx::PgPool, database: &AdminDatabas
 
     // Confirming restores linked reports; one that isn't linked fails the whole request.
     database
-        .apply_report_state_action(&[unlinked], ReportStateAction::Reject, 999)
+        .apply_report_state_action(&[unlinked], ReportStateAction::Reject, 999, None)
         .await
         .expect("reject the unlinked report");
     assert!(
         database
-            .apply_report_state_action(&[reports[0], unlinked], ReportStateAction::Confirm, 999)
+            .apply_report_state_action(
+                &[reports[0], unlinked],
+                ReportStateAction::Confirm,
+                999,
+                None
+            )
             .await
             .is_err(),
         "an unlinked report can't be confirmed"
@@ -2288,7 +2294,7 @@ async fn assert_bulk_report_actions(pool: &sqlx::PgPool, database: &AdminDatabas
     );
     assert_eq!(
         database
-            .apply_report_state_action(&reports[..2], ReportStateAction::Confirm, 999)
+            .apply_report_state_action(&reports[..2], ReportStateAction::Confirm, 999, None)
             .await
             .expect("confirm the linked reports"),
         2
@@ -2307,7 +2313,7 @@ async fn assert_bulk_report_actions(pool: &sqlx::PgPool, database: &AdminDatabas
     .await
     .expect("resolve the issue");
     database
-        .apply_report_state_action(&reports[2..], ReportStateAction::Confirm, 999)
+        .apply_report_state_action(&reports[2..], ReportStateAction::Confirm, 999, None)
         .await
         .expect("confirm the report of the resolved issue");
     assert_eq!(
@@ -2322,6 +2328,7 @@ async fn assert_bulk_report_actions(pool: &sqlx::PgPool, database: &AdminDatabas
                 &[reports[0], reports[1], unlinked],
                 ReportStateAction::ReturnToTriage,
                 999,
+                None,
             )
             .await
             .expect("return the reports to triage"),
@@ -2346,13 +2353,80 @@ async fn assert_bulk_report_actions(pool: &sqlx::PgPool, database: &AdminDatabas
             .apply_report_state_action(
                 &[reports[0], ReportId::new()],
                 ReportStateAction::Reject,
-                999
+                999,
+                None
             )
             .await
             .is_err(),
         "an unknown report fails the whole request"
     );
     assert_eq!(state_of(pool, reports[0]).await, ("triage".into(), None));
+}
+
+/// A rejection records the reason it was given, alone or in bulk, and records none when it wasn't given one.
+async fn assert_rejection_reasons_are_recorded(pool: &sqlx::PgPool, database: &AdminDatabase) {
+    async fn rejection_reason(pool: &sqlx::PgPool, report_id: ReportId) -> Option<String> {
+        sqlx::query_scalar(
+            "SELECT details->>'reason' FROM audit_events
+             WHERE entity_id = $1 AND action = 'report.update_state' AND details->>'to' = 'rejected'
+             ORDER BY id DESC
+             LIMIT 1",
+        )
+        .bind(report_id.0)
+        .fetch_one(pool)
+        .await
+        .expect("read the rejection event")
+    }
+
+    let mut reports = Vec::new();
+    for index in 0..4 {
+        reports.push(
+            insert_stack_report_for_matching(
+                pool,
+                &format!("#0 in Reason{index}::crash() at liblagom.so"),
+                0,
+            )
+            .await,
+        );
+    }
+
+    database
+        .set_report_state(
+            reports[0],
+            ReportState::Rejected,
+            999,
+            Some("No symbols to go on"),
+        )
+        .await
+        .expect("reject a report with a reason");
+    assert_eq!(
+        rejection_reason(pool, reports[0]).await.as_deref(),
+        Some("No symbols to go on")
+    );
+    database
+        .set_report_state(reports[1], ReportState::Rejected, 999, None)
+        .await
+        .expect("reject a report without a reason");
+    assert_eq!(rejection_reason(pool, reports[1]).await, None);
+
+    assert_eq!(
+        database
+            .apply_report_state_action(
+                &reports[2..],
+                ReportStateAction::Reject,
+                999,
+                Some("No way to reproduce"),
+            )
+            .await
+            .expect("reject reports with a reason"),
+        2
+    );
+    for report in &reports[2..] {
+        assert_eq!(
+            rejection_reason(pool, *report).await.as_deref(),
+            Some("No way to reproduce")
+        );
+    }
 }
 
 fn new_session<'a>(authorized_team: &'a str, token_hash: &'a str) -> NewSession<'a> {

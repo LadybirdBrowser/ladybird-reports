@@ -1242,9 +1242,12 @@ test.describe("authenticated management UI", () => {
     await confirmation.getByRole("button", { name: "Cancel" }).click();
     await expect(page.locator(".badge-triage")).toBeVisible();
     await page.getByRole("button", { name: "Reject report" }).first().click();
+    await confirmation.getByLabel("Reason (optional)").fill("No symbols, so nothing to go on");
     await confirmation.getByRole("button", { name: "Reject report" }).click();
     await expect(page.locator(".badge-rejected")).toHaveText("Rejected");
     await expect(page.locator(".page-header h1")).toHaveCSS("text-decoration-line", "line-through");
+    // The activity list shows the reason in full.
+    await expect(page.locator(".history .event-reason")).toHaveText("No symbols, so nothing to go on");
     await page.getByRole("button", { name: "Restore report" }).click();
     await expect(page.locator(".badge-triage")).toHaveText("Needs triage");
     await expect(page.locator(".page-header h1")).toHaveCSS("text-decoration-line", "none");
@@ -1751,8 +1754,14 @@ test.describe("authenticated management UI", () => {
     await page.goto(bulkReports("triage+state%3Aconfirmed"));
     await selectAll.check();
     await bar.getByRole("button", { name: "Reject" }).click();
-    await page.getByRole("dialog", { name: "Reject 4 reports?" }).getByRole("button", { name: "Reject" }).click();
+    const reject = page.getByRole("dialog", { name: "Reject 4 reports?" });
+    await reject.getByLabel("Reason (optional)").fill("No way to reproduce");
+    await reject.getByRole("button", { name: "Reject" }).click();
     await expect(page.getByText("No matching reports")).toBeVisible();
+    await page.goto(bulkReports("rejected"));
+    await openGroups(page);
+    await page.locator(".report-title-link").first().click();
+    await expect(page.locator(".history .event-reason").first()).toHaveText("No way to reproduce");
 
     // Confirming needs an issue link for every report; when one lacks it, nothing changes and the bar says why.
     await page.goto(bulkReports("rejected"));

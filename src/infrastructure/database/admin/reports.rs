@@ -606,18 +606,20 @@ impl AdminDatabase {
         }
 
         if previous.1 != target {
-            self.audit_report_state_change(transaction, report_id, actor, previous.1, target)
+            self.audit_report_state_change(transaction, report_id, actor, previous.1, target, None)
                 .await?;
         }
 
         Ok(())
     }
 
+    /// Moves one report to another state. A reason, if given, is recorded with the change.
     pub async fn set_report_state(
         &self,
         report_id: ReportId,
         target: ReportState,
         actor: i64,
+        reason: Option<&str>,
     ) -> Result<Option<ReportState>> {
         let mut transaction = self.pool.begin().await?;
         let previous: (ReportState, Option<IssueId>) = sqlx::query_as(
@@ -675,8 +677,15 @@ impl AdminDatabase {
         .execute(&mut *transaction)
         .await?;
 
-        self.audit_report_state_change(&mut transaction, report_id, actor, previous.0, target)
-            .await?;
+        self.audit_report_state_change(
+            &mut transaction,
+            report_id,
+            actor,
+            previous.0,
+            target,
+            reason,
+        )
+        .await?;
 
         transaction.commit().await?;
         Ok(Some(previous.0))
@@ -689,25 +698,31 @@ impl AdminDatabase {
         actor: i64,
         from: ReportState,
         to: ReportState,
+        reason: Option<&str>,
     ) -> Result<()> {
+        let mut details = serde_json::json!({ "from": from, "to": to });
+        if let Some(reason) = reason {
+            details["reason"] = reason.into();
+        }
         insert_audit_event(
             &mut **transaction,
             Some(actor),
             AuditAction::ReportUpdateState,
             Some(report_id.0),
-            serde_json::json!({ "from": from, "to": to }),
+            details,
         )
         .await
     }
 
     /// Applies one state change to ready reports in one transaction: all of them change, or none do if one of them
-    /// can't make the change. Reports already in the state the change leads to are left alone. Returns how many
-    /// reports changed.
+    /// can't make the change. Reports already in the state the change leads to are left alone. A reason, if given, is
+    /// recorded with each change. Returns how many reports changed.
     pub async fn apply_report_state_action(
         &self,
         report_ids: &[ReportId],
         action: ReportStateAction,
         actor: i64,
+        reason: Option<&str>,
     ) -> Result<usize> {
         let report_ids = in_lock_order(report_ids);
         let mut transaction = self.pool.begin().await?;
@@ -794,6 +809,7 @@ impl AdminDatabase {
                         actor,
                         *previous,
                         target,
+                        reason,
                     )
                     .await?;
                 }

@@ -462,6 +462,7 @@ impl AdminDatabase {
                 actor,
                 previous_state,
                 ReportState::Triage,
+                None,
             )
             .await?;
         }

@@ -24,7 +24,7 @@ use crate::{
 use super::super::{
     AdminState, FilterBar, FilterOption, TemplateResponse,
     authentication::{Navigation, validated_return_to},
-    session::{CsrfForm, Session},
+    session::Session,
     templates::{HistoryEvent, Timestamp, display_timestamp},
 };
 
@@ -796,6 +796,9 @@ pub struct BulkReportForm {
     reports: String,
     #[serde(default)]
     issue_selection: String,
+    /// Why the reports are rejected, for the reject action.
+    #[serde(default)]
+    reason: String,
     /// The report list to return to, with its search.
     #[serde(default)]
     return_to: String,
@@ -842,9 +845,13 @@ pub async fn bulk_action(
         BulkReportAction::Reject => ReportStateAction::Reject,
     };
 
+    let reason = match state_action {
+        ReportStateAction::Reject => rejection_reason(&form.reason)?,
+        _ => None,
+    };
     let changed = state
         .database
-        .apply_report_state_action(&report_ids, state_action, session.github_id)
+        .apply_report_state_action(&report_ids, state_action, session.github_id, reason)
         .await?;
     tracing::info!(
         event = "report.bulk_update_state",
@@ -924,7 +931,7 @@ pub async fn set_state(
     let target = ReportState::from(form.state);
     let previous = state
         .database
-        .set_report_state(report_id, target, session.github_id)
+        .set_report_state(report_id, target, session.github_id, None)
         .await?;
 
     if let Some(previous) = previous {
@@ -939,16 +946,38 @@ pub async fn set_state(
     Ok(report_redirect(report_id))
 }
 
+/// The longest reason a rejection records.
+const REJECTION_REASON_LIMIT: usize = 500;
+
+/// The reason given for a rejection, if any: what was typed, without surrounding whitespace.
+fn rejection_reason(reason: &str) -> Result<Option<&str>> {
+    let reason = reason.trim();
+    if reason.chars().count() > REJECTION_REASON_LIMIT {
+        return Err(AppError::InvalidRequest(
+            "Give a reason of at most 500 characters",
+        ));
+    }
+    Ok((!reason.is_empty()).then_some(reason))
+}
+
+#[derive(Deserialize)]
+pub struct RejectReportForm {
+    csrf: String,
+    #[serde(default)]
+    reason: String,
+}
+
 pub async fn reject(
     State(state): State<AdminState>,
     Extension(session): Extension<Session>,
     Path(report_id): Path<ReportId>,
-    Form(form): Form<CsrfForm>,
+    Form(form): Form<RejectReportForm>,
 ) -> Result<Redirect> {
     session.verify_csrf(&form.csrf)?;
+    let reason = rejection_reason(&form.reason)?;
     let previous = state
         .database
-        .set_report_state(report_id, ReportState::Rejected, session.github_id)
+        .set_report_state(report_id, ReportState::Rejected, session.github_id, reason)
         .await?;
 
     if let Some(previous) = previous {
@@ -1207,7 +1236,22 @@ fn submitted_date_filter_url(date: NaiveDate) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{attachment_disposition, format_attachment_size};
+    use super::{attachment_disposition, format_attachment_size, rejection_reason};
+
+    #[test]
+    fn rejection_reason_is_trimmed_and_bounded() {
+        assert_eq!(rejection_reason("").unwrap(), None);
+        assert_eq!(rejection_reason("  \n ").unwrap(), None);
+        assert_eq!(
+            rejection_reason("  No symbols\n").unwrap(),
+            Some("No symbols")
+        );
+        assert_eq!(
+            rejection_reason(&"é".repeat(500)).unwrap().map(str::len),
+            Some(1000)
+        );
+        assert!(rejection_reason(&"x".repeat(501)).is_err());
+    }
 
     #[test]
     fn attachment_sizes_use_binary_units() {

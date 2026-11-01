@@ -58,6 +58,8 @@ pub struct HistoryEvent {
     pub action: String,
     pub actor: String,
     pub details: String,
+    /// The reason given for the action, such as a rejection, shown in full.
+    pub reason: Option<String>,
     pub created_at: Timestamp,
 }
 
@@ -66,6 +68,7 @@ impl From<AuditEvent> for HistoryEvent {
         Self {
             action: event.action,
             actor: event.actor_login.unwrap_or_else(|| "system".into()),
+            reason: event.details["reason"].as_str().map(str::to_owned),
             details: event.details.to_string(),
             created_at: Timestamp(event.created_at),
         }

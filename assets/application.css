@@ -2705,6 +2705,19 @@ pre {
     flex: 1 1 10rem;
 }
 
+/* A reason given for the action goes on a line of its own, below the rest, in full. */
+.history li:has(.event-reason) {
+    flex-wrap: wrap;
+}
+
+.history li .event-reason {
+    flex-basis: 100%;
+    margin: 0;
+    color: var(--ink);
+    white-space: pre-line;
+    overflow-wrap: anywhere;
+}
+
 /* The dot and the line share a vertical axis, 0 from the left edge of the entry, and whole pixels keep both crisp.
    The dot covers the line. */
 .history li::before,
