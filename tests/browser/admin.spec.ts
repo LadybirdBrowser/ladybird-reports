@@ -536,7 +536,8 @@ test.describe("authenticated management UI", () => {
     await page.locator('a[href^="/reports/"]').first().click();
 
     await expect(page.getByRole("heading", { name: "Platform features" })).toBeVisible();
-    await expect(page.getByText("Not reported. This report was written before Ladybird described its platform features."))
+    await expect(page.getByText("Not reported", { exact: true })).toBeVisible();
+    await expect(page.getByText("This report was written before Ladybird described its platform features."))
       .toBeVisible();
   });
 

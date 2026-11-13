@@ -1,7 +1,13 @@
 {% if !features.reported %}
-    <p class="quiet">Not reported. This report was written before Ladybird described its platform features.</p>
+    <div class="empty-state">
+        <strong>Not reported</strong>
+        This report was written before Ladybird described its platform features.
+    </div>
 {% else if features.rows.is_empty() %}
-    <p class="quiet">This process has no platform features.</p>
+    <div class="empty-state">
+        <strong>No platform features</strong>
+        This process does not use any platform features.
+    </div>
 {% else %}
     <div class="platform-features">
         <table class="platform-feature-table">
