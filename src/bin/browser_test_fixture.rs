@@ -158,7 +158,8 @@ async fn main() -> Result<()> {
             ($1, 'git_commit', 'text', $7, true),
             ($1, 'build_configuration', 'text', $8, true),
             ($1, 'cpp_compiler', 'text', $9, true),
-            ($1, 'url', 'text', $10, true)
+            ($1, 'url', 'text', $10, true),
+            ($1, 'platform_features', 'platform_features', $11, true)
          ON CONFLICT (report_id, key) DO NOTHING",
     )
     .bind(REPORT_ID.parse::<ReportId>().expect("valid fixture UUIDv7"))
@@ -177,6 +178,34 @@ async fn main() -> Result<()> {
     .bind(serde_json::json!(
         "https://example.test/checkout?step=payment"
     ))
+    .bind(serde_json::json!([
+        { "id": "gpu_painting", "process": "Compositor", "state": "Enabled", "forced": false, "reason": "" },
+        {
+            "id": "ycbcr_import",
+            "process": "Compositor",
+            "dependency": "gpu_painting",
+            "state": "Enabled",
+            "forced": true,
+            "reason": "Overrides --disable-features",
+        },
+        {
+            "id": "vulkan_video",
+            "process": "VideoDecoderServer",
+            "dependency": "ycbcr_import",
+            "state": "Enabled",
+            "forced": false,
+            "reason": "",
+        },
+        {
+            "id": "vulkan_video.bundled_ffmpeg",
+            "process": "VideoDecoderServer",
+            "dependency": "vulkan_video",
+            "state": "Blocklisted",
+            "forced": false,
+            "reason": "NVIDIA driver bug repeats AV1 frames with many tiles (#14510)",
+            "rule": "nvidia-av1-tiles",
+        },
+    ]))
     .execute(&mut *transaction)
     .await?;
 

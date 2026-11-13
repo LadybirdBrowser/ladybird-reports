@@ -3289,3 +3289,65 @@ pre {
         transition-duration: 0.01ms !important;
     }
 }
+
+.platform-feature-table {
+    min-width: 0;
+}
+
+.platform-feature-table th,
+.platform-feature-table td {
+    padding: 0.5rem 0.8rem;
+    vertical-align: top;
+}
+
+/* Feature names are ids, so unlike the column headings they keep their case. Their line is as tall as a status badge,
+   so that each name lines up with the badge beside it. */
+.platform-feature-table tbody th {
+    color: var(--ink);
+    font-size: 0.86rem;
+    font-weight: 400;
+    letter-spacing: normal;
+    line-height: 1.65rem;
+    text-transform: none;
+    white-space: nowrap;
+}
+
+.platform-feature-name > * {
+    vertical-align: middle;
+}
+
+.platform-feature-indent,
+.platform-feature-toggle,
+.platform-feature-toggle-spacer {
+    display: inline-block;
+    width: 1.25rem;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: inherit;
+}
+
+/* Undoes the page's button styling, so that a row with a toggle is no taller than one without. */
+.platform-feature-toggle {
+    min-height: 0;
+    font-size: 1.4rem;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.platform-feature-toggle:hover {
+    border-color: transparent;
+    background: none;
+    color: inherit;
+}
+
+.platform-feature-toggle:active {
+    transform: none;
+}
+
+.platform-feature-detail {
+    display: block;
+    margin-top: 0.3rem;
+    color: var(--ink-soft);
+    font-size: 0.85rem;
+}

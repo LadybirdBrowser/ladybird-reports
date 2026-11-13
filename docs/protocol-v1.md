@@ -25,15 +25,17 @@ is not canonicalized. The remaining parts are named with the attachment `id` fro
 }
 ```
 
-The supported field value types are `text`, `multiline`, `stack_trace`, `url`, `commit_id`, `number`, `boolean`, and
-`attachment`. `stack_trace` accepts the same text length as `multiline` and preserves the submitted text exactly. The
-server also interprets it for display, similarity search, and exact signature matching. `url` and `commit_id` carry
-short text that is not otherwise validated, so a build without git information may send `unknown`. The management
-interface shows a `url` behind a warning before it can be opened, and links a `commit_id` to the commit in the
-configured GitHub repository only when it is 7 to 64 hexadecimal characters. Fields defined as `url` or `commit_id` also
-accept plain `text` values. Field keys are extensible. Unknown keys receive generic validation limits and are identified
-as unknown in the management interface. Unknown envelope members are rejected; envelope changes require a new protocol
-version.
+The supported field value types are `text`, `multiline`, `stack_trace`, `url`, `commit_id`, `number`, `boolean`,
+`attachment`, and `platform_features`. `stack_trace` accepts the same text length as `multiline` and preserves the
+submitted text exactly. The server also interprets it for display, similarity search, and exact signature matching.
+`url` and `commit_id` carry short text that is not otherwise validated, so a build without git information may send
+`unknown`. The management interface shows a `url` behind a warning before it can be opened, and links a `commit_id` to
+the commit in the configured GitHub repository only when it is 7 to 64 hexadecimal characters. A `platform_features`
+value is a JSON array of objects, each with at least a string `id` and `state`, and is held to the `multiline` size
+limit; every key is kept as submitted, and the management interface shows the features as a tree. Fields defined as
+`url` or `commit_id` also accept plain `text` values. Field keys are extensible. Unknown keys receive generic validation
+limits and are identified as unknown in the management interface. Unknown envelope members are rejected; envelope
+changes require a new protocol version.
 
 The initial client uses these conventional diagnostic fields:
 
@@ -51,6 +53,9 @@ The initial client uses these conventional diagnostic fields:
 | `cpp_compiler` | `text` | C++ compiler name. |
 | `description` | `multiline` | User-provided problem description. |
 | `url` | `url` | Optional complete page URL. |
+| `platform_features` | `platform_features` | What Ladybird decided about its platform features: one object per feature, with `id`, `process`, `dependency`, `state`, `forced`, `reason`, `rule`, and `blocked_by` as they apply. A crash report sends an empty array for a process without features. |
+| `gpu_device` | `text` | The GPU's name followed by its PCI vendor and device IDs, such as `NVIDIA GeForce RTX 3090 (10de:2204)`. |
+| `gpu_driver` | `text` | The GPU driver's name and version. |
 
 The registry can grow independently of the protocol. A newer client may submit other valid keys, which remain visible as
 unknown fields until maintainers add a definition. The `build` envelope member remains for protocol compatibility.

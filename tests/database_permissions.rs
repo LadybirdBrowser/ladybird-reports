@@ -239,6 +239,14 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
                     "#0 0x1 Web::Box::paint()\n#1 0x2 Web::paint()".into(),
                 ),
             },
+            DiagnosticField {
+                key: "platform_features".into(),
+                value: serde_json::from_value(serde_json::json!({
+                    "type": "platform_features",
+                    "value": [{ "id": "gpu_painting", "state": "Enabled", "added_later": true }],
+                }))
+                .expect("platform features field"),
+            },
         ],
         attachments: vec![AttachmentManifest {
             id: String::from("diagnostics")
@@ -353,7 +361,18 @@ async fn generated_reporting_role_has_only_the_ingestion_surface() {
         .expect("read report as administrator")
         .expect("accepted report exists");
     assert_eq!(report.report.client_version, "integration-test");
-    assert_eq!(report.fields.len(), 2);
+    assert_eq!(report.fields.len(), 3);
+    let platform_features = report
+        .fields
+        .iter()
+        .find(|field| field.key == "platform_features")
+        .expect("platform features are stored");
+    assert_eq!(platform_features.kind, FieldKind::PlatformFeatures);
+    assert_eq!(
+        platform_features.current_kind,
+        Some(FieldKind::PlatformFeatures)
+    );
+    assert_eq!(platform_features.value[0]["added_later"], true);
     assert_eq!(report.attachments.len(), 1);
     let stored_attachment = &report.attachments[0];
     assert_eq!(

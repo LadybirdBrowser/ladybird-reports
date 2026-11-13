@@ -33,12 +33,15 @@
                 </div>
                 {% if field.stack.is_some() %}
                     {% include "reports/_stack_trace_controls.html" %}
-                {% else %}
+                {% else if !field.value.is_empty() %}
                     {% include "reports/_field_value_actions.html" %}
                 {% endif %}
             </header>
             {% if let Some(stack) = field.stack %}
                 {% include "reports/_stack_trace.html" %}
+            {% else if let Some(features) = field.platform_features %}
+                {% include "reports/_platform_features.html" %}
+                <span hidden data-copy-source>{{ field.value }}</span>
             {% else %}
                 <pre data-copy-source>{{ field.value }}</pre>
             {% endif %}

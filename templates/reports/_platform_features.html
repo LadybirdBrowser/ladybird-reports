@@ -1,0 +1,60 @@
+{% if !features.reported %}
+    <p class="quiet">Not reported. This report was written before Ladybird described its platform features.</p>
+{% else if features.rows.is_empty() %}
+    <p class="quiet">This process has no platform features.</p>
+{% else %}
+    <div class="platform-features">
+        <table class="platform-feature-table">
+            <thead>
+                <tr>
+                    <th scope="col">Feature</th>
+                    <th scope="col">Status</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in features.rows %}
+                    <tr data-platform-feature-depth="{{ row.depth }}">
+                        <th scope="row" class="platform-feature-name">
+                            {# The page's content security policy refuses style attributes, so each level indents by an element. #}
+                            {% for _ in 0..row.depth %}<span class="platform-feature-indent"></span>{% endfor %}
+                            {% if row.has_dependents %}
+                                <button
+                                    type="button"
+                                    class="platform-feature-toggle"
+                                    aria-expanded="true"
+                                    aria-label="Hide the features that depend on {{ row.id }}"
+                                    data-platform-feature-toggle
+                                >▾</button>
+                            {% else %}
+                                <span class="platform-feature-toggle-spacer"></span>
+                            {% endif %}
+                            <code title="{{ row.id }}">{{ row.name }}</code>
+                        </th>
+                        <td>
+                            {% if row.state == "Enabled" && row.forced %}
+                                <span class="badge badge-warning">Enabled (forced)</span>
+                            {% else if row.state == "Enabled" %}
+                                <span class="badge badge-success">Enabled</span>
+                            {% else if row.state == "Blocklisted" || row.state == "Failed at runtime" %}
+                                <span class="badge badge-rejected">{{ row.state }}</span>
+                            {% else %}
+                                <span class="badge badge-neutral">{{ row.state }}</span>
+                            {% endif %}
+                            {% if let Some(blocked_by) = row.blocked_by %}
+                                <span class="platform-feature-detail">by <code>{{ blocked_by }}</code></span>
+                            {% endif %}
+                            {% if let Some(reason) = row.reason %}
+                                <span class="platform-feature-detail">
+                                    {{ reason }}
+                                    {% if let Some(rule) = row.rule %}<code>[{{ rule }}]</code>{% endif %}
+                                </span>
+                            {% else if let Some(rule) = row.rule %}
+                                <span class="platform-feature-detail"><code>[{{ rule }}]</code></span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+{% endif %}

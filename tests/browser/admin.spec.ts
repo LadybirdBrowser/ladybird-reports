@@ -498,6 +498,48 @@ test.describe("authenticated management UI", () => {
     await expect(dialog).toBeHidden();
   });
 
+  test("shows platform features as a tree whose dependents can be hidden", async ({ page }) => {
+    await page.goto(`/reports/${reportId}`);
+
+    await expect(page.getByRole("heading", { name: "Platform features" })).toBeVisible();
+    const table = page.locator(".platform-feature-table");
+    const nested = table.getByRole("rowheader", { name: "bundled_ffmpeg" });
+    await expect(nested).toBeVisible();
+    await expect(nested.locator("code")).toHaveAttribute("title", "vulkan_video.bundled_ffmpeg");
+    // Feature names are ids, so they are shown as they are rather than in the column heading's capitals.
+    expect(await nested.evaluate((cell) => (cell as HTMLElement).innerText.trim())).toBe("bundled_ffmpeg");
+    const left = async (name: string) => (await table.getByRole("rowheader", { name }).locator("code").boundingBox())!.x;
+    expect(await left("ycbcr_import")).toBeGreaterThan(await left("gpu_painting"));
+    expect(await left("bundled_ffmpeg")).toBeGreaterThan(await left("vulkan_video"));
+    await expect(table.getByText("Enabled (forced)")).toBeVisible();
+    const blocked = table.getByRole("row").filter({
+      has: page.getByRole("rowheader", { name: "bundled_ffmpeg" }),
+    });
+    await expect(blocked.getByText("Blocklisted")).toBeVisible();
+    await expect(blocked).toContainText("NVIDIA driver bug repeats AV1 frames with many tiles (#14510)");
+    await expect(blocked).toContainText("[nvidia-av1-tiles]");
+
+    const toggleOf = (id: string) => page.getByRole("button", { name: `Hide the features that depend on ${id}` });
+    await toggleOf("vulkan_video").click();
+    await expect(nested).toBeHidden();
+    await toggleOf("gpu_painting").click();
+    await expect(table.getByRole("rowheader", { name: "ycbcr_import" })).toBeHidden();
+    await toggleOf("gpu_painting").click();
+    await expect(table.getByRole("rowheader", { name: "vulkan_video" })).toBeVisible();
+    // A dependent that was collapsed stays collapsed.
+    await expect(nested).toBeHidden();
+  });
+
+  test("says when a crash report was written before it could describe platform features", async ({ page }) => {
+    await page.goto("/?q=kind:crash");
+    await openGroups(page);
+    await page.locator('a[href^="/reports/"]').first().click();
+
+    await expect(page.getByRole("heading", { name: "Platform features" })).toBeVisible();
+    await expect(page.getByText("Not reported. This report was written before Ladybird described its platform features."))
+      .toBeVisible();
+  });
+
   test("links a commit ID to the commit in the upstream repository", async ({ page }) => {
     await page.goto(`/reports/${reportId}`);
 
@@ -913,7 +955,8 @@ test.describe("authenticated management UI", () => {
     const search = page.getByLabel("Search reports");
     await search.fill("plat");
     await expect(page.getByRole("option", { name: /^platform:/ })).toBeVisible();
-    await search.press("ArrowDown");
+    await expect(page.getByRole("option", { name: /^platform_features:/ })).toBeVisible();
+    // The first completion is chosen until another one is.
     await search.press("Enter");
     await expect(search).toHaveValue("platform:");
 
