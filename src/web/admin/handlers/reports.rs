@@ -10,9 +10,10 @@ use serde::{Deserialize, Serialize};
 use crate::{
     application::{IssueProposal, propose_issue, title_for_report},
     domain::{
-        AttachmentId, FieldKind, GithubLinkState, IssueId, ParsedStackTrace, ReportFix,
-        ReportFixKind, ReportId, ReportKind, ReportSearch, ReportState, ReportStateAction,
-        filter_expression, is_commit_id, parse_stack_trace, stack_fingerprint,
+        AttachmentId, FieldKind, GithubLinkState, IssueId, ParsedStackTrace, PlatformFeatureRow,
+        ReportFix, ReportFixKind, ReportId, ReportKind, ReportSearch, ReportState,
+        ReportStateAction, filter_expression, is_commit_id, parse_stack_trace,
+        platform_feature_rows, stack_fingerprint,
     },
     error::{AppError, Result},
     infrastructure::{
@@ -193,6 +194,13 @@ pub struct FieldView {
     filter_url: Option<String>,
     link: FieldLink,
     known: bool,
+    platform_features: Option<PlatformFeaturesView>,
+}
+
+pub struct PlatformFeaturesView {
+    rows: Vec<PlatformFeatureRow>,
+    /// Whether the report described its features at all, which Ladybird's crash reports have done since they first could.
+    reported: bool,
 }
 
 pub struct FieldGroup {
@@ -610,7 +618,17 @@ pub async fn show(
             )),
             _ => FieldLink::None,
         };
-        let holds_text_block = matches!(field.kind, FieldKind::Multiline | FieldKind::StackTrace);
+        let platform_features = (field.kind == FieldKind::PlatformFeatures)
+            .then(|| platform_feature_rows(&field.value))
+            .flatten()
+            .map(|rows| PlatformFeaturesView {
+                rows,
+                reported: true,
+            });
+        let holds_text_block = matches!(
+            field.kind,
+            FieldKind::Multiline | FieldKind::StackTrace | FieldKind::PlatformFeatures
+        );
         let view = FieldView {
             label: field.current_label.clone().unwrap_or_else(|| key.clone()),
             is_multiline: is_stack || holds_text_block,
@@ -622,6 +640,7 @@ pub async fn show(
             key,
             value,
             known,
+            platform_features,
         };
 
         if known {
@@ -629,6 +648,31 @@ pub async fn show(
         } else {
             unknown_fields.push(view);
         }
+    }
+
+    // Every crash report says what its process decided about its platform features, even when it has none, so one
+    // that does not was written before reports could.
+    let describes_platform_features = known_fields
+        .iter()
+        .chain(&unknown_fields)
+        .any(|field| field.key == "platform_features");
+    if report_kind == ReportKind::Crash && !describes_platform_features {
+        known_fields.push(FieldView {
+            key: "platform_features".into(),
+            label: "Platform features".into(),
+            kind: FieldKind::PlatformFeatures,
+            value: String::new(),
+            is_multiline: true,
+            stack: None,
+            stack_signature: None,
+            filter_url: None,
+            link: FieldLink::None,
+            known: true,
+            platform_features: Some(PlatformFeaturesView {
+                rows: Vec::new(),
+                reported: false,
+            }),
+        });
     }
 
     let mut attachments: Vec<AttachmentView> = details

@@ -197,3 +197,37 @@ function initializeTouchActions() {
 
 initializeCopyButtons();
 initializeTouchActions();
+
+// A platform feature's toggle hides the features that depend on it, which are the rows below it until one that is no
+// deeper than it.
+function initializePlatformFeatureToggles() {
+    for (const toggle of document.querySelectorAll("[data-platform-feature-toggle]")) {
+        toggle.addEventListener("click", () => {
+            const row = toggle.closest("tr");
+            const depth = Number(row.dataset.platformFeatureDepth);
+            const expanded = toggle.getAttribute("aria-expanded") !== "true";
+            toggle.setAttribute("aria-expanded", String(expanded));
+            toggle.textContent = expanded ? "▾" : "▸";
+
+            // Rows beneath a collapsed dependent stay hidden when this one expands.
+            let hiddenBelowDepth = Infinity;
+            for (let next = row.nextElementSibling; next; next = next.nextElementSibling) {
+                const nextDepth = Number(next.dataset.platformFeatureDepth);
+                if (nextDepth <= depth) {
+                    break;
+                }
+                if (nextDepth > hiddenBelowDepth) {
+                    continue;
+                }
+                hiddenBelowDepth = Infinity;
+                next.hidden = !expanded;
+                const nestedToggle = next.querySelector("[data-platform-feature-toggle]");
+                if (expanded && nestedToggle?.getAttribute("aria-expanded") === "false") {
+                    hiddenBelowDepth = nextDepth;
+                }
+            }
+        });
+    }
+}
+
+initializePlatformFeatureToggles();

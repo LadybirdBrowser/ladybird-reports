@@ -26,6 +26,9 @@ pub enum FieldValue {
     Number(Number),
     Boolean(bool),
     Attachment(AttachmentReference),
+    /// What Ladybird decided about each of its platform features, kept as the client sent it so that keys added later
+    /// are not lost. Each entry names at least its feature and the state that was decided.
+    PlatformFeatures(Vec<serde_json::Map<String, serde_json::Value>>),
 }
 
 text_enum! {
@@ -38,6 +41,7 @@ text_enum! {
         Number => "number",
         Boolean => "boolean",
         Attachment => "attachment",
+        PlatformFeatures => "platform_features",
     }
 }
 
@@ -79,6 +83,7 @@ impl FieldValue {
             Self::Number(_) => FieldKind::Number,
             Self::Boolean(_) => FieldKind::Boolean,
             Self::Attachment(_) => FieldKind::Attachment,
+            Self::PlatformFeatures(_) => FieldKind::PlatformFeatures,
         }
     }
 
@@ -92,6 +97,13 @@ impl FieldValue {
             Self::Number(value) => value.clone().into(),
             Self::Boolean(value) => (*value).into(),
             Self::Attachment(value) => value.as_str().into(),
+            Self::PlatformFeatures(features) => serde_json::Value::Array(
+                features
+                    .iter()
+                    .cloned()
+                    .map(serde_json::Value::Object)
+                    .collect(),
+            ),
         }
     }
 }
@@ -140,8 +152,36 @@ pub fn validate_fields(
                     "Diagnostic field references an unknown attachment",
                 ));
             }
+            FieldValue::PlatformFeatures(features) => {
+                validate_platform_features(features, limits)?;
+            }
             _ => {}
         }
+    }
+
+    Ok(())
+}
+
+fn validate_platform_features(
+    features: &[serde_json::Map<String, serde_json::Value>],
+    limits: &IngestionLimits,
+) -> Result<()> {
+    let size = serde_json::to_vec(features).map_or(usize::MAX, |bytes| bytes.len());
+    if size > limits.multiline_text_bytes {
+        return Err(AppError::InvalidRequest(
+            "Platform features field is too large",
+        ));
+    }
+
+    let names_itself = |feature: &serde_json::Map<String, serde_json::Value>| {
+        ["id", "state"]
+            .iter()
+            .all(|key| feature.get(*key).is_some_and(serde_json::Value::is_string))
+    };
+    if !features.iter().all(names_itself) {
+        return Err(AppError::InvalidRequest(
+            "Platform feature lacks its id or state",
+        ));
     }
 
     Ok(())
@@ -279,6 +319,56 @@ mod tests {
             definitions,
             &IngestionLimits::default(),
         )
+    }
+
+    #[test]
+    fn platform_features_need_an_id_and_state_and_keep_other_keys() {
+        let features = |value: serde_json::Value| -> FieldValue {
+            serde_json::from_value(
+                serde_json::json!({ "type": "platform_features", "value": value }),
+            )
+            .unwrap()
+        };
+        let definitions = definitions_for("platform_features", FieldKind::PlatformFeatures);
+
+        let valid = features(serde_json::json!([
+            { "id": "gpu_painting", "state": "Enabled", "added_later": 1 },
+        ]));
+        assert!(validate_one("platform_features", valid.clone(), &definitions).is_ok());
+        assert_eq!(valid.json_value()[0]["added_later"], 1);
+
+        for invalid in [
+            serde_json::json!([{ "state": "Enabled" }]),
+            serde_json::json!([{ "id": "gpu_painting", "state": 1 }]),
+        ] {
+            assert!(validate_one("platform_features", features(invalid), &definitions).is_err());
+        }
+        assert!(
+            serde_json::from_value::<FieldValue>(serde_json::json!({
+                "type": "platform_features",
+                "value": "not a list",
+            }))
+            .is_err()
+        );
+        assert!(
+            validate_one(
+                "platform_features",
+                FieldValue::Multiline("[]".into()),
+                &definitions
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn platform_features_are_held_to_the_multiline_size_limit() {
+        let reason = "x".repeat(IngestionLimits::default().multiline_text_bytes);
+        let value: FieldValue = serde_json::from_value(serde_json::json!({
+            "type": "platform_features",
+            "value": [{ "id": "gpu_painting", "state": "Blocklisted", "reason": reason }],
+        }))
+        .unwrap();
+        assert!(validate_one("platform_features", value, &HashMap::new()).is_err());
     }
 
     #[test]
